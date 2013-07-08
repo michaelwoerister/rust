@@ -3673,6 +3673,7 @@ fn struct_ctor_id(cx: ctxt, struct_did: ast::def_id) -> Option<ast::def_id> {
 // Enum information
 pub struct VariantInfo_ {
     args: ~[t],
+    arg_names: Option<~[ast::ident]>,
     ctor_ty: t,
     name: ast::ident,
     id: ast::def_id,
@@ -3851,6 +3852,7 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[VariantInfo] {
                         }
                         @VariantInfo_{
                             args: arg_tys,
+                            arg_names: None,
                             ctor_ty: ctor_ty,
                             name: variant.node.name,
                             id: ast_util::local_def(variant.node.id),
@@ -3859,13 +3861,21 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[VariantInfo] {
                          }
                     },
                     ast::struct_variant_kind(struct_def) => {
-                        let arg_tys =
-                            // Is this check needed for structs too, or are they always guaranteed
-                            // to have a valid constructor function?
-                            if struct_def.fields.len() > 0 {
-                                ty_fn_args(ctor_ty).map(|a| *a)
+
+                        let fields : &[@struct_field] = struct_def.fields;
+
+                        let (arg_tys, arg_names) =
+                            if fields.len() > 0 {
+                                let arg_tys = ty_fn_args(ctor_ty).map(|a| *a);
+                                let arg_names = do fields.map |field| { match field.node.kind {
+                                    named_field(ident, _visibility) => ident,
+                                    unnamed_field => cx.sess.bug(
+                                        "enum_variants: all fields in struct must have a name")
+                                }};
+
+                                (arg_tys, Some(arg_names))
                             } else {
-                                ~[]
+                                (~[], None)
                             };
 
                         assert!(variant.node.disr_expr.is_none());
@@ -3873,6 +3883,7 @@ pub fn enum_variants(cx: ctxt, id: ast::def_id) -> @~[VariantInfo] {
 
                         @VariantInfo_{
                             args: arg_tys,
+                            arg_names: arg_names,
                             ctor_ty: ctor_ty,
                             name: variant.node.name,
                             id: ast_util::local_def(variant.node.id),
