@@ -2127,6 +2127,18 @@ pub mod llvm {
             Flags: c_uint ,
             Elements: ValueRef,
             RunTimeLang : c_uint) -> ValueRef;
+
+        #[fast_ffi]
+        pub unsafe fn LLVMDIBuilderCreateVariantPart(
+            Builder: DIBuilderRef,
+            DiscrField: ValueRef,
+            Variants: ValueRef) -> ValueRef;
+
+        #[fast_ffi]
+        pub unsafe fn LLVMDIBuilderCreateVariant(
+            Builder: DIBuilderRef,
+            DiscrValue: c_ulonglong,
+            Members: ValueRef) -> ValueRef;
     }
 }
 

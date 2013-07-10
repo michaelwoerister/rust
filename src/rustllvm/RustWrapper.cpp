@@ -839,3 +839,23 @@ extern "C" LLVMValueRef LLVMDIBuilderCreateUnionType(
         unwrapDI<DIArray>(Elements),
         RunTimeLang));
 }
+
+extern "C" LLVMValueRef LLVMDIBuilderCreateVariantPart(
+    DIBuilderRef Builder,
+    LLVMValueRef DiscrField,
+    LLVMValueRef Variants)
+{
+    return wrap(Builder->createVariantPart(
+        unwrapDI<DIDerivedType>(DiscrField),
+        unwrapDI<DIArray>(Variants)));
+}
+
+extern "C" LLVMValueRef LLVMDIBuilderCreateVariant(
+    DIBuilderRef Builder,
+    uint64_t DiscrValue,
+    LLVMValueRef Members)
+{
+    return wrap(Builder->createVariant(
+        DiscrValue,
+        unwrapDI<DIArray>(Members)));
+}

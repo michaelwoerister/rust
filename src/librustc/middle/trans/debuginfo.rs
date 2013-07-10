@@ -605,26 +605,40 @@ fn create_enum_md(cx: &mut CrateContext,
         return discriminant_type_md;
     }
 
-    let is_univariant = variants.len() == 1;
+    // let is_univariant = variants.len() == 1;
+
+    let discriminant_member_md = do "".as_c_str |name| { unsafe {
+        llvm::LLVMDIBuilderCreateMemberType(
+            DIB(cx),
+            file_metadata,
+            name,
+            file_metadata,
+            loc.line as c_uint,
+            bytes_to_bits(discriminant_size),
+            bytes_to_bits(discriminant_align),
+            bytes_to_bits(0),
+            0,
+            discriminant_type_md)
+    }};
 
     let variants_md = do variants.map |&vi| {
 
         let raw_types : &[ty::t] = vi.args;
         let arg_types = do raw_types.map |&raw_type| { ty::subst(cx.tcx, substs, raw_type) };
 
-        let mut arg_llvm_types = do arg_types.map |&ty| { type_of::type_of(cx, ty) };
-        let mut arg_names = match vi.arg_names {
+        let arg_llvm_types = do arg_types.map |&ty| { type_of::type_of(cx, ty) };
+        let arg_names = match vi.arg_names {
             Some(ref names) => do names.map |ident| { cx.sess.str_of(*ident).to_owned() },
             None => do arg_types.map |_| { ~"" }
         };
 
-        let mut arg_md = do arg_types.map |&ty| { get_or_create_type(cx, ty, span) };
+        let arg_md = do arg_types.map |&ty| { get_or_create_type(cx, ty, span) };
 
-        if !is_univariant {
-            arg_llvm_types.insert(0, discriminant_llvm_type);
-            arg_names.insert(0, ~"");
-            arg_md.insert(0, discriminant_type_md);
-        }
+        // if !is_univariant {
+        //     arg_llvm_types.insert(0, discriminant_llvm_type);
+        //     arg_names.insert(0, ~"");
+        //     arg_md.insert(0, discriminant_type_md);
+        // }
 
         let variant_llvm_type = Type::struct_(arg_llvm_types, false);
         let variant_type_size = machine::llsize_of_alloc(cx, variant_llvm_type);
@@ -639,7 +653,7 @@ fn create_enum_md(cx: &mut CrateContext,
             arg_md,
             span);
 
-        do "".as_c_str |name| { unsafe {
+        let member_md = do "".as_c_str |name| { unsafe {
             llvm::LLVMDIBuilderCreateMemberType(
                 DIB(cx),
                 file_metadata,
@@ -648,17 +662,45 @@ fn create_enum_md(cx: &mut CrateContext,
                 loc.line as c_uint,
                 bytes_to_bits(variant_type_size),
                 bytes_to_bits(variant_type_align),
-                bytes_to_bits(0),
+                bytes_to_bits(roundup(discriminant_size, variant_type_align)),
                 0,
                 variant_type_md)
-        }}
+        }};
+
+        let variant_md =
+        unsafe {
+        llvm::LLVMDIBuilderCreateVariant(
+            DIB(cx),
+            vi.disr_val as c_ulonglong,
+            create_DIArray(DIB(cx), &[member_md])
+        )};
+
+        variant_md
     };
+
+    let variant_part_md = unsafe { llvm::LLVMDIBuilderCreateVariantPart(
+        DIB(cx),
+        discriminant_member_md,
+        create_DIArray(DIB(cx), variants_md)
+    )};
 
     let enum_llvm_type = type_of::type_of(cx, enum_type);
     let enum_type_size = machine::llsize_of_alloc(cx, enum_llvm_type);
     let enum_type_align = machine::llalign_of_min(cx, enum_llvm_type);
 
-    return do enum_name.as_c_str |enum_name| { unsafe { llvm::LLVMDIBuilderCreateUnionType(
+    // return do enum_name.as_c_str |enum_name| { unsafe { llvm::LLVMDIBuilderCreateUnionType(
+    //     DIB(cx),
+    //     file_metadata,
+    //     enum_name,
+    //     file_metadata,
+    //     loc.line as c_uint,
+    //     bytes_to_bits(enum_type_size),
+    //     bytes_to_bits(enum_type_align),
+    //     0, // Flags
+    //     create_DIArray(DIB(cx), variants_md),
+    //     0) // RuntimeLang
+    // }};
+    return do enum_name.as_c_str |enum_name| { unsafe { llvm::LLVMDIBuilderCreateStructType(
         DIB(cx),
         file_metadata,
         enum_name,
@@ -667,9 +709,11 @@ fn create_enum_md(cx: &mut CrateContext,
         bytes_to_bits(enum_type_size),
         bytes_to_bits(enum_type_align),
         0, // Flags
-        create_DIArray(DIB(cx), variants_md),
-        0) // RuntimeLang
-    }};
+        ptr::null(),
+        create_DIArray(DIB(cx), &[discriminant_member_md, variant_part_md]),
+        0,
+        ptr::null()
+    )}};
 }
 
 
