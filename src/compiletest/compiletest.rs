@@ -30,6 +30,7 @@ pub mod header;
 pub mod runtest;
 pub mod common;
 pub mod errors;
+pub mod debuginfo;
 
 pub fn main() {
     let args = os::args();

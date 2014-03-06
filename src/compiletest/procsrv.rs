@@ -12,6 +12,18 @@ use std::os;
 use std::str;
 use std::io::process::{ProcessExit, Process, ProcessConfig, ProcessOutput};
 
+pub struct ProcRes {
+    status: ProcessExit,
+    stdout: ~str,
+    stderr: ~str,
+    cmdline: ~str
+}
+
+pub struct ProcArgs {
+    prog: ~str,
+    args: ~[~str]
+}
+
 #[cfg(target_os = "win32")]
 fn target_env(lib_path: &str, prog: &str) -> ~[(~str,~str)] {
 

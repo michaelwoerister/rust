@@ -13,21 +13,20 @@ use errors;
 use header::TestProps;
 use header::load_props;
 use procsrv;
-use util::logv;
-#[cfg(target_os = "win32")]
+use procsrv::{ProcRes, ProcArgs};
 use util;
+use debuginfo;
 
 use std::io::File;
 use std::io::fs;
-use std::io::net::ip::{Ipv4Addr, SocketAddr};
-use std::io::net::tcp;
-use std::io::process::ProcessExit;
+// use std::io::net::ip::{Ipv4Addr, SocketAddr};
+// use std::io::net::tcp;
 use std::io::process;
-use std::io::timer;
+// use std::io::timer;
 use std::io;
 use std::os;
 use std::str;
-use std::task;
+// use std::task;
 use std::vec;
 
 use test::MetricMap;
@@ -143,11 +142,15 @@ fn run_rpass_test(config: &Config, props: &TestProps, testfile: &Path) {
 
 fn run_pretty_test(config: &Config, props: &TestProps, testfile: &Path) {
     if props.pp_exact.is_some() {
-        logv(config, ~"testing for exact pretty-printing");
-    } else { logv(config, ~"testing for converging pretty-printing"); }
+        util::logv(config, ~"testing for exact pretty-printing");
+    } else {
+        util::logv(config, ~"testing for converging pretty-printing");
+    }
 
-    let rounds =
-        match props.pp_exact { Some(_) => 1, None => 2 };
+    let rounds = match props.pp_exact {
+        Some(_) => 1,
+        None => 2
+    };
 
     let src = File::open(testfile).read_to_end().unwrap();
     let src = str::from_utf8_owned(src).unwrap();
@@ -155,7 +158,7 @@ fn run_pretty_test(config: &Config, props: &TestProps, testfile: &Path) {
 
     let mut round = 0;
     while round < rounds {
-        logv(config, format!("pretty-printing round {}", round));
+        util::logv(config, format!("pretty-printing round {}", round));
         let proc_res = print_source(config, testfile, srcs[round].clone());
 
         if !proc_res.status.success() {
@@ -197,8 +200,12 @@ fn run_pretty_test(config: &Config, props: &TestProps, testfile: &Path) {
     return;
 
     fn print_source(config: &Config, testfile: &Path, src: ~str) -> ProcRes {
-        compose_and_run(config, testfile, make_pp_args(config, testfile),
-                        ~[], config.compile_lib_path, Some(src))
+        util::compose_and_run(config,
+                              testfile,
+                              make_pp_args(config, testfile),
+                              ~[],
+                              config.compile_lib_path,
+                              Some(src))
     }
 
     fn make_pp_args(config: &Config, _testfile: &Path) -> ProcArgs {
@@ -254,181 +261,208 @@ actual:\n\
 }
 
 fn run_debuginfo_test(config: &Config, props: &TestProps, testfile: &Path) {
-    let mut config = Config {
+    let config = Config {
         target_rustcflags: cleanup_debug_info_options(&config.target_rustcflags),
         host_rustcflags: cleanup_debug_info_options(&config.host_rustcflags),
         .. config.clone()
     };
 
-    let config = &mut config;
-    let check_lines = &props.check_lines;
-    let mut cmds = props.debugger_cmds.connect("\n");
-
     // compile test file (it shoud have 'compile-flags:-g' in the header)
-    let mut proc_res = compile_test(config, props, testfile);
+    let proc_res = compile_test(&config, props, testfile);
     if !proc_res.status.success() {
         fatal_ProcRes(~"compilation failed!", &proc_res);
     }
 
-    let exe_file = make_exe_name(config, testfile);
+    // for each available debugger, try to run
+    for debugger_factory in debuginfo::DEBUGGER_FACTORIES.iter() {
+        let debugger = match (*debugger_factory)(testfile, &config, props) {
+            Some(debugger) => debugger,
+            None => continue
+        };
 
-    let mut proc_args;
-    match config.target {
-        ~"arm-linux-androideabi" => {
+        let exe_path = make_exe_name(&config, testfile);
+        let run_result = debugger.run(&config, &exe_path);
 
-            cmds = cmds.replace("run","continue");
-
-            // write debugger script
-            let script_str = [~"set charset UTF-8",
-                              format!("file {}",exe_file.as_str().unwrap().to_owned()),
-                              ~"target remote :5039",
-                              cmds,
-                              ~"quit"].connect("\n");
-            debug!("script_str = {}", script_str);
-            dump_output_file(config, testfile, script_str, "debugger.script");
-
-
-            procsrv::run("", config.adb_path,
-                         [~"push", exe_file.as_str().unwrap().to_owned(),
-                          config.adb_test_dir.clone()],
-                         ~[(~"",~"")], Some(~""))
-                .expect(format!("failed to exec `{}`", config.adb_path));
-
-            procsrv::run("", config.adb_path,
-                         [~"forward", ~"tcp:5039", ~"tcp:5039"],
-                         ~[(~"",~"")], Some(~""))
-                .expect(format!("failed to exec `{}`", config.adb_path));
-
-            let adb_arg = format!("export LD_LIBRARY_PATH={}; gdbserver :5039 {}/{}",
-                                  config.adb_test_dir.clone(), config.adb_test_dir.clone(),
-                                  str::from_utf8(exe_file.filename().unwrap()).unwrap());
-
-            let mut process = procsrv::run_background("", config.adb_path,
-                                                      [~"shell",adb_arg.clone()],
-                                                      ~[(~"",~"")], Some(~""))
-                .expect(format!("failed to exec `{}`", config.adb_path));
-            loop {
-                //waiting 1 second for gdbserver start
-                timer::sleep(1000);
-                let result = task::try(proc() {
-                    tcp::TcpStream::connect(SocketAddr {
-                        ip: Ipv4Addr(127, 0, 0, 1),
-                        port: 5039,
-                    }).unwrap();
-                });
-                if result.is_err() {
-                    continue;
-                }
-                break;
-            }
-
-            let args = split_maybe_args(&config.target_rustcflags);
-            let mut tool_path:~str = ~"";
-            for arg in args.iter() {
-                if arg.contains("android-cross-path=") {
-                    tool_path = arg.replace("android-cross-path=","");
-                    break;
-                }
-            }
-
-            if tool_path.equals(&~"") {
-                fatal(~"cannot found android cross path");
-            }
-
-            let debugger_script = make_out_name(config, testfile, "debugger.script");
-            // FIXME (#9639): This needs to handle non-utf8 paths
-            let debugger_opts = ~[~"-quiet", ~"-batch", ~"-nx",
-                                  "-command=" + debugger_script.as_str().unwrap().to_owned()];
-
-            let gdb_path = tool_path.append("/bin/arm-linux-androideabi-gdb");
-            let procsrv::Result{ out, err, status }=
-                procsrv::run("",
-                             gdb_path,
-                             debugger_opts, ~[(~"",~"")], None)
-                .expect(format!("failed to exec `{}`", gdb_path));
-            let cmdline = {
-                let cmdline = make_cmdline("", "arm-linux-androideabi-gdb", debugger_opts);
-                logv(config, format!("executing {}", cmdline));
-                cmdline
-            };
-
-            proc_res = ProcRes {status: status,
-                               stdout: out,
-                               stderr: err,
-                               cmdline: cmdline};
-            process.signal_kill().unwrap();
+        if !run_result.status.success() {
+            // TODO: continue instead of abort
+            fatal(format!("{} failed to execute", debugger.name()));
         }
 
-        _=> {
-            // write debugger script
-            let script_str = [~"set charset UTF-8",
-                cmds,
-                ~"quit\n"].connect("\n");
-            debug!("script_str = {}", script_str);
-            dump_output_file(config, testfile, script_str, "debugger.script");
-
-            // run debugger script with gdb
-            #[cfg(windows)]
-            fn debugger() -> ~str { ~"gdb.exe" }
-            #[cfg(unix)]
-            fn debugger() -> ~str { ~"gdb" }
-
-            let debugger_script = make_out_name(config, testfile, "debugger.script");
-
-            // FIXME (#9639): This needs to handle non-utf8 paths
-            let debugger_opts = ~[~"-quiet", ~"-batch", ~"-nx",
-                "-command=" + debugger_script.as_str().unwrap().to_owned(),
-                exe_file.as_str().unwrap().to_owned()];
-            proc_args = ProcArgs {prog: debugger(), args: debugger_opts};
-            proc_res = compose_and_run(config, testfile, proc_args, ~[], "", None);
-        }
+        match debugger.check_output(run_result.stdout) {
+            Ok(_) => { /* nothing to do */ },
+            Err(msg) => fatal_ProcRes(msg, &run_result)
+        };
     }
 
-    if !proc_res.status.success() {
-        fatal(~"gdb failed to execute");
-    }
-    let num_check_lines = check_lines.len();
-    if num_check_lines > 0 {
-        // Allow check lines to leave parts unspecified (e.g., uninitialized
-        // bits in the wrong case of an enum) with the notation "[...]".
-        let check_fragments: ~[~[&str]] = check_lines.map(|s| s.split_str("[...]").collect());
-        // check if each line in props.check_lines appears in the
-        // output (in order)
-        let mut i = 0u;
-        for line in proc_res.stdout.lines() {
-            let mut rest = line.trim();
-            let mut first = true;
-            let mut failed = false;
-            for &frag in check_fragments[i].iter() {
-                let found = if first {
-                    if rest.starts_with(frag) { Some(0) } else { None }
-                } else {
-                    rest.find_str(frag)
-                };
-                match found {
-                    None => {
-                        failed = true;
-                        break;
-                    }
-                    Some(i) => {
-                        rest = rest.slice_from(i + frag.len());
-                    }
-                }
-                first = false;
-            }
-            if !failed && rest.len() == 0 {
-                i += 1u;
-            }
-            if i == num_check_lines {
-                // all lines checked
-                break;
-            }
-        }
-        if i != num_check_lines {
-            fatal_ProcRes(format!("line not found in debugger output: {}",
-                                  check_lines[i]), &proc_res);
-        }
-    }
+    // let config = &mut config;
+    // let check_lines = &props.check_lines;
+    // let mut cmds = props.debugger_cmds.connect("\n");
+
+    // compile test file (it shoud have 'compile-flags:-g' in the header)
+    // let mut proc_res = compile_test(config, props, testfile);
+    // if !proc_res.status.success() {
+    //     fatal_ProcRes(~"compilation failed!", &proc_res);
+    // }
+
+    // let exe_file = make_exe_name(config, testfile);
+
+    // let mut proc_args;
+    // match config.target {
+    //     ~"arm-linux-androideabi" => {
+
+    //         cmds = cmds.replace("run","continue");
+
+    //         // write debugger script
+    //         let script_str = [~"set charset UTF-8",
+    //                           format!("file {}",exe_file.as_str().unwrap().to_owned()),
+    //                           ~"target remote :5039",
+    //                           cmds,
+    //                           ~"quit"].connect("\n");
+    //         debug!("script_str = {}", script_str);
+    //         util::dump_output_file(config, testfile, script_str, "debugger.script");
+
+
+    //         procsrv::run("", config.adb_path,
+    //                      [~"push", exe_file.as_str().unwrap().to_owned(),
+    //                       config.adb_test_dir.clone()],
+    //                      ~[(~"",~"")], Some(~""))
+    //             .expect(format!("failed to exec `{}`", config.adb_path));
+
+    //         procsrv::run("", config.adb_path,
+    //                      [~"forward", ~"tcp:5039", ~"tcp:5039"],
+    //                      ~[(~"",~"")], Some(~""))
+    //             .expect(format!("failed to exec `{}`", config.adb_path));
+
+    //         let adb_arg = format!("export LD_LIBRARY_PATH={}; gdbserver :5039 {}/{}",
+    //                               config.adb_test_dir.clone(), config.adb_test_dir.clone(),
+    //                               str::from_utf8(exe_file.filename().unwrap()).unwrap());
+
+    //         let mut process = procsrv::run_background("", config.adb_path,
+    //                                                   [~"shell",adb_arg.clone()],
+    //                                                   ~[(~"",~"")], Some(~""))
+    //             .expect(format!("failed to exec `{}`", config.adb_path));
+    //         loop {
+    //             //waiting 1 second for gdbserver start
+    //             timer::sleep(1000);
+    //             let result = task::try(proc() {
+    //                 tcp::TcpStream::connect(SocketAddr {
+    //                     ip: Ipv4Addr(127, 0, 0, 1),
+    //                     port: 5039,
+    //                 }).unwrap();
+    //             });
+    //             if result.is_err() {
+    //                 continue;
+    //             }
+    //             break;
+    //         }
+
+    //         let args = split_maybe_args(&config.target_rustcflags);
+    //         let mut tool_path:~str = ~"";
+    //         for arg in args.iter() {
+    //             if arg.contains("android-cross-path=") {
+    //                 tool_path = arg.replace("android-cross-path=","");
+    //                 break;
+    //             }
+    //         }
+
+    //         if tool_path.equals(&~"") {
+    //             fatal(~"cannot found android cross path");
+    //         }
+
+    //         let debugger_script = util::make_out_name(config, testfile, "debugger.script");
+    //         // FIXME (#9639): This needs to handle non-utf8 paths
+    //         let debugger_opts = ~[~"-quiet", ~"-batch", ~"-nx",
+    //                               "-command=" + debugger_script.as_str().unwrap().to_owned()];
+
+    //         let gdb_path = tool_path.append("/bin/arm-linux-androideabi-gdb");
+    //         let procsrv::Result{ out, err, status }=
+    //             procsrv::run("",
+    //                          gdb_path,
+    //                          debugger_opts, ~[(~"",~"")], None)
+    //             .expect(format!("failed to exec `{}`", gdb_path));
+    //         let cmdline = {
+    //             let cmdline = util::make_cmdline("", "arm-linux-androideabi-gdb", debugger_opts);
+    //             util::logv(config, format!("executing {}", cmdline));
+    //             cmdline
+    //         };
+
+    //         proc_res = ProcRes {status: status,
+    //                            stdout: out,
+    //                            stderr: err,
+    //                            cmdline: cmdline};
+    //         process.signal_kill().unwrap();
+    //     }
+
+    //     _=> {
+    //         // write debugger script
+    //         let script_str = [~"set charset UTF-8",
+    //             cmds,
+    //             ~"quit\n"].connect("\n");
+    //         debug!("script_str = {}", script_str);
+    //         util::dump_output_file(config, testfile, script_str, "debugger.script");
+
+    //         // run debugger script with gdb
+    //         #[cfg(windows)]
+    //         fn debugger() -> ~str { ~"gdb.exe" }
+    //         #[cfg(unix)]
+    //         fn debugger() -> ~str { ~"gdb" }
+
+    //         let debugger_script = util::make_out_name(config, testfile, "debugger.script");
+
+    //         // FIXME (#9639): This needs to handle non-utf8 paths
+    //         let debugger_opts = ~[~"-quiet", ~"-batch", ~"-nx",
+    //             "-command=" + debugger_script.as_str().unwrap().to_owned(),
+    //             exe_file.as_str().unwrap().to_owned()];
+    //         proc_args = ProcArgs {prog: debugger(), args: debugger_opts};
+    //         proc_res = util::compose_and_run(config, testfile, proc_args, ~[], "", None);
+    //     }
+    // }
+
+    // if !proc_res.status.success() {
+    //     fatal(~"gdb failed to execute");
+    // }
+    // let num_check_lines = check_lines.len();
+    // if num_check_lines > 0 {
+    //     // Allow check lines to leave parts unspecified (e.g., uninitialized
+    //     // bits in the wrong case of an enum) with the notation "[...]".
+    //     let check_fragments: ~[~[&str]] = check_lines.map(|s| s.split_str("[...]").collect());
+    //     // check if each line in props.check_lines appears in the
+    //     // output (in order)
+    //     let mut i = 0u;
+    //     for line in proc_res.stdout.lines() {
+    //         let mut rest = line.trim();
+    //         let mut first = true;
+    //         let mut failed = false;
+    //         for &frag in check_fragments[i].iter() {
+    //             let found = if first {
+    //                 if rest.starts_with(frag) { Some(0) } else { None }
+    //             } else {
+    //                 rest.find_str(frag)
+    //             };
+    //             match found {
+    //                 None => {
+    //                     failed = true;
+    //                     break;
+    //                 }
+    //                 Some(i) => {
+    //                     rest = rest.slice_from(i + frag.len());
+    //                 }
+    //             }
+    //             first = false;
+    //         }
+    //         if !failed && rest.len() == 0 {
+    //             i += 1u;
+    //         }
+    //         if i == num_check_lines {
+    //             // all lines checked
+    //             break;
+    //         }
+    //     }
+    //     if i != num_check_lines {
+    //         fatal_ProcRes(format!("line not found in debugger output: {}",
+    //                               check_lines[i]), &proc_res);
+    //     }
+    // }
 
     fn cleanup_debug_info_options(options: &Option<~str>) -> Option<~str> {
         if options.is_none() {
@@ -650,10 +684,6 @@ fn scan_string(haystack: &str, needle: &str, idx: &mut uint) -> bool {
     return true;
 }
 
-struct ProcArgs {prog: ~str, args: ~[~str]}
-
-struct ProcRes {status: ProcessExit, stdout: ~str, stderr: ~str, cmdline: ~str}
-
 fn compile_test(config: &Config, props: &TestProps,
                 testfile: &Path) -> ProcRes {
     compile_test_(config, props, testfile, [])
@@ -685,10 +715,12 @@ fn exec_compiled_test(config: &Config, props: &TestProps,
         }
 
         _=> {
-            compose_and_run(config, testfile,
-                            make_run_args(config, props, testfile),
-                            env,
-                            config.run_lib_path, None)
+            util::compose_and_run(config,
+                                  testfile,
+                                  make_run_args(config, props, testfile),
+                                  env,
+                                  config.run_lib_path,
+                                  None)
         }
     }
 }
@@ -722,8 +754,12 @@ fn compose_and_run_compiler(
                                   let f = make_lib_name(a, b, testfile);
                                   ThisDirectory(f.dir_path())
                               }, &abs_ab);
-        let auxres = compose_and_run(config, &abs_ab, aux_args, ~[],
-                                     config.compile_lib_path, None);
+        let auxres = util::compose_and_run(config,
+                                           &abs_ab,
+                                           aux_args,
+                                           ~[],
+                                           config.compile_lib_path,
+                                           None);
         if !auxres.status.success() {
             fatal_ProcRes(
                 format!("auxiliary build of {} failed to compile: ",
@@ -741,22 +777,12 @@ fn compose_and_run_compiler(
         }
     }
 
-    compose_and_run(config, testfile, args, ~[],
-                    config.compile_lib_path, input)
+    util::compose_and_run(config, testfile, args, ~[], config.compile_lib_path, input)
 }
 
 fn ensure_dir(path: &Path) {
     if path.is_dir() { return; }
     fs::mkdir(path, io::UserRWX).unwrap();
-}
-
-fn compose_and_run(config: &Config, testfile: &Path,
-                   ProcArgs{ args, prog }: ProcArgs,
-                   procenv: ~[(~str, ~str)],
-                   lib_path: &str,
-                   input: Option<~str>) -> ProcRes {
-    return program_output(config, testfile, lib_path,
-                          prog, args, procenv, input);
 }
 
 enum TargetLocation {
@@ -802,12 +828,12 @@ fn make_compile_args(config: &Config,
 fn make_lib_name(config: &Config, auxfile: &Path, testfile: &Path) -> Path {
     // what we return here is not particularly important, as it
     // happens; rustc ignores everything except for the directory.
-    let auxname = output_testname(auxfile);
+    let auxname = util::output_testname(auxfile);
     aux_output_dir_name(config, testfile).join(&auxname)
 }
 
 fn make_exe_name(config: &Config, testfile: &Path) -> Path {
-    let mut f = output_base_name(config, testfile);
+    let mut f = util::output_base_name(config, testfile);
     if !os::consts::EXE_SUFFIX.is_empty() {
         match f.filename().map(|s| s + os::consts::EXE_SUFFIX.as_bytes()) {
             Some(v) => f.set_filename(v),
@@ -840,39 +866,6 @@ fn split_maybe_args(argstr: &Option<~str>) -> ~[~str] {
     }
 }
 
-fn program_output(config: &Config, testfile: &Path, lib_path: &str, prog: ~str,
-                  args: ~[~str], env: ~[(~str, ~str)],
-                  input: Option<~str>) -> ProcRes {
-    let cmdline =
-        {
-            let cmdline = make_cmdline(lib_path, prog, args);
-            logv(config, format!("executing {}", cmdline));
-            cmdline
-        };
-    let procsrv::Result{ out, err, status } =
-            procsrv::run(lib_path, prog, args, env, input)
-            .expect(format!("failed to exec `{}`", prog));
-    dump_output(config, testfile, out, err);
-    return ProcRes {status: status,
-         stdout: out,
-         stderr: err,
-         cmdline: cmdline};
-}
-
-// Linux and mac don't require adjusting the library search path
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "macos")]
-#[cfg(target_os = "freebsd")]
-fn make_cmdline(_libpath: &str, prog: &str, args: &[~str]) -> ~str {
-    format!("{} {}", prog, args.connect(" "))
-}
-
-#[cfg(target_os = "win32")]
-fn make_cmdline(libpath: &str, prog: &str, args: &[~str]) -> ~str {
-    format!("{} {} {}", lib_path_cmd_prefix(libpath), prog,
-         args.connect(" "))
-}
-
 // Build the LD_LIBRARY_PATH variable as it would be seen on the command line
 // for diagnostic purposes
 #[cfg(target_os = "win32")]
@@ -880,49 +873,13 @@ fn lib_path_cmd_prefix(path: &str) -> ~str {
     format!("{}=\"{}\"", util::lib_path_env_var(), util::make_new_path(path))
 }
 
-fn dump_output(config: &Config, testfile: &Path, out: &str, err: &str) {
-    dump_output_file(config, testfile, out, "out");
-    dump_output_file(config, testfile, err, "err");
-    maybe_dump_to_stdout(config, out, err);
-}
-
-fn dump_output_file(config: &Config, testfile: &Path,
-                    out: &str, extension: &str) {
-    let outfile = make_out_name(config, testfile, extension);
-    File::create(&outfile).write(out.as_bytes()).unwrap();
-}
-
-fn make_out_name(config: &Config, testfile: &Path, extension: &str) -> Path {
-    output_base_name(config, testfile).with_extension(extension)
-}
-
 fn aux_output_dir_name(config: &Config, testfile: &Path) -> Path {
-    let mut f = output_base_name(config, testfile);
+    let mut f = util::output_base_name(config, testfile);
     match f.filename().map(|s| s + bytes!(".libaux")) {
         Some(v) => f.set_filename(v),
         None => ()
     }
     f
-}
-
-fn output_testname(testfile: &Path) -> Path {
-    Path::new(testfile.filestem().unwrap())
-}
-
-fn output_base_name(config: &Config, testfile: &Path) -> Path {
-    config.build_base
-        .join(&output_testname(testfile))
-        .with_extension(config.stage_id.as_slice())
-}
-
-fn maybe_dump_to_stdout(config: &Config, out: &str, err: &str) {
-    if config.verbose {
-        println!("------{}------------------------------", "stdout");
-        println!("{}", out);
-        println!("------{}------------------------------", "stderr");
-        println!("{}", err);
-        println!("------------------------------------------");
-    }
 }
 
 fn error(err: ~str) { println!("\nerror: {}", err); }
@@ -950,7 +907,7 @@ fn _arm_exec_compiled_test(config: &Config, props: &TestProps,
                       testfile: &Path, env: ~[(~str, ~str)]) -> ProcRes {
 
     let args = make_run_args(config, props, testfile);
-    let cmdline = make_cmdline("", args.prog, args.args);
+    let cmdline = util::make_cmdline("", args.prog, args.args);
 
     // get bare program string
     let mut tvec: ~[~str] = args.prog.split('/').map(|ts| ts.to_owned()).collect();
@@ -968,7 +925,7 @@ fn _arm_exec_compiled_test(config: &Config, props: &TestProps,
             copy_result.out, copy_result.err);
     }
 
-    logv(config, format!("executing ({}) {}", config.target, cmdline));
+    util::logv(config, format!("executing ({}) {}", config.target, cmdline));
 
     let mut runargs = ~[];
 
@@ -1027,7 +984,7 @@ fn _arm_exec_compiled_test(config: &Config, props: &TestProps,
         procsrv::run("", config.adb_path, runargs, ~[(~"",~"")], Some(~""))
         .expect(format!("failed to exec `{}`", config.adb_path));
 
-    dump_output(config, testfile, stdout_out, stderr_out);
+    util::dump_output(config, testfile, stdout_out, stderr_out);
 
     ProcRes {
         status: process::ExitStatus(exitcode),
@@ -1061,7 +1018,7 @@ fn _arm_push_aux_shared_library(config: &Config, testfile: &Path) {
 // codegen tests (vs. clang)
 
 fn make_o_name(config: &Config, testfile: &Path) -> Path {
-    output_base_name(config, testfile).with_extension("o")
+    util::output_base_name(config, testfile).with_extension("o")
 }
 
 fn append_suffix_to_stem(p: &Path, suffix: &str) -> Path {
@@ -1087,7 +1044,7 @@ fn compile_test_and_save_bitcode(config: &Config, props: &TestProps,
 
 fn compile_cc_with_clang_and_save_bitcode(config: &Config, _props: &TestProps,
                                           testfile: &Path) -> ProcRes {
-    let bitcodefile = output_base_name(config, testfile).with_extension("bc");
+    let bitcodefile = util::output_base_name(config, testfile).with_extension("bc");
     let bitcodefile = append_suffix_to_stem(&bitcodefile, "clang");
     let testcc = testfile.with_extension("cc");
     let proc_args = ProcArgs {
@@ -1098,13 +1055,13 @@ fn compile_cc_with_clang_and_save_bitcode(config: &Config, _props: &TestProps,
                 ~"-o", bitcodefile.as_str().unwrap().to_owned(),
                 testcc.as_str().unwrap().to_owned() ]
     };
-    compose_and_run(config, testfile, proc_args, ~[], "", None)
+    util::compose_and_run(config, testfile, proc_args, ~[], "", None)
 }
 
 fn extract_function_from_bitcode(config: &Config, _props: &TestProps,
                                  fname: &str, testfile: &Path,
                                  suffix: &str) -> ProcRes {
-    let bitcodefile = output_base_name(config, testfile).with_extension("bc");
+    let bitcodefile = util::output_base_name(config, testfile).with_extension("bc");
     let bitcodefile = append_suffix_to_stem(&bitcodefile, suffix);
     let extracted_bc = append_suffix_to_stem(&bitcodefile, "extract");
     let prog = config.llvm_bin_path.get_ref().join("llvm-extract");
@@ -1115,12 +1072,12 @@ fn extract_function_from_bitcode(config: &Config, _props: &TestProps,
                 "-o=" + extracted_bc.as_str().unwrap(),
                 bitcodefile.as_str().unwrap().to_owned() ]
     };
-    compose_and_run(config, testfile, proc_args, ~[], "", None)
+    util::compose_and_run(config, testfile, proc_args, ~[], "", None)
 }
 
 fn disassemble_extract(config: &Config, _props: &TestProps,
                        testfile: &Path, suffix: &str) -> ProcRes {
-    let bitcodefile = output_base_name(config, testfile).with_extension("bc");
+    let bitcodefile = util::output_base_name(config, testfile).with_extension("bc");
     let bitcodefile = append_suffix_to_stem(&bitcodefile, suffix);
     let extracted_bc = append_suffix_to_stem(&bitcodefile, "extract");
     let extracted_ll = extracted_bc.with_extension("ll");
@@ -1131,7 +1088,7 @@ fn disassemble_extract(config: &Config, _props: &TestProps,
         args: ~["-o=" + extracted_ll.as_str().unwrap(),
                 extracted_bc.as_str().unwrap().to_owned() ]
     };
-    compose_and_run(config, testfile, proc_args, ~[], "", None)
+    util::compose_and_run(config, testfile, proc_args, ~[], "", None)
 }
 
 
@@ -1184,7 +1141,7 @@ fn run_codegen_test(config: &Config, props: &TestProps,
         fatal_ProcRes(~"disassembling extract failed", &proc_res);
     }
 
-    let base = output_base_name(config, testfile);
+    let base = util::output_base_name(config, testfile);
     let base_extract = append_suffix_to_stem(&base, "extract");
 
     let base_clang = append_suffix_to_stem(&base, "clang");
