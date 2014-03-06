@@ -9,17 +9,17 @@
 // except according to those terms.
 
 #[deriving(Clone, Eq)]
-pub enum mode {
-    mode_compile_fail,
-    mode_run_fail,
-    mode_run_pass,
-    mode_pretty,
-    mode_debug_info,
-    mode_codegen
+pub enum Mode {
+    ModeCompileFail,
+    ModeRunFail,
+    ModeRunPass,
+    ModePretty,
+    ModeDebugInfo,
+    ModeCodegen
 }
 
 #[deriving(Clone)]
-pub struct config {
+pub struct Config {
     // The library paths required for running the compiler
     compile_lib_path: ~str,
 
@@ -48,7 +48,7 @@ pub struct config {
     stage_id: ~str,
 
     // The test mode, compile-fail, run-fail, run-pass
-    mode: mode,
+    mode: Mode,
 
     // Run ignored tests
     run_ignored: bool,
@@ -103,5 +103,4 @@ pub struct config {
 
     // Explain what's going on
     verbose: bool
-
 }

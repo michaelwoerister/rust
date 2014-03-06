@@ -20,14 +20,8 @@ use std::os;
 use std::io;
 use std::io::fs;
 use getopts::{optopt, optflag, reqopt};
-use common::config;
-use common::mode_run_pass;
-use common::mode_run_fail;
-use common::mode_compile_fail;
-use common::mode_pretty;
-use common::mode_debug_info;
-use common::mode_codegen;
-use common::mode;
+use common::{Config, Mode, ModeCompileFail, ModePretty, ModeRunFail, ModeRunPass, ModeDebugInfo,
+             ModeCodegen };
 use util::logv;
 
 pub mod procsrv;
@@ -44,7 +38,7 @@ pub fn main() {
     run_tests(&config);
 }
 
-pub fn parse_config(args: ~[~str]) -> config {
+pub fn parse_config(args: ~[~str]) -> Config {
 
     let groups : ~[getopts::OptGroup] =
         ~[reqopt("", "compile-lib-path", "path to host shared libraries", "PATH"),
@@ -105,7 +99,7 @@ pub fn parse_config(args: ~[~str]) -> config {
         Path::new(m.opt_str(nm).unwrap())
     }
 
-    config {
+    Config {
         compile_lib_path: matches.opt_str("compile-lib-path").unwrap(),
         run_lib_path: matches.opt_str("run-lib-path").unwrap(),
         rustc_path: opt_path(matches, "rustc-path"),
@@ -147,7 +141,7 @@ pub fn parse_config(args: ~[~str]) -> config {
     }
 }
 
-pub fn log_config(config: &config) {
+pub fn log_config(config: &Config) {
     let c = config;
     logv(c, format!("configuration:"));
     logv(c, format!("compile_lib_path: {}", config.compile_lib_path));
@@ -190,33 +184,33 @@ pub fn opt_str2(maybestr: Option<~str>) -> ~str {
     match maybestr { None => ~"(none)", Some(s) => { s } }
 }
 
-pub fn str_mode(s: ~str) -> mode {
+pub fn str_mode(s: ~str) -> Mode {
     match s {
-      ~"compile-fail" => mode_compile_fail,
-      ~"run-fail" => mode_run_fail,
-      ~"run-pass" => mode_run_pass,
-      ~"pretty" => mode_pretty,
-      ~"debug-info" => mode_debug_info,
-      ~"codegen" => mode_codegen,
+      ~"compile-fail" => ModeCompileFail,
+      ~"run-fail" => ModeRunFail,
+      ~"run-pass" => ModeRunPass,
+      ~"pretty" => ModePretty,
+      ~"debug-info" => ModeDebugInfo,
+      ~"codegen" => ModeCodegen,
       _ => fail!("invalid mode")
     }
 }
 
-pub fn mode_str(mode: mode) -> ~str {
+pub fn mode_str(mode: Mode) -> ~str {
     match mode {
-      mode_compile_fail => ~"compile-fail",
-      mode_run_fail => ~"run-fail",
-      mode_run_pass => ~"run-pass",
-      mode_pretty => ~"pretty",
-      mode_debug_info => ~"debug-info",
-      mode_codegen => ~"codegen",
+      ModeCompileFail => ~"compile-fail",
+      ModeRunFail => ~"run-fail",
+      ModeRunPass => ~"run-pass",
+      ModePretty => ~"pretty",
+      ModeDebugInfo => ~"debug-info",
+      ModeCodegen => ~"codegen",
     }
 }
 
-pub fn run_tests(config: &config) {
+pub fn run_tests(config: &Config) {
     if config.target == ~"arm-linux-androideabi" {
         match config.mode{
-            mode_debug_info => {
+            ModeDebugInfo => {
                 println!("arm-linux-androideabi debug-info \
                          test uses tcp 5039 port. please reserve it");
             }
@@ -245,7 +239,7 @@ pub fn run_tests(config: &config) {
     }
 }
 
-pub fn test_opts(config: &config) -> test::TestOpts {
+pub fn test_opts(config: &Config) -> test::TestOpts {
     test::TestOpts {
         filter: config.filter.clone(),
         run_ignored: config.run_ignored,
@@ -259,7 +253,7 @@ pub fn test_opts(config: &config) -> test::TestOpts {
     }
 }
 
-pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
+pub fn make_tests(config: &Config) -> ~[test::TestDescAndFn] {
     debug!("making tests from {}",
            config.src_base.display());
     let mut tests = ~[];
@@ -270,7 +264,7 @@ pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
         if is_test(config, &file) {
             let t = make_test(config, &file, || {
                 match config.mode {
-                    mode_codegen => make_metrics_test_closure(config, &file),
+                    ModeCodegen => make_metrics_test_closure(config, &file),
                     _ => make_test_closure(config, &file)
                 }
             });
@@ -280,11 +274,11 @@ pub fn make_tests(config: &config) -> ~[test::TestDescAndFn] {
     tests
 }
 
-pub fn is_test(config: &config, testfile: &Path) -> bool {
+pub fn is_test(config: &Config, testfile: &Path) -> bool {
     // Pretty-printer does not work with .rc files yet
     let valid_extensions =
         match config.mode {
-          mode_pretty => ~[~".rs"],
+          ModePretty => ~[~".rs"],
           _ => ~[~".rc", ~".rs"]
         };
     let invalid_prefixes = ~[~".", ~"#", ~"~"];
@@ -303,7 +297,7 @@ pub fn is_test(config: &config, testfile: &Path) -> bool {
     return valid;
 }
 
-pub fn make_test(config: &config, testfile: &Path, f: || -> test::TestFn)
+pub fn make_test(config: &Config, testfile: &Path, f: || -> test::TestFn)
                  -> test::TestDescAndFn {
     test::TestDescAndFn {
         desc: test::TestDesc {
@@ -315,7 +309,7 @@ pub fn make_test(config: &config, testfile: &Path, f: || -> test::TestFn)
     }
 }
 
-pub fn make_test_name(config: &config, testfile: &Path) -> test::TestName {
+pub fn make_test_name(config: &Config, testfile: &Path) -> test::TestName {
 
     // Try to elide redundant long paths
     fn shorten(path: &Path) -> ~str {
@@ -330,14 +324,14 @@ pub fn make_test_name(config: &config, testfile: &Path) -> test::TestName {
                               shorten(testfile)))
 }
 
-pub fn make_test_closure(config: &config, testfile: &Path) -> test::TestFn {
+pub fn make_test_closure(config: &Config, testfile: &Path) -> test::TestFn {
     let config = (*config).clone();
     // FIXME (#9639): This needs to handle non-utf8 paths
     let testfile = testfile.as_str().unwrap().to_owned();
     test::DynTestFn(proc() { runtest::run(config, testfile) })
 }
 
-pub fn make_metrics_test_closure(config: &config, testfile: &Path) -> test::TestFn {
+pub fn make_metrics_test_closure(config: &Config, testfile: &Path) -> test::TestFn {
     let config = (*config).clone();
     // FIXME (#9639): This needs to handle non-utf8 paths
     let testfile = testfile.as_str().unwrap().to_owned();
