@@ -28,14 +28,8 @@ use std::os;
 use std::io;
 use std::io::fs;
 use getopts::{optopt, optflag, reqopt};
-use common::config;
-use common::mode_run_pass;
-use common::mode_run_fail;
-use common::mode_compile_fail;
-use common::mode_pretty;
-use common::mode_debug_info;
-use common::mode_codegen;
-use common::mode;
+use common::{config, mode_run_pass, mode_run_fail, mode_compile_fail, mode_pretty,
+             mode_debug_info_gdb, mode_debug_info_lldb, mode_codegen, mode};
 use util::logv;
 
 pub mod procsrv;
@@ -204,13 +198,14 @@ pub fn opt_str2(maybestr: Option<~str>) -> ~str {
 
 pub fn str_mode(s: ~str) -> mode {
     match s.as_slice() {
-      "compile-fail" => mode_compile_fail,
-      "run-fail" => mode_run_fail,
-      "run-pass" => mode_run_pass,
-      "pretty" => mode_pretty,
-      "debug-info" => mode_debug_info,
-      "codegen" => mode_codegen,
-      _ => fail!("invalid mode")
+        "compile-fail" => mode_compile_fail,
+        "run-fail" => mode_run_fail,
+        "run-pass" => mode_run_pass,
+        "pretty" => mode_pretty,
+        "debuginfo-gdb" => mode_debug_info_gdb,
+        "debuginfo-lldb" => mode_debug_info_lldb,
+        "codegen" => mode_codegen,
+        s => fail!("invalid mode: " + s)
     }
 }
 
@@ -220,7 +215,8 @@ pub fn mode_str(mode: mode) -> ~str {
       mode_run_fail => "run-fail".to_owned(),
       mode_run_pass => "run-pass".to_owned(),
       mode_pretty => "pretty".to_owned(),
-      mode_debug_info => "debug-info".to_owned(),
+      mode_debug_info_gdb => "debuginfo-gdb".to_owned(),
+      mode_debug_info_lldb => "debuginfo-lldb".to_owned(),
       mode_codegen => "codegen".to_owned(),
     }
 }
@@ -228,7 +224,7 @@ pub fn mode_str(mode: mode) -> ~str {
 pub fn run_tests(config: &config) {
     if config.target == "arm-linux-androideabi".to_owned() {
         match config.mode{
-            mode_debug_info => {
+            mode_debug_info_gdb => {
                 println!("arm-linux-androideabi debug-info \
                          test uses tcp 5039 port. please reserve it");
             }

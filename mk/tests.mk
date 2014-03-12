@@ -291,7 +291,8 @@ check-stage$(1)-T-$(2)-H-$(3)-exec:     				\
         check-stage$(1)-T-$(2)-H-$(3)-crates-exec                       \
         check-stage$(1)-T-$(2)-H-$(3)-doc-crates-exec                   \
 	check-stage$(1)-T-$(2)-H-$(3)-bench-exec			\
-	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-exec \
+	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-gdb-exec \
+	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-lldb-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-codegen-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-doc-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-pretty-exec
@@ -446,7 +447,8 @@ CFAIL_RC := $(wildcard $(S)src/test/compile-fail/*.rc)
 CFAIL_RS := $(wildcard $(S)src/test/compile-fail/*.rs)
 BENCH_RS := $(wildcard $(S)src/test/bench/*.rs)
 PRETTY_RS := $(wildcard $(S)src/test/pretty/*.rs)
-DEBUGINFO_RS := $(wildcard $(S)src/test/debug-info/*.rs)
+DEBUGINFO_GDB_RS := $(wildcard $(S)src/test/debuginfo-gdb/*.rs)
+DEBUGINFO_LLDB_RS := $(wildcard $(S)src/test/debuginfo-lldb/*.rs)
 CODEGEN_RS := $(wildcard $(S)src/test/codegen/*.rs)
 CODEGEN_CC := $(wildcard $(S)src/test/codegen/*.cc)
 
@@ -461,7 +463,8 @@ CFAIL_TESTS := $(CFAIL_RC) $(CFAIL_RS)
 BENCH_TESTS := $(BENCH_RS)
 PERF_TESTS := $(PERF_RS)
 PRETTY_TESTS := $(PRETTY_RS)
-DEBUGINFO_TESTS := $(DEBUGINFO_RS)
+DEBUGINFO_GDB_TESTS := $(DEBUGINFO_GDB_RS)
+DEBUGINFO_LLDB_TESTS := $(DEBUGINFO_LLDB_RS)
 CODEGEN_TESTS := $(CODEGEN_RS) $(CODEGEN_CC)
 
 CTEST_SRC_BASE_rpass = run-pass
@@ -494,10 +497,15 @@ CTEST_BUILD_BASE_perf = perf
 CTEST_MODE_perf = run-pass
 CTEST_RUNTOOL_perf = $(CTEST_PERF_RUNTOOL)
 
-CTEST_SRC_BASE_debuginfo = debug-info
-CTEST_BUILD_BASE_debuginfo = debug-info
-CTEST_MODE_debuginfo = debug-info
-CTEST_RUNTOOL_debuginfo = $(CTEST_RUNTOOL)
+CTEST_SRC_BASE_debuginfo-gdb = debuginfo-gdb
+CTEST_BUILD_BASE_debuginfo-gdb = debuginfo-gdb
+CTEST_MODE_debuginfo-gdb = debuginfo-gdb
+CTEST_RUNTOOL_debuginfo-gdb = $(CTEST_RUNTOOL)
+
+CTEST_SRC_BASE_debuginfo-lldb = debuginfo-lldb
+CTEST_BUILD_BASE_debuginfo-lldb = debuginfo-lldb
+CTEST_MODE_debuginfo-lldb = debuginfo-lldb
+CTEST_RUNTOOL_debuginfo-lldb = $(CTEST_RUNTOOL)
 
 CTEST_SRC_BASE_codegen = codegen
 CTEST_BUILD_BASE_codegen = codegen
@@ -509,7 +517,11 @@ CTEST_RUNTOOL_codegen = $(CTEST_RUNTOOL)
 # during attempts to run those tests.
 
 ifeq ($(CFG_GDB),)
-CTEST_DISABLE_debuginfo = "no gdb found"
+CTEST_DISABLE_debuginfo-gdb = "no gdb found"
+endif
+
+ifeq ($(CFG_LLDB),)
+CTEST_DISABLE_debuginfo-lldb = "no lldb found"
 endif
 
 ifeq ($(CFG_CLANG),)
@@ -517,7 +529,7 @@ CTEST_DISABLE_codegen = "no clang found"
 endif
 
 ifeq ($(CFG_OSTYPE),apple-darwin)
-CTEST_DISABLE_debuginfo = "gdb on darwing needs root"
+CTEST_DISABLE_debuginfo-gdb = "gdb on darwing needs root"
 endif
 
 # CTEST_DISABLE_NONSELFHOST_$(TEST_GROUP), if set, will cause that
@@ -578,7 +590,8 @@ CTEST_DEPS_rfail_$(1)-T-$(2)-H-$(3) = $$(RFAIL_TESTS)
 CTEST_DEPS_cfail_$(1)-T-$(2)-H-$(3) = $$(CFAIL_TESTS)
 CTEST_DEPS_bench_$(1)-T-$(2)-H-$(3) = $$(BENCH_TESTS)
 CTEST_DEPS_perf_$(1)-T-$(2)-H-$(3) = $$(PERF_TESTS)
-CTEST_DEPS_debuginfo_$(1)-T-$(2)-H-$(3) = $$(DEBUGINFO_TESTS)
+CTEST_DEPS_debuginfo-gdb_$(1)-T-$(2)-H-$(3) = $$(DEBUGINFO_GDB_TESTS)
+CTEST_DEPS_debuginfo-lldb_$(1)-T-$(2)-H-$(3) = $$(DEBUGINFO_LLDB_TESTS)
 CTEST_DEPS_codegen_$(1)-T-$(2)-H-$(3) = $$(CODEGEN_TESTS)
 
 endef
@@ -642,7 +655,7 @@ endif
 
 endef
 
-CTEST_NAMES = rpass rpass-full rfail cfail bench perf debuginfo codegen
+CTEST_NAMES = rpass rpass-full rfail cfail bench perf debuginfo-gdb debuginfo-lldb codegen
 
 $(foreach host,$(CFG_HOST), \
  $(eval $(foreach target,$(CFG_TARGET), \
@@ -790,7 +803,8 @@ TEST_GROUPS = \
 	bench \
 	perf \
 	rmake \
-	debuginfo \
+	debuginfo-gdb \
+	debuginfo-lldb \
 	codegen \
 	doc \
 	$(foreach docname,$(DOCS),doc-$(docname)) \
