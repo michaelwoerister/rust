@@ -8,11 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use common::config;
-use common::mode_compile_fail;
-use common::mode_pretty;
-use common::mode_run_fail;
-use common::mode_run_pass;
+use common::{config, mode_compile_fail, mode_pretty, mode_run_fail, mode_run_pass};
 use errors;
 use header::TestProps;
 use header::load_props;
@@ -67,7 +63,8 @@ pub fn run_metrics(config: config, testfile: ~str, mm: &mut MetricMap) {
       mode_run_fail => run_rfail_test(&config, &props, &testfile),
       mode_run_pass => run_rpass_test(&config, &props, &testfile),
       mode_pretty => run_pretty_test(&config, &props, &testfile),
-      mode_debug_info => run_debuginfo_test(&config, &props, &testfile),
+      mode_debug_info_gdb => run_debuginfo_gdb_test(&config, &props, &testfile),
+      mode_debug_info_lldb => run_debuginfo_gdb_test(&config, &props, &testfile),
       mode_codegen => run_codegen_test(&config, &props, &testfile, mm)
     }
 }
@@ -259,7 +256,7 @@ actual:\n\
     }
 }
 
-fn run_debuginfo_test(config: &config, props: &TestProps, testfile: &Path) {
+fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
     let mut config = config {
         target_rustcflags: cleanup_debug_info_options(&config.target_rustcflags),
         host_rustcflags: cleanup_debug_info_options(&config.host_rustcflags),
