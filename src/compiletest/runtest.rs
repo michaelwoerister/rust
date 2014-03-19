@@ -63,7 +63,7 @@ pub fn run_metrics(config: config, testfile: ~str, mm: &mut MetricMap) {
       mode_run_pass => run_rpass_test(&config, &props, &testfile),
       mode_pretty => run_pretty_test(&config, &props, &testfile),
       mode_debug_info_gdb => run_debuginfo_gdb_test(&config, &props, &testfile),
-      mode_debug_info_lldb => run_debuginfo_gdb_test(&config, &props, &testfile),
+      mode_debug_info_lldb => run_debuginfo_lldb_test(&config, &props, &testfile),
       mode_codegen => run_codegen_test(&config, &props, &testfile, mm)
     }
 }
@@ -267,14 +267,15 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
     let mut cmds = props.debugger_cmds.connect("\n");
 
     // compile test file (it shoud have 'compile-flags:-g' in the header)
-    let mut proc_res = compile_test(config, props, testfile);
-    if !proc_res.status.success() {
-        fatal_ProcRes("compilation failed!".to_owned(), &proc_res);
+    let compiler_run_result = compile_test(config, props, testfile);
+    if !compiler_run_result.status.success() {
+        fatal_ProcRes("compilation failed!".to_owned(), &compiler_run_result);
     }
 
     let exe_file = make_exe_name(config, testfile);
 
     let mut proc_args;
+    let debugger_run_result;
     match config.target.as_slice() {
         "arm-linux-androideabi" => {
 
@@ -359,10 +360,12 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
                 cmdline
             };
 
-            proc_res = ProcRes {status: status,
-                               stdout: out,
-                               stderr: err,
-                               cmdline: cmdline};
+            debugger_run_result = ProcRes {
+                status: status,
+                stdout: out,
+                stderr: err,
+                cmdline: cmdline
+            };
             process.signal_kill().unwrap();
         }
 
@@ -387,13 +390,140 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
                 "-command=" + debugger_script.as_str().unwrap().to_owned(),
                 exe_file.as_str().unwrap().to_owned());
             proc_args = ProcArgs {prog: debugger(), args: debugger_opts};
-            proc_res = compose_and_run(config, testfile, proc_args, Vec::new(), "", None);
+            debugger_run_result = compose_and_run(config, testfile, proc_args, Vec::new(), "", None);
         }
     }
 
-    if !proc_res.status.success() {
+    if !debugger_run_result.status.success() {
         fatal("gdb failed to execute".to_owned());
     }
+
+    check_debugger_output(&debugger_run_result, check_lines.as_slice());
+}
+
+
+fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) {
+    let mut config = config {
+        target_rustcflags: cleanup_debug_info_options(&config.target_rustcflags),
+        host_rustcflags: cleanup_debug_info_options(&config.host_rustcflags),
+        .. config.clone()
+    };
+
+    let config = &mut config;
+    let check_lines = &props.check_lines;
+
+    // compile test file (it shoud have 'compile-flags:-g' in the header)
+    let compile_result = compile_test(config, props, testfile);
+    if !compile_result.status.success() {
+        fatal_ProcRes(~"compilation failed!", &compile_result);
+    }
+
+    let exe_file = make_exe_name(config, testfile);
+
+    // Write debugger script:
+    // We don't want to hang when calling `quit` while the process is still running
+    let mut script_str = ~"settings set auto-confirm true\n";
+
+    // Set breakpoints on every line that contains the string "#break"
+    for line in scan_for_breakpoint_lines(testfile).iter() {
+        script_str.push_str(format!("breakpoint set --line {}\n", line));
+    }
+
+    // Append the other commands
+    script_str.push_str(props.debugger_cmds.connect("\n"));
+
+    // Finally, quit the debugger
+    script_str.push_str("\nquit\n");
+
+    debug!("script_str = {}", script_str);
+    dump_output_file(config, testfile, script_str, "debugger.script");
+    let debugger_script = make_out_name(config, testfile, "debugger.script");
+
+    // Prepare the lldb_batchmode which executes the script we just generated
+    // FIXME (#9639): This needs to handle non-utf8 paths
+    let debugger_opts = vec!(~"./src/etc/lldb_batchmode.py",
+                          exe_file.as_str().unwrap().to_owned(),
+                          debugger_script.as_str().unwrap().to_owned());
+
+    let proc_args = ProcArgs {
+        prog: ~"python",
+        args: debugger_opts
+    };
+
+    // Find the path to LLDB's Python API
+    let python_path = get_lldb_python_path();
+    debug!("PYTHONPATH = {}", python_path);
+
+    // Make the lldb Python module available to the lldb_batchmode script
+    let proc_env = vec!((~"PYTHONPATH", python_path));
+
+    let debugger_run_result = compose_and_run(config, testfile, proc_args, proc_env, "", None);
+
+    if !debugger_run_result.status.success() {
+        fatal(~"lldb failed to execute");
+    }
+
+    check_debugger_output(&debugger_run_result, check_lines.as_slice());
+}
+
+// At the moment this calls the LLDB executable for every test. This should be optimized in the
+// future
+fn get_lldb_python_path() -> ~str {
+    use std::io::process::{Process, ProcessOutput};
+
+    match Process::output("lldb", [~"-P"]) {
+        Ok(ProcessOutput { status, output, error }) => {
+            if !status.success() {
+                let proc_res = ProcRes {
+                    status: status,
+                    stdout: str::from_utf8_owned(output).unwrap(),
+                    stderr: str::from_utf8_owned(error).unwrap(),
+                    cmdline: ~"lldb -P"
+                };
+
+                fatal_ProcRes(~"Couldn't retrieve LLDB's PYTHONPATH", &proc_res);
+            }
+
+            str::from_utf8_owned(output).unwrap().trim().to_owned()
+        },
+        Err(io_error) => fatal(format!("Couldn't retrieve LLDB's PYTHONPATH: {}", io_error))
+    }
+}
+
+fn scan_for_breakpoint_lines(file_path: &Path) -> ~[uint] {
+    use std::io::{BufferedReader, File};
+    let mut breakpoint_lines = ~[];
+    let mut counter = 1;
+    let mut reader = BufferedReader::new(File::open(file_path).unwrap());
+    for line in reader.lines() {
+        match line {
+            Ok(line) => if line.contains("#break") {
+                breakpoint_lines.push(counter);
+            },
+            Err(e) => {
+                fatal(format!("Error while searching for breakpoints: {}", e))
+            }
+        }
+        counter += 1;
+    }
+    return breakpoint_lines;
+}
+
+fn cleanup_debug_info_options(options: &Option<~str>) -> Option<~str> {
+    if options.is_none() {
+        return None;
+    }
+
+    // Remove options that are either unwanted (-O) or may lead to duplicates due to RUSTFLAGS.
+    let options_to_remove = [~"-O", ~"-g", ~"--debuginfo"];
+    let new_options = split_maybe_args(options).move_iter()
+                                               .filter(|x| !options_to_remove.contains(x))
+                                               .collect::<Vec<~str>>()
+                                               .connect(" ");
+    Some(new_options)
+}
+
+fn check_debugger_output(debugger_run_result: &ProcRes, check_lines: &[~str]) {
     let num_check_lines = check_lines.len();
     if num_check_lines > 0 {
         // Allow check lines to leave parts unspecified (e.g., uninitialized
@@ -405,7 +535,7 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
         // check if each line in props.check_lines appears in the
         // output (in order)
         let mut i = 0u;
-        for line in proc_res.stdout.lines() {
+        for line in debugger_run_result.stdout.lines() {
             let mut rest = line.trim();
             let mut first = true;
             let mut failed = false;
@@ -436,22 +566,8 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
         }
         if i != num_check_lines {
             fatal_ProcRes(format!("line not found in debugger output: {}",
-                                  *check_lines.get(i)), &proc_res);
+                                  check_lines.get(i).unwrap()), debugger_run_result);
         }
-    }
-
-    fn cleanup_debug_info_options(options: &Option<~str>) -> Option<~str> {
-        if options.is_none() {
-            return None;
-        }
-
-        // Remove options that are either unwanted (-O) or may lead to duplicates due to RUSTFLAGS.
-        let options_to_remove = ["-O".to_owned(), "-g".to_owned(), "--debuginfo".to_owned()];
-        let new_options = split_maybe_args(options).move_iter()
-                                                   .filter(|x| !options_to_remove.contains(x))
-                                                   .collect::<Vec<~str>>()
-                                                   .connect(" ");
-        Some(new_options)
     }
 }
 
