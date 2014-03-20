@@ -1,0 +1,45 @@
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+// compile-flags:-g
+// debugger:run
+
+// debugger:print/d noPadding8
+// check:[...]$0 = (-100, 100)
+// debugger:print noPadding16
+// check:[...]$1 = (0, 1, 2)
+// debugger:print noPadding32
+// check:[...]$2 = (3, 4.5, 5)
+// debugger:print noPadding64
+// check:[...]$3 = (6, 7.5, 8)
+
+// debugger:print internalPadding1
+// check:[...]$4 = (9, 10)
+// debugger:print internalPadding2
+// check:[...]$5 = (11, 12, 13, 14)
+
+// debugger:print paddingAtEnd
+// check:[...]$6 = (15, 16)
+
+#[allow(unused_variable)];
+
+fn main() {
+    let noPadding8: (i8, u8) = (-100, 100);
+    let noPadding16: (i16, i16, u16) = (0, 1, 2);
+    let noPadding32: (i32, f32, u32) = (3, 4.5, 5);
+    let noPadding64: (i64, f64, u64) = (6, 7.5, 8);
+
+    let internalPadding1: (i16, i32) = (9, 10);
+    let internalPadding2: (i16, i32, u32, u64) = (11, 12, 13, 14);
+
+    let paddingAtEnd: (i32, i16) = (15, 16);
+
+	(); // #break
+}
