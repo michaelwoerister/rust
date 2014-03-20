@@ -1,0 +1,291 @@
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+// compile-flags:-g
+// debugger:run
+
+// debugger:print a
+// check:[...]$0 = 1
+// debugger:print b
+// check:[...]$1 = false
+// debugger:continue
+
+// debugger:print a
+// check:[...]$2 = 2
+// debugger:print b
+// check:[...]$3 = 3
+// debugger:print c
+// check:[...]$4 = 4
+// debugger:continue
+
+// debugger:print a
+// check:[...]$5 = 5
+// debugger:print b
+// check:[...]$6 = (6, 7)
+// debugger:continue
+
+// debugger:print h
+// check:[...]$7 = 8
+// debugger:print i
+// check:[...]$8 = (a = 9, b = 10)
+// debugger:print j
+// check:[...]$9 = 11
+// debugger:continue
+
+// debugger:print k
+// check:[...]$10 = 12
+// debugger:print l
+// check:[...]$11 = 13
+// debugger:continue
+
+// debugger:print m
+// check:[...]$12 = 14
+// debugger:print n
+// check:[...]$13 = 16
+// debugger:continue
+
+// debugger:print o
+// check:[...]$14 = 18
+// debugger:continue
+
+// debugger:print p
+// check:[...]$15 = 19
+// debugger:print q
+// check:[...]$16 = 20
+// debugger:print r
+// check:[...]$17 = (a = 21, b = 22)
+// debugger:continue
+
+// debugger:print s
+// check:[...]$18 = 24
+// debugger:print t
+// check:[...]$19 = 23
+// debugger:continue
+
+// debugger:print u
+// check:[...]$20 = 25
+// debugger:print v
+// check:[...]$21 = 26
+// debugger:print w
+// check:[...]$22 = 27
+// debugger:print x
+// check:[...]$23 = 28
+// debugger:print y
+// check:[...]$24 = 29
+// debugger:print z
+// check:[...]$25 = 30
+// debugger:print ae
+// check:[...]$26 = 31
+// debugger:print oe
+// check:[...]$27 = 32
+// debugger:print ue
+// check:[...]$28 = 33
+// debugger:continue
+
+// debugger:print aa
+// check:[...]$29 = (34, 35)
+// debugger:continue
+
+// debugger:print bb
+// check:[...]$30 = (36, 37)
+// debugger:continue
+
+// debugger:print cc
+// check:[...]$31 = 38
+// debugger:continue
+
+// debugger:print dd
+// check:[...]$32 = (40, 41, 42)
+// debugger:continue
+
+// debugger:print *ee
+// check:[...]$33 = (43, 44, 45)
+// debugger:continue
+
+// debugger:print *ff
+// check:[...]$34 = 46
+// debugger:print gg
+// check:[...]$35 = (47, 48)
+// debugger:continue
+
+// debugger:print *hh
+// check:[...]$36 = 50
+// debugger:continue
+
+// debugger:print ii
+// check:[...]$37 = 51
+// debugger:continue
+
+// debugger:print *jj
+// check:[...]$38 = 52
+// debugger:continue
+
+// debugger:print kk
+// check:[...]$39 = 53
+// debugger:print ll
+// check:[...]$40 = 54
+// debugger:continue
+
+// debugger:print mm
+// check:[...]$41 = 55
+// debugger:print *nn
+// check:[...]$42 = 56
+// debugger:continue
+
+// debugger:print oo
+// check:[...]$43 = 57
+// debugger:print pp
+// check:[...]$44 = 58
+// debugger:print qq
+// check:[...]$45 = 59
+// debugger:continue
+
+// debugger:print rr
+// check:[...]$46 = 60
+// debugger:print ss
+// check:[...]$47 = 61
+// debugger:print tt
+// check:[...]$48 = 62
+// debugger:continue
+
+#[allow(unused_variable)];
+
+struct Struct {
+    a: i64,
+    b: i32
+}
+
+enum Univariant {
+    Unit(i32)
+}
+
+struct TupleStruct (f64, int);
+
+
+fn simple_tuple((a, b): (int, bool)) {
+    (); // #break
+}
+
+fn nested_tuple((a, (b, c)): (int, (u16, u16))) {
+    (); // #break
+}
+
+fn destructure_only_first_level((a, b): (int, (u32, u32))) {
+    (); // #break
+}
+
+fn struct_as_tuple_element((h, i, j): (i16, Struct, i16)) {
+    (); // #break
+}
+
+fn struct_pattern(Struct { a: k, b: l }: Struct) {
+    (); // #break
+}
+
+fn ignored_tuple_element((m, _, n): (int, u16, i32)) {
+    (); // #break
+}
+
+fn ignored_struct_field(Struct { b: o, .. }: Struct) {
+    (); // #break
+}
+
+fn one_struct_destructured_one_not((Struct { a: p, b: q }, r): (Struct, Struct)) {
+    (); // #break
+}
+
+fn different_order_of_struct_fields(Struct { b: s, a: t }: Struct ) {
+    (); // #break
+}
+
+fn complex_nesting(((u,   v  ), ((w,   (x,   Struct { a: y, b: z})), Struct { a: ae, b: oe }), ue ):
+                   ((i16, i32), ((i64, (i32, Struct,             )), Struct                 ), u16))
+{
+    (); // #break
+}
+
+fn managed_box(&aa: &(int, int)) {
+    (); // #break
+}
+
+fn borrowed_pointer(&bb: &(int, int)) {
+    (); // #break
+}
+
+fn contained_borrowed_pointer((&cc, _): (&int, int)) {
+    (); // #break
+}
+
+fn unique_pointer(~dd: ~(int, int, int)) {
+    (); // #break
+}
+
+fn ref_binding(ref ee: (int, int, int)) {
+    (); // #break
+}
+
+fn ref_binding_in_tuple((ref ff, gg): (int, (int, int))) {
+    (); // #break
+}
+
+fn ref_binding_in_struct(Struct { b: ref hh, .. }: Struct) {
+    (); // #break
+}
+
+fn univariant_enum(Unit(ii): Univariant) {
+    (); // #break
+}
+
+fn univariant_enum_with_ref_binding(Unit(ref jj): Univariant) {
+    (); // #break
+}
+
+fn tuple_struct(TupleStruct(kk, ll): TupleStruct) {
+    (); // #break
+}
+
+fn tuple_struct_with_ref_binding(TupleStruct(mm, ref nn): TupleStruct) {
+    (); // #break
+}
+
+fn multiple_arguments((oo, pp): (int, int), qq : int) {
+    (); // #break
+}
+
+fn main() {
+    simple_tuple((1, false));
+    nested_tuple((2, (3, 4)));
+    destructure_only_first_level((5, (6, 7)));
+    struct_as_tuple_element((8, Struct { a: 9, b: 10 }, 11));
+    struct_pattern(Struct { a: 12, b: 13 });
+    ignored_tuple_element((14, 15, 16));
+    ignored_struct_field(Struct { a: 17, b: 18 });
+    one_struct_destructured_one_not((Struct { a: 19, b: 20 }, Struct { a: 21, b: 22 }));
+    different_order_of_struct_fields(Struct { a: 23, b: 24 });
+    complex_nesting(((25, 26), ((27, (28, Struct { a: 29, b: 30})), Struct { a: 31, b: 32 }), 33));
+    managed_box(&(34, 35));
+    borrowed_pointer(&(36, 37));
+    contained_borrowed_pointer((&38, 39));
+    unique_pointer(~(40, 41, 42));
+    ref_binding((43, 44, 45));
+    ref_binding_in_tuple((46, (47, 48)));
+    ref_binding_in_struct(Struct { a: 49, b: 50 });
+    univariant_enum(Unit(51));
+    univariant_enum_with_ref_binding(Unit(52));
+    tuple_struct(TupleStruct(53.0, 54));
+    tuple_struct_with_ref_binding(TupleStruct(55.0, 56));
+    multiple_arguments((57, 58), 59);
+
+    fn nested_function(rr: int, (ss, tt): (int, int)) {
+        (); // #break
+    }
+
+    nested_function(60, (61, 62));
+}
