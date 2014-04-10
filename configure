@@ -467,6 +467,13 @@ probe CFG_XELATEX          xelatex
 probe CFG_LUALATEX         lualatex
 probe CFG_GDB              gdb
 probe CFG_LLDB             lldb
+
+if [ ! -z "$CFG_LLDB" ]
+then
+    CFG_LLDB_PYTHON_DIR=$($CFG_LLDB -P)
+    putvar CFG_LLDB_PYTHON_DIR
+fi
+
 if [ "$CFG_OSTYPE" = "unknown-linux-gnu" ]
 then
     probe CFG_PAXCTL           paxctl /sbin/paxctl
