@@ -403,6 +403,10 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
 
 
 fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) {
+    if config.lldb_python_dir.is_none() {
+        fatal(~"Can't run LLDB test because LLDB's python path is not set.");
+    }
+
     let mut config = config {
         target_rustcflags: cleanup_debug_info_options(&config.target_rustcflags),
         host_rustcflags: cleanup_debug_info_options(&config.host_rustcflags),
@@ -450,12 +454,8 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
         args: debugger_opts
     };
 
-    // Find the path to LLDB's Python API
-    let python_path = get_lldb_python_path();
-    debug!("PYTHONPATH = {}", python_path);
-
     // Make the lldb Python module available to the lldb_batchmode script
-    let proc_env = vec!((~"PYTHONPATH", python_path));
+    let proc_env = vec!((~"PYTHONPATH", config.lldb_python_dir.clone().unwrap()));
 
     let debugger_run_result = compose_and_run(config, testfile, proc_args, proc_env, "", None);
 
@@ -468,27 +468,27 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
 
 // At the moment this calls the LLDB executable for every test. This should be optimized in the
 // future
-fn get_lldb_python_path() -> ~str {
-    use std::io::process::{Process, ProcessOutput};
+// fn get_lldb_python_dir() -> ~str {
+//     use std::io::process::{Process, ProcessOutput};
 
-    match Process::output("lldb", [~"-P"]) {
-        Ok(ProcessOutput { status, output, error }) => {
-            if !status.success() {
-                let proc_res = ProcRes {
-                    status: status,
-                    stdout: str::from_utf8_owned(output).unwrap(),
-                    stderr: str::from_utf8_owned(error).unwrap(),
-                    cmdline: ~"lldb -P"
-                };
+//     match Process::output("lldb", [~"-P"]) {
+//         Ok(ProcessOutput { status, output, error }) => {
+//             if !status.success() {
+//                 let proc_res = ProcRes {
+//                     status: status,
+//                     stdout: str::from_utf8_owned(output.move_iter().collect()).unwrap(),
+//                     stderr: str::from_utf8_owned(error.move_iter().collect()).unwrap(),
+//                     cmdline: ~"lldb -P"
+//                 };
 
-                fatal_ProcRes(~"Couldn't retrieve LLDB's PYTHONPATH", &proc_res);
-            }
+//                 fatal_ProcRes(~"Couldn't retrieve LLDB's PYTHONPATH", &proc_res);
+//             }
 
-            str::from_utf8_owned(output).unwrap().trim().to_owned()
-        },
-        Err(io_error) => fatal(format!("Couldn't retrieve LLDB's PYTHONPATH: {}", io_error))
-    }
-}
+//             str::from_utf8_owned(output.move_iter().collect()).unwrap().trim().to_owned()
+//         },
+//         Err(io_error) => fatal(format!("Couldn't retrieve LLDB's PYTHONPATH: {}", io_error))
+//     }
+// }
 
 fn scan_for_breakpoint_lines(file_path: &Path) -> ~[uint] {
     use std::io::{BufferedReader, File};

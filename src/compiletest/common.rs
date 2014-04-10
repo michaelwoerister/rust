@@ -102,6 +102,9 @@ pub struct config {
     // status whether android device available or not
     pub adb_device_status: bool,
 
+    // the path containing LLDB's Python module
+    pub lldb_python_dir: Option<~str>,
+
     // Explain what's going on
     pub verbose: bool
 
