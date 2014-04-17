@@ -14,9 +14,10 @@ import os
 import sys
 import threading
 import re
+import time
 
 # Set this to True for additional output
-DEBUG_OUTPUT = False
+DEBUG_OUTPUT = True
 
 def print_debug(s):
   '''Print something if DEBUG_OUTPUT is True'''
@@ -28,7 +29,7 @@ def print_debug(s):
 # breakpoint location is selected
 def breakpoint_callback(frame, bp_loc, dict):
   '''Called whenever a breakpoint is hit'''
-  print_debug("breakpoint hit!")
+  print("Hit breakpoint " + str(bp_loc))
 
   # Select the frame and the thread containing it
   frame.thread.process.SetSelectedThread(frame.thread)
@@ -40,11 +41,13 @@ def breakpoint_callback(frame, bp_loc, dict):
 
 # This is a list of breakpoints that are not registered with the breakpoint callback. The list is
 # populated by the breakpoint listener and checked/emptied whenever a command has been executed
-breakpoints = []
+new_breakpoints = []
+registered_breakpoints = set()
 
 def execute_command(ci, cmd):
   '''Executes a single CLI command'''
-  global breakpoints
+  global new_breakpoints
+  global registered_breakpoints
 
   res = lldb.SBCommandReturnObject()
   print(cmd)
@@ -56,16 +59,20 @@ def execute_command(ci, cmd):
 
       # If the command introduced any breakpoints, make sure to register them with the breakpoint
       # callback
-      while len(breakpoints) > 0:
+      while len(new_breakpoints) > 0:
         res.Clear()
-        breakpoint_id = breakpoints.pop()
-        print_debug("registering breakpoint callback, id = " + str(breakpoint_id))
-        ci.HandleCommand('breakpoint command add -F breakpoint_callback ' + str(breakpoint_id), res)
+        breakpoint_id = new_breakpoints.pop()
 
-        if res.Succeeded():
-          print_debug("registering breakpoint callback, id = " + str(breakpoint_id))
+        if breakpoint_id in registered_breakpoints:
+          print_debug("breakpoint with id " + str(breakpoint_id) + " is already registered. Ignoring.")
         else:
-          print_debug("Error while trying to register breakpoint callback")
+          print_debug("registering breakpoint callback, id = " + str(breakpoint_id))
+          ci.HandleCommand('breakpoint command add -F breakpoint_callback ' + str(breakpoint_id), res)
+          if res.Succeeded():
+            print_debug("successfully registered breakpoint callback, id = " + str(breakpoint_id))
+            registered_breakpoints.add(breakpoint_id)
+          else:
+            print("Error while trying to register breakpoint callback, id = " + str(breakpoint_id))
   else:
       print(res.GetError())
 
@@ -81,10 +88,10 @@ def start_breakpoint_listener(target):
       while True:
         if listener.WaitForEvent(120, event):
           if lldb.SBBreakpoint.EventIsBreakpointEvent(event) and lldb.SBBreakpoint.GetBreakpointEventTypeFromEvent(event) == lldb.eBreakpointEventTypeAdded:
-            global breakpoints
+            global new_breakpoints
             breakpoint = lldb.SBBreakpoint.GetBreakpointFromEvent(event)
             print_debug("breakpoint added, id = " + str(breakpoint.id))
-            breakpoints.append(breakpoint.id)
+            new_breakpoints.append(breakpoint.id)
     except:
       print_debug("breakpoint listener shutting down")
 
@@ -137,6 +144,7 @@ try:
     command = line.strip()
     if command != '':
       execute_command(ci, command)
+      # time.sleep(1)
 
 except IOError as e:
   print("Could not read debugging script '%s'." % script_path, file = sys.stderr)
