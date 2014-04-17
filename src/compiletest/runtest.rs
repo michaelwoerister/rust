@@ -426,7 +426,7 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
 
     // Write debugger script:
     // We don't want to hang when calling `quit` while the process is still running
-    let mut script_str = ~"settings set auto-confirm true\n";
+    let mut script_str = StrBuf::from_str("settings set auto-confirm true\n");
 
     // Set breakpoints on every line that contains the string "#break"
     for line in scan_for_breakpoint_lines(testfile).iter() {
@@ -440,7 +440,7 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
     script_str.push_str("\nquit\n");
 
     debug!("script_str = {}", script_str);
-    dump_output_file(config, testfile, script_str, "debugger.script");
+    dump_output_file(config, testfile, script_str.into_owned(), "debugger.script");
     let debugger_script = make_out_name(config, testfile, "debugger.script");
 
     // Prepare the lldb_batchmode which executes the script we just generated
