@@ -14,7 +14,6 @@ import os
 import sys
 import threading
 import re
-import time
 
 # Set this to True for additional output
 DEBUG_OUTPUT = True
@@ -24,6 +23,9 @@ def print_debug(s):
   global DEBUG_OUTPUT
   if DEBUG_OUTPUT:
     print("DEBUG: " + str(s))
+
+def normalize_whitespace(s):
+  return re.sub("\s+", " ", s)
 
 # This callback is registered with every breakpoint and makes sure that the frame containing the
 # breakpoint location is selected
@@ -55,7 +57,7 @@ def execute_command(ci, cmd):
 
   if res.Succeeded():
       if res.HasResult():
-          print(res.GetOutput(), end = '')
+          print(normalize_whitespace(res.GetOutput()), end = '\n')
 
       # If the command introduced any breakpoints, make sure to register them with the breakpoint
       # callback
@@ -144,7 +146,6 @@ try:
     command = line.strip()
     if command != '':
       execute_command(ci, command)
-      # time.sleep(1)
 
 except IOError as e:
   print("Could not read debugging script '%s'." % script_path, file = sys.stderr)
