@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
 // compile-flags:-g
 
 // debugger:type format add -f decimal char
@@ -102,5 +101,8 @@ fn main() {
     let f64_box: ~f64 = ~3.5;
     let f64_ref: &f64 = f64_box;
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }
+

@@ -8,33 +8,31 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
+// TODO: 32bit pointers...
 
 // compile-flags:-g
 // debugger:run
 
 // debugger:print some
-// check:[...]$0 = {0x12345678}
+// check:[...]$0 = { = 0x[...]12345678 }
 
 // debugger:print none
-// check:[...]$1 = {0x0}
+// check:[...]$1 = { = 0x[...]00000000 }
 
 // debugger:print full
-// check:[...]$2 = {454545, 0x87654321, 9988}
+// check:[...]$2 = { = 454545 = 0x[...]87654321 = 9988 }
 
 // debugger:print empty->discr
-// check:[...]$3 = (int *) 0x0
+// check:[...]$3 = 0x0000000000000000
 
 // debugger:print droid
-// check:[...]$4 = {id = 675675, range = 10000001, internals = 0x43218765}
-
+// check:[...]$4 = { id = 675675 range = 10000001 internals = 0x[...]43218765 }
 // debugger:print void_droid->internals
-// check:[...]$5 = (int *) 0x0
+// check:[...]$5 = 0x0000000000000000
 
 // debugger:continue
 
-#[feature(struct_variant)];
+#![feature(struct_variant)];
 
 // If a struct has exactly two variants, one of them is empty, and the other one
 // contains a non-nullable pointer, then this value is used as the discriminator.
@@ -84,5 +82,7 @@ fn main() {
 
     let void_droid: &NamedFieldsRepr = unsafe { std::cast::transmute(&Void) };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

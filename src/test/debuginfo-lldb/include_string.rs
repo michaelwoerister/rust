@@ -11,15 +11,16 @@
 // compile-flags:-g
 // debugger:run
 
-// debugger:print string1
-// check:[...]$0 = [...]"some text to include in another file as string 1", length = 48)
-// debugger:print string2
-// check:[...]$1 = [...]"some text to include in another file as string 2", length = 48)
-// debugger:print string3
-// check:[...]$2 = [...]"some text to include in another file as string 3", length = 48)
+// debugger:print string1.length
+// check:[...]$0 = 48
+// debugger:print string2.length
+// check:[...]$1 = 49
+// debugger:print string3.length
+// check:[...]$2 = 50
+
 // debugger:continue
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 // This test case makes sure that debug info does not ICE when include_str is
 // used multiple times (see issue #11322).
@@ -28,5 +29,8 @@ fn main() {
     let string1 = include_str!("text-to-include-1.txt");
     let string2 = include_str!("text-to-include-2.txt");
     let string3 = include_str!("text-to-include-3.txt");
-    (); // #break
+
+    zzz(); // #break
 }
+
+fn zzz() { () }

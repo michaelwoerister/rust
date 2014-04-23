@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
@@ -19,7 +16,7 @@
 // debugger:print *t1
 // check:[...]$1 = 2.5
 // debugger:print ret
-// check:[...]$2 = ((1, 2.5), (2.5, 1))
+// check:[...]$2 = { = (1, 2.5) = (2.5, 1) }
 // debugger:continue
 
 // debugger:print *t0
@@ -27,7 +24,7 @@
 // debugger:print *t1
 // check:[...]$4 = 4
 // debugger:print ret
-// check:[...]$5 = ((3.5, 4), (4, 3.5))
+// check:[...]$5 = { = (3.5, 4) = (4, 3.5) }
 // debugger:continue
 
 // debugger:print *t0
@@ -35,7 +32,7 @@
 // debugger:print *t1
 // check:[...]$7 = (a = 6, b = 7.5)
 // debugger:print ret
-// check:[...]$8 = ((5, (a = 6, b = 7.5)), ((a = 6, b = 7.5), 5))
+// check:[...]$8 = { = { = 5 = (a = 6, b = 7.5) } = { = (a = 6, b = 7.5) = 5 } }
 // debugger:continue
 
 #[deriving(Clone)]

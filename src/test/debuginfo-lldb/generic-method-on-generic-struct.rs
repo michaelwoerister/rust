@@ -8,15 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issue
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // STACK BY REF
 // debugger:print *self
-// check:[...]$0 = (x = (8888, -8888))
+// check:[...]$0 = { x = (8888, -8888) }
 // debugger:print arg1
 // check:[...]$1 = -1
 // debugger:print/d arg2
@@ -25,7 +22,7 @@
 
 // STACK BY VAL
 // debugger:print self
-// check:[...]$3 = (x = (8888, -8888))
+// check:[...]$3 = { x = (8888, -8888) }
 // debugger:print arg1
 // check:[...]$4 = -3
 // debugger:print arg2

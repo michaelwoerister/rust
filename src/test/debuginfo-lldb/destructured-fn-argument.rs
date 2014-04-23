@@ -155,7 +155,7 @@
 // check:[...]$48 = 62
 // debugger:continue
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct Struct {
     a: i64,
@@ -170,93 +170,93 @@ struct TupleStruct (f64, int);
 
 
 fn simple_tuple((a, b): (int, bool)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn nested_tuple((a, (b, c)): (int, (u16, u16))) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn destructure_only_first_level((a, b): (int, (u32, u32))) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn struct_as_tuple_element((h, i, j): (i16, Struct, i16)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn struct_pattern(Struct { a: k, b: l }: Struct) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn ignored_tuple_element((m, _, n): (int, u16, i32)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn ignored_struct_field(Struct { b: o, .. }: Struct) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn one_struct_destructured_one_not((Struct { a: p, b: q }, r): (Struct, Struct)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn different_order_of_struct_fields(Struct { b: s, a: t }: Struct ) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn complex_nesting(((u,   v  ), ((w,   (x,   Struct { a: y, b: z})), Struct { a: ae, b: oe }), ue ):
                    ((i16, i32), ((i64, (i32, Struct,             )), Struct                 ), u16))
 {
-    (); // #break
+    zzz(); // #break
 }
 
 fn managed_box(&aa: &(int, int)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn borrowed_pointer(&bb: &(int, int)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn contained_borrowed_pointer((&cc, _): (&int, int)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn unique_pointer(~dd: ~(int, int, int)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn ref_binding(ref ee: (int, int, int)) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn ref_binding_in_tuple((ref ff, gg): (int, (int, int))) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn ref_binding_in_struct(Struct { b: ref hh, .. }: Struct) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn univariant_enum(Unit(ii): Univariant) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn univariant_enum_with_ref_binding(Unit(ref jj): Univariant) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn tuple_struct(TupleStruct(kk, ll): TupleStruct) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn tuple_struct_with_ref_binding(TupleStruct(mm, ref nn): TupleStruct) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn multiple_arguments((oo, pp): (int, int), qq : int) {
-    (); // #break
+    zzz(); // #break
 }
 
 fn main() {
@@ -284,8 +284,10 @@ fn main() {
     multiple_arguments((57, 58), 59);
 
     fn nested_function(rr: int, (ss, tt): (int, int)) {
-        (); // #break
+        zzz(); // #break
     }
 
     nested_function(60, (61, 62));
 }
+
+fn zzz() { () }

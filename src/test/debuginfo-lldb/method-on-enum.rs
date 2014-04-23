@@ -8,15 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // STACK BY REF
 // debugger:print *self
-// check:[...]$0 = {{Variant2, [...]}, {Variant2, 117901063}}
+// check:[...]$0 = { = (Variant2, [...]) = (Variant2, 117901063) }
 // debugger:print arg1
 // check:[...]$1 = -1
 // debugger:print arg2
@@ -25,7 +22,7 @@
 
 // STACK BY VAL
 // debugger:print self
-// check:[...]$3 = {{Variant2, [...]}, {Variant2, 117901063}}
+// check:[...]$3 = { = (Variant2, [...]) = (Variant2, 117901063) }
 // debugger:print arg1
 // check:[...]$4 = -3
 // debugger:print arg2
@@ -34,7 +31,7 @@
 
 // OWNED BY REF
 // debugger:print *self
-// check:[...]$6 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// check:[...]$6 = { = (Variant1, x = 1799, y = 1799) = (Variant1, [...]) }
 // debugger:print arg1
 // check:[...]$7 = -5
 // debugger:print arg2
@@ -43,7 +40,7 @@
 
 // OWNED BY VAL
 // debugger:print self
-// check:[...]$9 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// check:[...]$9 = { = (Variant1, x = 1799, y = 1799) = (Variant1, [...]) }
 // debugger:print arg1
 // check:[...]$10 = -7
 // debugger:print arg2
@@ -52,7 +49,7 @@
 
 // OWNED MOVED
 // debugger:print *self
-// check:[...]$12 = {{Variant1, x = 1799, y = 1799}, {Variant1, [...]}}
+// check:[...]$12 = { = (Variant1, x = 1799, y = 1799) = (Variant1, [...]) }
 // debugger:print arg1
 // check:[...]$13 = -9
 // debugger:print arg2

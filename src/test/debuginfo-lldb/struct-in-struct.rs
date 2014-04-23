@@ -8,22 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // debugger:print three_simple_structs
-// check:[...]$0 = (x = (x = 1), y = (x = 2), z = (x = 3))
+// check:[...]$0 = { x = (x = 1) y = (x = 2) z = (x = 3) }
 
 // debugger:print internal_padding_parent
-// check:[...]$1 = (x = (x = 4, y = 5), y = (x = 6, y = 7), z = (x = 8, y = 9))
+// check:[...]$1 = { x = (x = 4, y = 5) y = (x = 6, y = 7) z = (x = 8, y = 9) }
 
 // debugger:print padding_at_end_parent
-// check:[...]$2 = (x = (x = 10, y = 11), y = (x = 12, y = 13), z = (x = 14, y = 15))
+// check:[...]$2 = { x = (x = 10, y = 11) y = (x = 12, y = 13) z = (x = 14, y = 15) }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct Simple {
     x: i32
@@ -138,5 +135,7 @@ fn main() {
         }
     };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

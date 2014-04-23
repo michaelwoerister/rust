@@ -8,27 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
 // ignore-tidy-linelength
 
 // compile-flags:-g
 // debugger:run
 
 // debugger:print case1
-// check:[...]$0 = ((Case1, a = 0, b = 31868, c = 31868, d = 31868, e = 31868), (Case1, a = 0, b = 2088533116, c = 2088533116), (Case1, a = 0, b = 8970181431921507452))
+// check:[...]$0 = { = (Case1, a = 0, b = 31868, c = 31868, d = 31868, e = 31868) = (Case1, a = 0, b = 2088533116, c = 2088533116) = (Case1, a = 0, b = 8970181431921507452) }
 
 // debugger:print case2
-// check:[...]$1 = ((Case2, a = 0, b = 4369, c = 4369, d = 4369, e = 4369), (Case2, a = 0, b = 286331153, c = 286331153), (Case2, a = 0, b = 1229782938247303441))
+// check:[...]$1 = { = (Case2, a = 0, b = 4369, c = 4369, d = 4369, e = 4369) = (Case2, a = 0, b = 286331153, c = 286331153) = (Case2, a = 0, b = 1229782938247303441) }
 
 // debugger:print case3
-// check:[...]$2 = ((Case3, a = 0, b = 22873, c = 22873, d = 22873, e = 22873), (Case3, a = 0, b = 1499027801, c = 1499027801), (Case3, a = 0, b = 6438275382588823897))
+// check:[...]$2 = { = (Case3, a = 0, b = 22873, c = 22873, d = 22873, e = 22873) = (Case3, a = 0, b = 1499027801, c = 1499027801) = (Case3, a = 0, b = 6438275382588823897) }
 
 // debugger:print univariant
 // check:[...]$3 = (a = -1)
 
-#[allow(unused_variable)];
-#[feature(struct_variant)];
+#![allow(unused_variable)];
+#![feature(struct_variant)];
 
 // The first element is to ensure proper alignment, irrespective of the machines word size. Since
 // the size of the discriminant value is machine dependent, this has be taken into account when
@@ -69,5 +67,7 @@ fn main() {
 
     let univariant = TheOnlyCase { a: -1 };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

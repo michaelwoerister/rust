@@ -12,7 +12,7 @@
 // LLDB's expression parsing is just not as robust as GDB's.
 // ignore-test
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)];
 
 // compile-flags:-g
 // debugger:run

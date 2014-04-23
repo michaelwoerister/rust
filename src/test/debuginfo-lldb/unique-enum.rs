@@ -8,25 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
 // debugger:run
 
 // debugger:print *the_a
-// check:[...]$0 = ((TheA, x = 0, y = 8970181431921507452), (TheA, 0, 2088533116, 2088533116))
+// check:[...]$0 = { = (TheA, x = 0, y = 8970181431921507452) = (TheA, 0, 2088533116, 2088533116) }
 
 // debugger:print *the_b
-// check:[...]$1 = ((TheB, x = 0, y = 1229782938247303441), (TheB, 0, 286331153, 286331153))
+// check:[...]$1 = { = (TheB, x = 0, y = 1229782938247303441) = (TheB, 0, 286331153, 286331153) }
 
 // debugger:print *univariant
 // check:[...]$2 = (123234)
 
-#[allow(unused_variable)];
-#[feature(struct_variant)];
+#![allow(unused_variable)];
+#![feature(struct_variant)];
 
 // The first element is to ensure proper alignment, irrespective of the machines word size. Since
 // the size of the discriminant value is machine dependent, this has be taken into account when
@@ -61,5 +58,7 @@ fn main() {
 
     let univariant = ~TheOnlyCase(123234);
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

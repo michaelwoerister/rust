@@ -8,24 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // ignore-tidy-linelength
 
 // compile-flags:-g
 // debugger:run
 
 // debugger:print case1
-// check:[...]$0 = ((Case1, 0, (x = 2088533116, y = 2088533116, z = 31868)), (Case1, 0, 8970181431921507452, 31868))
-
+// check:[...]$0 = { = { = Case1 = 0 = (x = 2088533116, y = 2088533116, z = 31868) } = (Case1, 0, 8970181431921507452, 31868) }
 // debugger:print case2
-// check:[...]$1 = ((Case2, 0, (x = 286331153, y = 286331153, z = 4369)), (Case2, 0, 1229782938247303441, 4369))
+// check:[...]$1 = { = { = Case2 = 0 = (x = 286331153, y = 286331153, z = 4369) } = (Case2, 0, 1229782938247303441, 4369) }
 
 // debugger:print univariant
-// check:[...]$2 = ((x = 123, y = 456, z = 789))
+// check:[...]$2 = { = (x = 123, y = 456, z = 789) }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct Struct {
     x: u32,
@@ -65,5 +61,7 @@ fn main() {
 
     let univariant = TheOnlyCase(Struct { x: 123, y: 456, z: 789 });
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

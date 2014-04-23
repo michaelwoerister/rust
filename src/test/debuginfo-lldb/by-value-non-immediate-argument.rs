@@ -31,11 +31,11 @@
 // check:[...]$5 = (11.5, 12.5, 13, 14)
 // debugger:continue
 
-// d ebugger:print x
-// c heck:[...]$6 = ((Case1, x = 0, y = 8970181431921507452), (Case1, 0, 2088533116, 2088533116))
-// d ebugger:continue
+// debugger:print x
+// check:[...]$6 = { = (Case1, x = 0, y = 8970181431921507452) = (Case1, 0, 2088533116, 2088533116) }
+// debugger:continue
 
-#[feature(struct_variant)];
+#![feature(struct_variant)];
 
 #[deriving(Clone)]
 struct Struct {

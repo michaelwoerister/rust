@@ -17,9 +17,9 @@
 // debugger:print string1.length
 // check:$1 = 48
 // debugger:print string2.length
-// check:$2 = 48
+// check:$2 = 49
 // debugger:print string3.length
-// check:$3 = 48
+// check:$3 = 50
 // debugger:continue
 
 #![allow(unused_variable)]

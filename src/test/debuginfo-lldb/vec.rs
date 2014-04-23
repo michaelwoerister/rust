@@ -13,10 +13,12 @@
 // debugger:print a
 // check:[...]$0 = ([0] = 1, [1] = 2, [2] = 3)
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 fn main() {
     let a = [1, 2, 3];
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

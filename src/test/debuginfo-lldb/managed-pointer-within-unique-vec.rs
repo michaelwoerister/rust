@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)];
 
 // compile-flags:-g
 // debugger:run
@@ -31,5 +31,7 @@ fn main() {
 
     let unique: ~[@i64] = ~[@10, @11, @12, @13];
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

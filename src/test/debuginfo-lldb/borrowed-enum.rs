@@ -8,23 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // debugger:print *the_a_ref
-// check:[...]$0 = {{TheA, x = 0, y = 8970181431921507452}, {TheA, 0, 2088533116, 2088533116}}
-
+// check:[...]$0 = { = (TheA, x = 0, y = 8970181431921507452) = (TheA, 0, 2088533116, 2088533116) }
 // debugger:print *the_b_ref
-// check:[...]$1 = {{TheB, x = 0, y = 1229782938247303441}, {TheB, 0, 286331153, 286331153}}
-
+// check:[...]$1 = { = (TheB, x = 0, y = 1229782938247303441) = (TheB, 0, 286331153, 286331153) }
 // debugger:print *univariant_ref
-// check:[...]$2 = {4820353753753434}
+// check:[...]$2 = (4820353753753434)
 
-#[allow(unused_variable)];
-#[feature(struct_variant)];
+#![allow(unused_variable)];
+#![feature(struct_variant)];
 
 // The first element is to ensure proper alignment, irrespective of the machines word size. Since
 // the size of the discriminant value is machine dependent, this has be taken into account when

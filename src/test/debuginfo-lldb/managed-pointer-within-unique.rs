@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)];
 
 // compile-flags:-g
 // debugger:run
@@ -22,7 +22,7 @@
 // debugger:print managed_within_unique->y->val
 // check:[...]$2 = -4
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct ContainsManaged {
     x: int,
@@ -34,5 +34,7 @@ fn main() {
 
     let managed_within_unique = ~ContainsManaged { x: -3, y: @-4 };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

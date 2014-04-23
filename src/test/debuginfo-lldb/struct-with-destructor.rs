@@ -8,24 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 // debugger:print simple
 // check:[...]$0 = (x = 10, y = 20)
 
 // debugger:print noDestructor
-// check:[...]$1 = (a = (x = 10, y = 20), guard = -1)
+// check:[...]$1 = { a = (x = 10, y = 20) guard = -1 }
 
 // debugger:print withDestructor
-// check:[...]$2 = (a = (x = 10, y = 20), guard = -1)
+// check:[...]$2 = { a = (x = 10, y = 20) guard = -1 }
 
 // debugger:print nested
-// check:[...]$3 = (a = (a = (x = 7890, y = 9870)))
+// check:[...]$3 = { a = { a = (x = 7890, y = 9870) } }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct NoDestructor {
     x: i32,
@@ -120,5 +117,7 @@ fn main() {
     //                            <-------NestedOuter-------->
     let nested = NestedOuter { a: NestedInner { a: WithDestructor { x: 7890, y: 9870 } } };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

@@ -14,27 +14,24 @@
 // debugger:print tuple_interior_padding
 // check:[...]$0 = (0, OneHundred)
 
-// LLDB multiline
-// d ebugger:print tuple_padding_at_end
-// c heck:[...]$1 = ((1, OneThousand), 2)
-
+// debugger:print tuple_padding_at_end
+// check:[...]$1 = { = (1, OneThousand) = 2 }
 // debugger:print tuple_different_enums
-// check:[...]$1 = (OneThousand, MountainView, OneMillion, Vienna)
+// check:[...]$2 = (OneThousand, MountainView, OneMillion, Vienna)
 
 // debugger:print padded_struct
-// check:[...]$2 = (a = 3, b = OneMillion, c = 4, d = Toronto, e = 5)
+// check:[...]$3 = (a = 3, b = OneMillion, c = 4, d = Toronto, e = 5)
 
 // debugger:print packed_struct
-// check:[...]$3 = (a = 6, b = OneHundred, c = 7, d = Vienna, e = 8)
+// check:[...]$4 = (a = 6, b = OneHundred, c = 7, d = Vienna, e = 8)
 
 // debugger:print non_padded_struct
-// check:[...]$4 = (a = OneMillion, b = MountainView, c = OneThousand, d = Toronto)
+// check:[...]$5 = (a = OneMillion, b = MountainView, c = OneThousand, d = Toronto)
 
-// LLDB multiline
-// d ebugger:print struct_with_drop
-// c heck:[...]$5 = ((a = OneHundred, b = Vienna), 9)
+// debugger:print struct_with_drop
+// check:[...]$6 = { = (a = OneHundred, b = Vienna) = 9 }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 enum AnEnum {
     OneHundred = 100,
@@ -113,5 +110,7 @@ fn main() {
 
     let struct_with_drop = (StructWithDrop { a: OneHundred, b: Vienna }, 9_i64);
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

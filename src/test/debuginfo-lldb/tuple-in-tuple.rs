@@ -8,30 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // debugger:print no_padding1
-// check:[...]$0 = ((0, 1), 2, 3)
+// check:[...]$0 = { = (0, 1) = 2 = 3 }
 // debugger:print no_padding2
-// check:[...]$1 = (4, (5, 6), 7)
+// check:[...]$1 = { = 4 = (5, 6) = 7 }
 // debugger:print no_padding3
-// check:[...]$2 = (8, 9, (10, 11))
+// check:[...]$2 = { = 8 = 9 = (10, 11) }
 
 // debugger:print internal_padding1
-// check:[...]$3 = (12, (13, 14))
+// check:[...]$3 = { = 12 = (13, 14) }
 // debugger:print internal_padding2
-// check:[...]$4 = (15, (16, 17))
+// check:[...]$4 = { = 15 = (16, 17) }
 
 // debugger:print padding_at_end1
-// check:[...]$5 = (18, (19, 20))
+// check:[...]$5 = { = 18 = (19, 20) }
 // debugger:print padding_at_end2
-// check:[...]$6 = ((21, 22), 23)
+// check:[...]$6 = { = (21, 22) = 23 }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 fn main() {
     let no_padding1: ((u32, u32), u32, u32) = ((0, 1), 2, 3);
@@ -44,5 +41,7 @@ fn main() {
     let padding_at_end1: (i32, (i32, i16)) = (18, (19, 20));
     let padding_at_end2: ((i32, i16), i32) = ((21, 22), 23);
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

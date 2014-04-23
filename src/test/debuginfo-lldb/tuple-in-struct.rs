@@ -8,38 +8,35 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // debugger:print no_padding1
-// check:[...]$0 = (x = (0, 1), y = 2, z = (3, 4, 5))
+// check:[...]$0 = { x = (0, 1) y = 2 z = (3, 4, 5) }
 // debugger:print no_padding2
-// check:[...]$1 = (x = (6, 7), y = ((8, 9), 10))
+// check:[...]$1 = { x = (6, 7) y = { = (8, 9) = 10 } }
 
 // debugger:print tuple_internal_padding
-// check:[...]$2 = (x = (11, 12), y = (13, 14))
+// check:[...]$2 = { x = (11, 12) y = (13, 14) }
 // debugger:print struct_internal_padding
-// check:[...]$3 = (x = (15, 16), y = (17, 18))
+// check:[...]$3 = { x = (15, 16) y = (17, 18) }
 // debugger:print both_internally_padded
-// check:[...]$4 = (x = (19, 20, 21), y = (22, 23))
+// check:[...]$4 = { x = (19, 20, 21) y = (22, 23) }
 
 // debugger:print single_tuple
-// check:[...]$5 = (x = (24, 25, 26))
+// check:[...]$5 = { x = (24, 25, 26) }
 
 // debugger:print tuple_padded_at_end
-// check:[...]$6 = (x = (27, 28), y = (29, 30))
+// check:[...]$6 = { x = (27, 28) y = (29, 30) }
 // debugger:print struct_padded_at_end
-// check:[...]$7 = (x = (31, 32), y = (33, 34))
+// check:[...]$7 = { x = (31, 32) y = (33, 34) }
 // debugger:print both_padded_at_end
-// check:[...]$8 = (x = (35, 36, 37), y = (38, 39))
+// check:[...]$8 = { x = (35, 36, 37) y = (38, 39) }
 
 // debugger:print mixed_padding
-// check:[...]$9 = (x = ((40, 41, 42), (43, 44)), y = (45, 46, 47, 48))
+// check:[...]$9 = { x = { = (40, 41, 42) = (43, 44) } y = (45, 46, 47, 48) }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct NoPadding1 {
     x: (i32, i32),

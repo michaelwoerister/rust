@@ -8,27 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// multiline output:
-// ignore-test
-
 // compile-flags:-g
 // debugger:run
 
 // debugger:print no_padding1
-// check:[...]$0 = (x = (0, 1, 2), y = -3, z = (4.5, 5.5))
+// check:[...]$0 = { x = ([0] = 0, [1] = 1, [2] = 2) y = -3 z = ([0] = 4.5, [1] = 5.5) }
 // debugger:print no_padding2
-// check:[...]$1 = (x = (6, 7, 8), y = ((9, 10), (11, 12)))
+// check:[...]$1 = { x = ([0] = 6, [1] = 7, [2] = 8) y = { [0] = ([0] = 9, [1] = 10) [1] = ([0] = 11, [1] = 12) } }
 
 // debugger:print struct_internal_padding
-// check:[...]$2 = (x = (13, 14), y = (15, 16))
+// check:[...]$2 = { x = ([0] = 13, [1] = 14) y = ([0] = 15, [1] = 16) }
 
 // debugger:print single_vec
-// check:[...]$3 = (x = (17, 18, 19, 20, 21))
+// check:[...]$3 = { x = ([0] = 17, [1] = 18, [2] = 19, [3] = 20, [4] = 21) }
 
 // debugger:print struct_padded_at_end
-// check:[...]$4 = (x = (22, 23), y = (24, 25))
+// check:[...]$4 = { x = ([0] = 22, [1] = 23) y = ([0] = 24, [1] = 25) }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 struct NoPadding1 {
     x: [u32, ..3],
@@ -82,6 +79,7 @@ fn main() {
         y: [24, 25]
     };
 
-    (); // #break
+    zzz(); // #break
 }
 
+fn zzz() { () }

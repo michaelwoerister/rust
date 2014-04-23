@@ -41,8 +41,8 @@
 // debugger:print *unique_val_interior_ref_2
 // check:[...]$9 = 26.5
 
-#[feature(managed_boxes)];
-#[allow(unused_variable)];
+#![feature(managed_boxes)];
+#![allow(unused_variable)];
 
 struct SomeStruct {
     x: int,
@@ -66,5 +66,7 @@ fn main() {
     let unique_val_interior_ref_1: &int = &unique_val.x;
     let unique_val_interior_ref_2: &f64 = &unique_val.y;
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

@@ -53,7 +53,7 @@
 // debugger:print *f64_ref
 // check:[...]$12 = 3.5
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 fn main() {
     let bool_val: bool = true;

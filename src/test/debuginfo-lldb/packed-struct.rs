@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // ignore-tidy-linelength
 // ignore-android: FIXME(#10381)
 
@@ -21,13 +18,13 @@
 // check:[...]$0 = (x = 123, y = 234, z = 345)
 
 // debugger:print packedInPacked
-// check:[...]$1 = (a = 1111, b = (x = 2222, y = 3333, z = 4444), c = 5555, d = (x = 6666, y = 7777, z = 8888)
+// check:[...]$1 = { a = 1111 b = (x = 2222, y = 3333, z = 4444) c = 5555 d = (x = 6666, y = 7777, z = 8888) }
 
 // debugger:print packedInUnpacked
-// check:[...]$2 = (a = -1111, b = (x = -2222, y = -3333, z = -4444), c = -5555, d = (x = -6666, y = -7777, z = -8888))
+// check:[...]$2 = { a = -1111 b = (x = -2222, y = -3333, z = -4444) c = -5555 d = (x = -6666, y = -7777, z = -8888) }
 
 // debugger:print unpackedInPacked
-// check:[...]$3 = (a = 987, b = (x = 876, y = 765, z = 654, w = 543), c = (x = 432, y = 321, z = 210, w = 109), d = -98)
+// check:[...]$3 = { a = 987 b = (x = 876, y = 765, z = 654, w = 543) c = (x = 432, y = 321, z = 210, w = 109) d = -98 }
 
 // debugger:print sizeof(packed)
 // check:[...]$4 = 14
@@ -101,5 +98,7 @@ fn main() {
         d: -98
     };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

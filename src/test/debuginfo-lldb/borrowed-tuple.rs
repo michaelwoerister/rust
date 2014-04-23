@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)];
 
 // compile-flags:-g
 // debugger:run
@@ -38,5 +38,7 @@ fn main() {
     let unique_val: ~(i16, f32) = ~(-17, -22f32);
     let unique_val_ref: &(i16, f32) = unique_val;
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

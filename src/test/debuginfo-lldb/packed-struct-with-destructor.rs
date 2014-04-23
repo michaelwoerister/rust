@@ -8,9 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // ignore-tidy-linelength
 
 // compile-flags:-g
@@ -20,28 +17,26 @@
 // check:[...]$0 = (x = 123, y = 234, z = 345)
 
 // debugger:print packedInPacked
-// check:[...]$1 = (a = 1111, b = (x = 2222, y = 3333, z = 4444), c = 5555, d = (x = 6666, y = 7777, z = 8888))
+// check:[...]$1 = { a = 1111 b = (x = 2222, y = 3333, z = 4444) c = 5555 d = (x = 6666, y = 7777, z = 8888) }
 
 // debugger:print packedInUnpacked
-// check:[...]$2 = (a = -1111, b = (x = -2222, y = -3333, z = -4444), c = -5555, d = (x = -6666, y = -7777, z = -8888))
-
+// check:[...]$2 = { a = -1111 b = (x = -2222, y = -3333, z = -4444) c = -5555 d = (x = -6666, y = -7777, z = -8888) }
 // debugger:print unpackedInPacked
-// check:[...]$3 = (a = 987, b = (x = 876, y = 765, z = 654), c = (x = 543, y = 432, z = 321), d = 210)
-
+// check:[...]$3 = { a = 987 b = (x = 876, y = 765, z = 654) c = (x = 543, y = 432, z = 321) d = 210 }
 
 // debugger:print packedInPackedWithDrop
-// check:[...]$4 = (a = 11, b = (x = 22, y = 33, z = 44), c = 55, d = (x = 66, y = 77, z = 88))
+// check:[...]$4 = { a = 11 b = (x = 22, y = 33, z = 44) c = 55 d = (x = 66, y = 77, z = 88) }
 
 // debugger:print packedInUnpackedWithDrop
-// check:[...]$5 = (a = -11, b = (x = -22, y = -33, z = -44), c = -55, d = (x = -66, y = -77, z = -88))
+// check:[...]$5 = { a = -11 b = (x = -22, y = -33, z = -44) c = -55 d = (x = -66, y = -77, z = -88) }
 
 // debugger:print unpackedInPackedWithDrop
-// check:[...]$6 = (a = 98, b = (x = 87, y = 76, z = 65), c = (x = 54, y = 43, z = 32), d = 21)
+// check:[...]$6 = { a = 98 b = (x = 87, y = 76, z = 65) c = (x = 54, y = 43, z = 32) d = 21 }
 
 // debugger:print deeplyNested
-// check:[...]$7 = (a = (a = 1, b = (x = 2, y = 3, z = 4), c = 5, d = (x = 6, y = 7, z = 8)), b = (a = 9, b = (x = 10, y = 11, z = 12), c = (x = 13, y = 14, z = 15), d = 16), c = (a = 17, b = (x = 18, y = 19, z = 20), c = 21, d = (x = 22, y = 23, z = 24)), d = (a = 25, b = (x = 26, y = 27, z = 28), c = 29, d = (x = 30, y = 31, z = 32)), e = (a = 33, b = (x = 34, y = 35, z = 36), c = (x = 37, y = 38, z = 39), d = 40), f = (a = 41, b = (x = 42, y = 43, z = 44), c = 45, d = (x = 46, y = 47, z = 48)))
+// check:[...]$7 = { a = { a = 1 b = (x = 2, y = 3, z = 4) c = 5 d = (x = 6, y = 7, z = 8) } b = { a = 9 b = (x = 10, y = 11, z = 12) c = (x = 13, y = 14, z = 15) d = 16 } c = { a = 17 b = (x = 18, y = 19, z = 20) c = 21 d = (x = 22, y = 23, z = 24) } d = { a = 25 b = (x = 26, y = 27, z = 28) c = 29 d = (x = 30, y = 31, z = 32) } e = { a = 33 b = (x = 34, y = 35, z = 36) c = (x = 37, y = 38, z = 39) d = 40 } f = { a = 41 b = (x = 42, y = 43, z = 44) c = 45 d = (x = 46, y = 47, z = 48) } }
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 #[packed]
 struct Packed {
@@ -215,5 +210,7 @@ fn main() {
         }
     };
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

@@ -306,7 +306,7 @@ fn main() {
         zzz(); // #break
         sentinel();
 
-        val
+        val as uint
     }];
 
     zzz(); // #break

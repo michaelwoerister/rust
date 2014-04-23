@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)];
+#![allow(unused_variable)];
 
 // compile-flags:-g
 // debugger:run
@@ -24,11 +25,11 @@
 // debugger:print *(((uint64_t*)unique->elements) + 3)
 // check:[...]$4 = 13
 
-#[allow(unused_variable)];
-
 fn main() {
 
     let unique: ~[i64] = ~[10, 11, 12, 13];
 
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

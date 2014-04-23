@@ -20,13 +20,15 @@
 // debugger:print d->val
 // check:[...]$3 = false
 
-#[feature(managed_boxes)];
-#[allow(unused_variable)];
+#![feature(managed_boxes)];
+#![allow(unused_variable)];
 
 fn main() {
     let a = ~1;
     let b = ~(2, 3.5);
     let c = @4;
     let d = @false;
-    (); // #break
+    zzz(); // #break
 }
+
+fn zzz() { () }

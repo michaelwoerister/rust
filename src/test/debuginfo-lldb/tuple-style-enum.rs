@@ -8,27 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// LLDB multiline issues
-// ignore-test
-
 // ignore-tidy-linelength
 
 // compile-flags:-g
 // debugger:run
 
 // debugger:print case1
-// check:[...]$0 = {{Case1, 0, 31868, 31868, 31868, 31868}, {Case1, 0, 2088533116, 2088533116}, {Case1, 0, 8970181431921507452}}
+// check:[...]$0 = { = (Case1, 0, 31868, 31868, 31868, 31868) = (Case1, 0, 2088533116, 2088533116) = (Case1, 0, 8970181431921507452) }
 
 // debugger:print case2
-// check:[...]$1 = {{Case2, 0, 4369, 4369, 4369, 4369}, {Case2, 0, 286331153, 286331153}, {Case2, 0, 1229782938247303441}}
+// check:[...]$1 = { = (Case2, 0, 4369, 4369, 4369, 4369) = (Case2, 0, 286331153, 286331153) = (Case2, 0, 1229782938247303441) }
 
 // debugger:print case3
-// check:[...]$2 = {{Case3, 0, 22873, 22873, 22873, 22873}, {Case3, 0, 1499027801, 1499027801}, {Case3, 0, 6438275382588823897}}
+// check:[...]$2 = { = (Case3, 0, 22873, 22873, 22873, 22873) = (Case3, 0, 1499027801, 1499027801) = (Case3, 0, 6438275382588823897) }
 
 // debugger:print univariant
-// check:[...]$3 = {-1}
+// check:[...]$3 = (-1)
 
-#[allow(unused_variable)];
+#![allow(unused_variable)];
 
 // The first element is to ensure proper alignment, irrespective of the machines word size. Since
 // the size of the discriminant value is machine dependent, this has be taken into account when
