@@ -401,7 +401,6 @@ fn run_debuginfo_gdb_test(config: &config, props: &TestProps, testfile: &Path) {
     check_debugger_output(&debugger_run_result, check_lines.as_slice());
 }
 
-
 fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) {
     use std::io::process::{Process, ProcessConfig, ProcessOutput};
 
@@ -441,83 +440,62 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
     // Finally, quit the debugger
     script_str.push_str("\nquit\n");
 
+    // Write the script into a file
     debug!("script_str = {}", script_str);
     dump_output_file(config, testfile, script_str.into_owned(), "debugger.script");
     let debugger_script = make_out_name(config, testfile, "debugger.script");
 
-    // Prepare the lldb_batchmode which executes the script we just generated
-    // FIXME (#9639): This needs to handle non-utf8 paths
-    let debugger_opts = vec!(~"./src/etc/lldb_batchmode.py",
-                          exe_file.as_str().unwrap().to_owned(),
-                          debugger_script.as_str().unwrap().to_owned());
-
-    // Make the lldb Python module available to the lldb_batchmode script
-    let proc_env = vec!((~"PYTHONPATH", config.lldb_python_dir.clone().unwrap()));
-
-    // let debugger_run_result = compose_and_run(config, testfile, proc_args, proc_env, "", None);
-    let debugger_run_result = run_python(debugger_opts.as_slice(), proc_env);
+    // Let LLDB execute the script via lldb_batchmode.py
+    let debugger_run_result = run_lldb(config, &exe_file, &debugger_script);
 
     if !debugger_run_result.status.success() {
-        fatal(~"lldb failed to execute");
+        fatal_ProcRes(~"Error while running LLDB", &debugger_run_result);
     }
 
     check_debugger_output(&debugger_run_result, check_lines.as_slice());
 
-    fn run_python(args: &[~str],
-                  env: Vec<(~str, ~str)>)
-               -> ProcRes {
+    fn run_lldb(config: &config, test_executable: &Path, debugger_script: &Path) -> ProcRes {
+        // Prepare the lldb_batchmode which executes the debugger script
+        let lldb_batchmode_script = ~"./src/etc/lldb_batchmode.py";
+        let test_executable_str = test_executable.as_str().unwrap().to_owned();
+        let debugger_script_str = debugger_script.as_str().unwrap().to_owned();
+        let commandline = format!("python {} {} {}",
+                                  lldb_batchmode_script.as_slice(),
+                                  test_executable_str.as_slice(),
+                                  debugger_script_str.as_slice());
+
+        let args = &[lldb_batchmode_script, test_executable_str, debugger_script_str];
+        let env = &[(~"PYTHONPATH", config.lldb_python_dir.clone().unwrap())];
+
         let mut opt_process = Process::configure(ProcessConfig {
             program: "python",
             args: args,
-            env: Some(env.as_slice()),
+            env: Some(env),
             .. ProcessConfig::new()
         });
 
-        let procsrv::Result{ out, err, status } = match opt_process {
+        let (status, out, err) = match opt_process {
             Ok(ref mut process) => {
                 let ProcessOutput { status, output, error } = process.wait_with_output();
 
-                Some(procsrv::Result {
-                    status: status,
-                    out: str::from_utf8(output.as_slice()).unwrap().to_owned(),
-                    err: str::from_utf8(error.as_slice()).unwrap().to_owned()
-                })
+                (status,
+                 str::from_utf8(output.as_slice()).unwrap().to_owned(),
+                 str::from_utf8(error.as_slice()).unwrap().to_owned())
             },
-            Err(..) => None
-        }.expect("failed to exec python lldb");
+            Err(e) => {
+                fatal(format!("Failed to setup Python process for LLDB script: {}", e))
+            }
+        };
 
-        // dump_output(config, testfile, out, err);
-        return ProcRes {status: status,
+        dump_output(config, test_executable, out, err);
+        return ProcRes {
+            status: status,
             stdout: out,
             stderr: err,
-            cmdline: ~""
+            cmdline: commandline
         };
     }
 }
-
-// At the moment this calls the LLDB executable for every test. This should be optimized in the
-// future
-// fn get_lldb_python_dir() -> ~str {
-//     use std::io::process::{Process, ProcessOutput};
-
-//     match Process::output("lldb", [~"-P"]) {
-//         Ok(ProcessOutput { status, output, error }) => {
-//             if !status.success() {
-//                 let proc_res = ProcRes {
-//                     status: status,
-//                     stdout: str::from_utf8_owned(output.move_iter().collect()).unwrap(),
-//                     stderr: str::from_utf8_owned(error.move_iter().collect()).unwrap(),
-//                     cmdline: ~"lldb -P"
-//                 };
-
-//                 fatal_ProcRes(~"Couldn't retrieve LLDB's PYTHONPATH", &proc_res);
-//             }
-
-//             str::from_utf8_owned(output.move_iter().collect()).unwrap().trim().to_owned()
-//         },
-//         Err(io_error) => fatal(format!("Couldn't retrieve LLDB's PYTHONPATH: {}", io_error))
-//     }
-// }
 
 fn scan_for_breakpoint_lines(file_path: &Path) -> Vec<uint> {
     use std::io::{BufferedReader, File};
