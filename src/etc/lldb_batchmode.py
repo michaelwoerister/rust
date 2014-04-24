@@ -181,4 +181,3 @@ except IOError as e:
   sys.exit(1)
 finally:
   script_file.close()
-
