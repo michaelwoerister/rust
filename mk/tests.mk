@@ -538,12 +538,21 @@ CTEST_RUNTOOL_codegen = $(CTEST_RUNTOOL)
 
 ifeq ($(CFG_GDB),)
 CTEST_DISABLE_debuginfo-gdb = "no gdb found"
+<<<<<<< HEAD
 endif
 
 ifeq ($(CFG_LLDB),)
 CTEST_DISABLE_debuginfo-lldb = "no lldb found"
 endif
 
+=======
+endif
+
+ifeq ($(CFG_LLDB),)
+CTEST_DISABLE_debuginfo-lldb = "no lldb found"
+endif
+
+>>>>>>> debuginfo: Split debuginfo autotests into debuginfo-gdb and debuginfo-lldb
 # Completely disable LLDB tests for now
 CTEST_DISABLE_debuginfo-lldb = "LLDB tests are not enabled yet"
 
