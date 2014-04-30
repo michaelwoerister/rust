@@ -22,6 +22,20 @@
 // gdb-check:$3 = 48
 // gdb-command:continue
 
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print string1.length
+// lldb-lldb-check:[...]$0 = 48
+// lldb-command:print string2.length
+// lldb-lldb-check:[...]$1 = 49
+// lldb-command:print string3.length
+// lldb-lldb-check:[...]$2 = 50
+
+// lldb-command:continue
+
 #![allow(unused_variable)]
 
 // This test case makes sure that debug info does not ICE when include_str is
@@ -31,7 +45,8 @@ fn main() {
     let string1 = include_str!("text-to-include-1.txt");
     let string2 = include_str!("text-to-include-2.txt");
     let string3 = include_str!("text-to-include-3.txt");
-    zzz();
+
+    zzz(); // #break
 }
 
 fn zzz() {()}

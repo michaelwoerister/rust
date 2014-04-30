@@ -10,6 +10,8 @@
 
 // ignore-android: FIXME(#10381)
 
+// ignore-lldb
+
 #![feature(managed_boxes)]
 
 // compile-flags:-g

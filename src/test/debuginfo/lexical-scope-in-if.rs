@@ -11,6 +11,9 @@
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 
@@ -78,47 +81,109 @@
 // gdb-check:$16 = -1
 // gdb-command:continue
 
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// BEFORE if
+// lldb-command:print x
+// lldb-lldb-check:[...]$0 = 999
+// lldb-command:print y
+// lldb-lldb-check:[...]$1 = -1
+// lldb-command:continue
+
+// AT BEGINNING of 'then' block
+// lldb-command:print x
+// lldb-lldb-check:[...]$2 = 999
+// lldb-command:print y
+// lldb-lldb-check:[...]$3 = -1
+// lldb-command:continue
+
+// AFTER 1st redeclaration of 'x'
+// lldb-command:print x
+// lldb-lldb-check:[...]$4 = 1001
+// lldb-command:print y
+// lldb-lldb-check:[...]$5 = -1
+// lldb-command:continue
+
+// AFTER 2st redeclaration of 'x'
+// lldb-command:print x
+// lldb-lldb-check:[...]$6 = 1002
+// lldb-command:print y
+// lldb-lldb-check:[...]$7 = 1003
+// lldb-command:continue
+
+// AFTER 1st if expression
+// lldb-command:print x
+// lldb-lldb-check:[...]$8 = 999
+// lldb-command:print y
+// lldb-lldb-check:[...]$9 = -1
+// lldb-command:continue
+
+// BEGINNING of else branch
+// lldb-command:print x
+// lldb-lldb-check:[...]$10 = 999
+// lldb-command:print y
+// lldb-lldb-check:[...]$11 = -1
+// lldb-command:continue
+
+// BEGINNING of else branch
+// lldb-command:print x
+// lldb-lldb-check:[...]$12 = 1004
+// lldb-command:print y
+// lldb-lldb-check:[...]$13 = 1005
+// lldb-command:continue
+
+// BEGINNING of else branch
+// lldb-command:print x
+// lldb-lldb-check:[...]$14 = 999
+// lldb-command:print y
+// lldb-lldb-check:[...]$15 = -1
+// lldb-command:continue
+
+
 fn main() {
 
     let x = 999;
     let y = -1;
 
-    zzz();
+    zzz(); // #break
     sentinel();
 
     if x < 1000 {
-        zzz();
+        zzz(); // #break
         sentinel();
 
         let x = 1001;
 
-        zzz();
+        zzz(); // #break
         sentinel();
 
         let x = 1002;
         let y = 1003;
-        zzz();
+        zzz(); // #break
         sentinel();
     } else {
         unreachable!();
     }
 
-    zzz();
+    zzz(); // #break
     sentinel();
 
     if x > 1000 {
         unreachable!();
     } else {
-        zzz();
+        zzz(); // #break
         sentinel();
 
         let x = 1004;
         let y = 1005;
-        zzz();
+        zzz(); // #break
         sentinel();
     }
 
-    zzz();
+    zzz(); // #break
     sentinel();
 }
 

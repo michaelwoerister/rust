@@ -142,6 +142,14 @@ pub fn is_test_ignored(config: &Config, testfile: &Path) -> bool {
             false
         } else {
             true
+        } else if config.mode == common::mode_debuginfo_gdb &&
+                  parse_name_directive(ln, "ignore-gdb") { 
+            false
+        } else if config.mode == common::mode_debuginfo_lldb &&
+                  parse_name_directive(ln, "ignore-lldb") {
+            false
+        } else {
+            true 
         }
     });
 
