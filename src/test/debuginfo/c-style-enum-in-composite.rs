@@ -11,6 +11,9 @@
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 // gdb-command:finish
@@ -35,6 +38,31 @@
 
 // gdb-command:print struct_with_drop
 // gdb-check:$7 = {{a = OneHundred, b = Vienna}, 9}
+
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print tuple_interior_padding
+// lldb-lldb-check:[...]$0 = (0, OneHundred)
+
+// lldb-command:print tuple_padding_at_end
+// lldb-lldb-check:[...]$1 = ((1, OneThousand), 2)
+// lldb-command:print tuple_different_enums
+// lldb-lldb-check:[...]$2 = (OneThousand, MountainView, OneMillion, Vienna)
+
+// lldb-command:print padded_struct
+// lldb-lldb-check:[...]$3 = PaddedStruct { a: 3, b: OneMillion, c: 4, d: Toronto, e: 5 }
+
+// lldb-command:print packed_struct
+// lldb-lldb-check:[...]$4 = PackedStruct { a: 6, b: OneHundred, c: 7, d: Vienna, e: 8 }
+
+// lldb-command:print non_padded_struct
+// lldb-lldb-check:[...]$5 = NonPaddedStruct { a: OneMillion, b: MountainView, c: OneThousand, d: Toronto }
+
+// lldb-command:print struct_with_drop
+// lldb-lldb-check:[...]$6 = (StructWithDrop { a: OneHundred, b: Vienna }, 9)
 
 #![allow(unused_variable)]
 
@@ -115,7 +143,7 @@ fn main() {
 
     let struct_with_drop = (StructWithDrop { a: OneHundred, b: Vienna }, 9_i64);
 
-    zzz();
+    zzz(); // #break
 }
 
-fn zzz() {()}
+fn zzz() { () }

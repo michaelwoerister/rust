@@ -11,6 +11,9 @@
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 // gdb-command:finish
@@ -125,6 +128,122 @@
 // gdb-command:print *nn
 // gdb-check:$43 = 56
 
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$0 = 1
+// lldb-command:print b
+// lldb-lldb-check:[...]$1 = false
+
+// lldb-command:print c
+// lldb-lldb-check:[...]$2 = 2
+// lldb-command:print d
+// lldb-lldb-check:[...]$3 = 3
+// lldb-command:print e
+// lldb-lldb-check:[...]$4 = 4
+
+// lldb-command:print f
+// lldb-lldb-check:[...]$5 = 5
+// lldb-command:print g
+// lldb-lldb-check:[...]$6 = (6, 7)
+
+// lldb-command:print h
+// lldb-lldb-check:[...]$7 = 8
+// lldb-command:print i
+// lldb-lldb-check:[...]$8 = Struct { a: 9, b: 10 }
+// lldb-command:print j
+// lldb-lldb-check:[...]$9 = 11
+
+// lldb-command:print k
+// lldb-lldb-check:[...]$10 = 12
+// lldb-command:print l
+// lldb-lldb-check:[...]$11 = 13
+
+// lldb-command:print m
+// lldb-lldb-check:[...]$12 = 14
+// lldb-command:print n
+// lldb-lldb-check:[...]$13 = 16
+
+// lldb-command:print o
+// lldb-lldb-check:[...]$14 = 18
+
+// lldb-command:print p
+// lldb-lldb-check:[...]$15 = 19
+// lldb-command:print q
+// lldb-lldb-check:[...]$16 = 20
+// lldb-command:print r
+// lldb-lldb-check:[...]$17 = Struct { a: 21, b: 22 }
+
+// lldb-command:print s
+// lldb-lldb-check:[...]$18 = 24
+// lldb-command:print t
+// lldb-lldb-check:[...]$19 = 23
+
+// lldb-command:print u
+// lldb-lldb-check:[...]$20 = 25
+// lldb-command:print v
+// lldb-lldb-check:[...]$21 = 26
+// lldb-command:print w
+// lldb-lldb-check:[...]$22 = 27
+// lldb-command:print x
+// lldb-lldb-check:[...]$23 = 28
+// lldb-command:print y
+// lldb-lldb-check:[...]$24 = 29
+// lldb-command:print z
+// lldb-lldb-check:[...]$25 = 30
+// lldb-command:print ae
+// lldb-lldb-check:[...]$26 = 31
+// lldb-command:print oe
+// lldb-lldb-check:[...]$27 = 32
+// lldb-command:print ue
+// lldb-lldb-check:[...]$28 = 33
+
+// lldb-command:print aa
+// lldb-lldb-check:[...]$29 = (34, 35)
+
+// lldb-command:print bb
+// lldb-lldb-check:[...]$30 = (36, 37)
+
+// lldb-command:print cc
+// lldb-lldb-check:[...]$31 = 38
+
+// lldb-command:print dd
+// lldb-lldb-check:[...]$32 = (40, 41, 42)
+
+// lldb-command:print *ee
+// lldb-lldb-check:[...]$33 = (43, 44, 45)
+
+// lldb-command:print *ff
+// lldb-lldb-check:[...]$34 = 46
+
+// lldb-command:print gg
+// lldb-lldb-check:[...]$35 = (47, 48)
+
+// lldb-command:print *hh
+// lldb-lldb-check:[...]$36 = 50
+
+// lldb-command:print ii
+// lldb-lldb-check:[...]$37 = 51
+
+// lldb-command:print *jj
+// lldb-lldb-check:[...]$38 = 52
+
+// lldb-command:print kk
+// lldb-lldb-check:[...]$39 = 53
+
+// lldb-command:print ll
+// lldb-lldb-check:[...]$40 = 54
+
+// lldb-command:print mm
+// lldb-lldb-check:[...]$41 = 55
+
+// lldb-command:print *nn
+// lldb-lldb-check:[...]$42 = 56
+
+
 #![allow(unused_variable)]
 
 struct Struct {
@@ -204,7 +323,7 @@ fn main() {
     // tuple struct with ref binding
     let &TupleStruct(mm, ref nn) = &TupleStruct(55.0, 56);
 
-    zzz();
+    zzz(); // #break
 }
 
 fn zzz() {()}
