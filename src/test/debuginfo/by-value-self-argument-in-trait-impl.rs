@@ -13,6 +13,9 @@
 #![feature(managed_boxes)]
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 
@@ -36,13 +39,34 @@
 // gdb-check:$4 = 8888
 // gdb-command:continue
 
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print self
+// lldb-lldb-check:[...]$0 = 1111
+// lldb-command:continue
+
+// lldb-command:print self
+// lldb-lldb-check:[...]$1 = Struct { x: 2222, y: 3333 }
+// lldb-command:continue
+
+// lldb-command:print self
+// lldb-lldb-check:[...]$2 = (4444.5, 5555, 6666, 7777.5)
+// lldb-command:continue
+
+// lldb-command:print self->val
+// lldb-lldb-check:[...]$3 = 8888
+// lldb-command:continue
+
 trait Trait {
     fn method(self) -> Self;
 }
 
 impl Trait for int {
     fn method(self) -> int {
-        zzz();
+        zzz(); // #break
         self
     }
 }
@@ -54,21 +78,21 @@ struct Struct {
 
 impl Trait for Struct {
     fn method(self) -> Struct {
-        zzz();
+        zzz(); // #break
         self
     }
 }
 
 impl Trait for (f64, int, int, f64) {
     fn method(self) -> (f64, int, int, f64) {
-        zzz();
+        zzz(); // #break
         self
     }
 }
 
 impl Trait for @int {
     fn method(self) -> @int {
-        zzz();
+        zzz(); // #break
         self
     }
 }
@@ -80,4 +104,4 @@ fn main() {
     let _ = (@8888).method();
 }
 
-fn zzz() {()}
+fn zzz() { () }

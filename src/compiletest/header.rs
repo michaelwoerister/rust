@@ -124,6 +124,10 @@ pub fn is_test_ignored(config: &config, testfile: &Path) -> bool {
         else if parse_name_directive(ln, ignore_stage(config)) { false }
         else if config.mode == common::mode_pretty &&
             parse_name_directive(ln, "ignore-pretty") { false }
+        else if config.mode == common::mode_debuginfo_gdb &&
+            parse_name_directive(ln, "ignore-gdb") { false }
+        else if config.mode == common::mode_debuginfo_lldb &&
+            parse_name_directive(ln, "ignore-lldb") { false }
         else if config.target != config.host &&
             parse_name_directive(ln, "ignore-cross-compile") { false }
         else { true }

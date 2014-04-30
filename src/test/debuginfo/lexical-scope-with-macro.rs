@@ -11,6 +11,9 @@
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 
@@ -65,6 +68,56 @@
 // gdb-check:$15 = 400
 // gdb-command:continue
 
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$0 = 10
+// lldb-command:print b
+// lldb-lldb-check:[...]$1 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$2 = 890242
+// lldb-command:print b
+// lldb-lldb-check:[...]$3 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$4 = 10
+// lldb-command:print b
+// lldb-lldb-check:[...]$5 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$6 = 102
+// lldb-command:print b
+// lldb-lldb-check:[...]$7 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$8 = 110
+// lldb-command:print b
+// lldb-lldb-check:[...]$9 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$10 = 10
+// lldb-command:print b
+// lldb-lldb-check:[...]$11 = 34
+// lldb-command:continue
+
+// lldb-command:print a
+// lldb-lldb-check:[...]$12 = 10
+// lldb-command:print b
+// lldb-lldb-check:[...]$13 = 34
+// lldb-command:print c
+// lldb-lldb-check:[...]$14 = 400
+// lldb-command:continue
+
+
 #![feature(macro_rules)]
 
 macro_rules! trivial(
@@ -78,7 +131,7 @@ macro_rules! no_new_scope(
 macro_rules! new_scope(
     () => ({
         let a = 890242;
-        zzz();
+        zzz(); // #break
         sentinel();
     })
 )
@@ -87,12 +140,12 @@ macro_rules! shadow_within_macro(
     ($e1:expr) => ({
         let a = $e1 + 2;
 
-        zzz();
+        zzz(); // #break
         sentinel();
 
         let a = $e1 + 10;
 
-        zzz();
+        zzz(); // #break
         sentinel();
     })
 )
@@ -108,22 +161,22 @@ fn main() {
     let a = trivial!(10);
     let b = no_new_scope!(33);
 
-    zzz();
+    zzz(); // #break
     sentinel();
 
     new_scope!();
 
-    zzz();
+    zzz(); // #break
     sentinel();
 
     shadow_within_macro!(100);
 
-    zzz();
+    zzz(); // #break
     sentinel();
 
     let c = dup_expr!(10 * 20);
 
-    zzz();
+    zzz(); // #break
     sentinel();
 }
 

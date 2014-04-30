@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ignore-lldb
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
@@ -34,6 +35,7 @@
 // gdb-check:$6 = (int *) 0x0
 
 // gdb-command:continue
+
 
 #![feature(struct_variant)]
 

@@ -29,10 +29,6 @@ import os
 import sys
 import threading
 import re
-import atexit
-
-# Terminate the debugger
-atexit.register(lambda: lldb.SBDebugger.Terminate())
 
 # Set this to True for additional output
 DEBUG_OUTPUT = False
