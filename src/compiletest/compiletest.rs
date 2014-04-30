@@ -29,7 +29,7 @@ use std::io;
 use std::io::fs;
 use getopts::{optopt, optflag, reqopt};
 use common::{config, mode_run_pass, mode_run_fail, mode_compile_fail, mode_pretty,
-             mode_debug_info_gdb, mode_debug_info_lldb, mode_codegen, mode};
+             mode_debuginfo_gdb, mode_debuginfo_lldb, mode_codegen, mode};
 use util::logv;
 
 pub mod procsrv;
@@ -204,8 +204,8 @@ pub fn str_mode(s: ~str) -> mode {
         "run-fail" => mode_run_fail,
         "run-pass" => mode_run_pass,
         "pretty" => mode_pretty,
-        "debuginfo-gdb" => mode_debug_info_gdb,
-        "debuginfo-lldb" => mode_debug_info_lldb,
+        "debuginfo-gdb" => mode_debuginfo_gdb,
+        "debuginfo-lldb" => mode_debuginfo_lldb,
         "codegen" => mode_codegen,
         s => fail!("invalid mode: " + s)
     }
@@ -217,8 +217,8 @@ pub fn mode_str(mode: mode) -> ~str {
       mode_run_fail => "run-fail".to_owned(),
       mode_run_pass => "run-pass".to_owned(),
       mode_pretty => "pretty".to_owned(),
-      mode_debug_info_gdb => "debuginfo-gdb".to_owned(),
-      mode_debug_info_lldb => "debuginfo-lldb".to_owned(),
+      mode_debuginfo_gdb => "debuginfo-gdb".to_owned(),
+      mode_debuginfo_lldb => "debuginfo-lldb".to_owned(),
       mode_codegen => "codegen".to_owned(),
     }
 }
@@ -226,7 +226,7 @@ pub fn mode_str(mode: mode) -> ~str {
 pub fn run_tests(config: &config) {
     if config.target == "arm-linux-androideabi".to_owned() {
         match config.mode{
-            mode_debug_info_gdb => {
+            mode_debuginfo_gdb => {
                 println!("arm-linux-androideabi debug-info \
                          test uses tcp 5039 port. please reserve it");
             }

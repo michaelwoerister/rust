@@ -62,8 +62,8 @@ pub fn run_metrics(config: config, testfile: ~str, mm: &mut MetricMap) {
       mode_run_fail => run_rfail_test(&config, &props, &testfile),
       mode_run_pass => run_rpass_test(&config, &props, &testfile),
       mode_pretty => run_pretty_test(&config, &props, &testfile),
-      mode_debug_info_gdb => run_debuginfo_gdb_test(&config, &props, &testfile),
-      mode_debug_info_lldb => run_debuginfo_lldb_test(&config, &props, &testfile),
+      mode_debuginfo_gdb => run_debuginfo_gdb_test(&config, &props, &testfile),
+      mode_debuginfo_lldb => run_debuginfo_lldb_test(&config, &props, &testfile),
       mode_codegen => run_codegen_test(&config, &props, &testfile, mm)
     }
 }
@@ -440,6 +440,14 @@ fn run_debuginfo_lldb_test(config: &config, props: &TestProps, testfile: &Path) 
     // Write debugger script:
     // We don't want to hang when calling `quit` while the process is still running
     let mut script_str = StrBuf::from_str("settings set auto-confirm true\n");
+
+    // Make LLDB emit its version, so we have it documented in the test output
+    script_str.push_str("version\n");
+
+    // Switch LLDB into "Rust mode"
+    script_str.push_str("command script import ./src/etc/lldb_rust_formatters.py\n");
+    script_str.push_str("type summary add --no-value --python-function lldb_rust_formatters.print_val -x \".*\" --category Rust\n");
+    script_str.push_str("type category enable Rust\n");
 
     // Set breakpoints on every line that contains the string "#break"
     for line in breakpoint_lines.iter() {

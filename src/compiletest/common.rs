@@ -14,8 +14,8 @@ pub enum mode {
     mode_run_fail,
     mode_run_pass,
     mode_pretty,
-    mode_debug_info_gdb,
-    mode_debug_info_lldb,
+    mode_debuginfo_gdb,
+    mode_debuginfo_lldb,
     mode_codegen
 }
 
