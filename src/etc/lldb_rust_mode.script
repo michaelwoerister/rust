@@ -1,0 +1,3 @@
+command script import /Users/mw/rust/src/etc/lldb_rust_formatters.py
+type summary add --no-value --python-function lldb_rust_formatters.print_val -x ".*" --category Rust
+type category enable Rust
