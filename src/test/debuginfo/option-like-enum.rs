@@ -17,19 +17,19 @@
 // gdb-command:finish
 
 // gdb-command:print some
-// gdb-check:$1 = (u32 *) 0x12345678
+// gdb-check:$1 = {{0x12345678}}
 
 // gdb-command:print none
-// gdb-check:$2 = (u32 *) 0x0
+// gdb-check:$2 = {{0x0}}
 
 // gdb-command:print full
-// gdb-check:$3 = {454545, 0x87654321, 9988}
+// gdb-check:$3 = {{454545, 0x87654321, 9988}}
 
 // gdb-command:print empty->discr
 // gdb-check:$4 = (int *) 0x0
 
 // gdb-command:print droid
-// gdb-check:$5 = {id = 675675, range = 10000001, internals = 0x43218765}
+// gdb-check:$5 = {{id = 675675, range = 10000001, internals = 0x43218765}}
 
 // gdb-command:print void_droid->internals
 // gdb-check:$6 = (int *) 0x0
