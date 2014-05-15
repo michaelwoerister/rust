@@ -140,16 +140,14 @@ pub fn is_test_ignored(config: &Config, testfile: &Path) -> bool {
         } else if config.target != config.host &&
                 parse_name_directive(ln, "ignore-cross-compile") {
             false
-        } else {
-            true
-        } else if config.mode == common::mode_debuginfo_gdb &&
-                  parse_name_directive(ln, "ignore-gdb") { 
+        } else if config.mode == common::DebugInfoGdb &&
+                  parse_name_directive(ln, "ignore-gdb") {
             false
-        } else if config.mode == common::mode_debuginfo_lldb &&
+        } else if config.mode == common::DebugInfoLldb &&
                   parse_name_directive(ln, "ignore-lldb") {
             false
         } else {
-            true 
+            true
         }
     });
 

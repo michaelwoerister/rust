@@ -1311,7 +1311,7 @@ impl StructMemberDescriptionFactory {
         }
 
         let field_size = if self.is_simd {
-            machine::llsize_of_alloc(cx, type_of::type_of(cx, self.fields.get(0).mt.ty))
+            machine::llsize_of_alloc(cx, type_of::type_of(cx, self.fields.get(0).mt.ty)) as uint
         } else {
             0xdeadbeef
         };
@@ -1325,7 +1325,7 @@ impl StructMemberDescriptionFactory {
 
             let offset = if self.is_simd {
                 assert!(field_size != 0xdeadbeef);
-                FixedMemberOffset { bytes: i as u64 * field_size }
+                FixedMemberOffset { bytes: i * field_size }
             } else {
                 ComputedMemberOffset
             };
@@ -1441,7 +1441,7 @@ fn prepare_tuple_metadata(cx: &CrateContext,
 struct EnumMemberDescriptionFactory {
     type_rep: Rc<adt::Repr>,
     variants: Rc<Vec<Rc<ty::VariantInfo>>>,
-    discriminant_type_metadata: DIType,
+    discriminant_type_metadata: Option<DIType>,
     containing_scope: DIScope,
     file_metadata: DIFile,
     span: Span,
@@ -1449,27 +1449,52 @@ struct EnumMemberDescriptionFactory {
 
 impl EnumMemberDescriptionFactory {
     fn create_member_descriptions(&self, cx: &CrateContext) -> Vec<MemberDescription> {
-        // Capture type_rep, so we don't have to copy the struct_defs array
-        let struct_defs = match *self.type_rep {
-            adt::General(_, ref struct_defs) => struct_defs,
-            _ => cx.sess().bug("unreachable")
-        };
+        match *self.type_rep {
+            adt::General(_, ref struct_defs) => {
+                let discriminant_info = RegularDiscriminant(self.discriminant_type_metadata
+                    .expect(""));
 
-        struct_defs
-            .iter()
-            .enumerate()
-            .map(|(i, struct_def)| {
-                let (variant_type_metadata, variant_llvm_type, member_desc_factory) =
+                struct_defs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, struct_def)| {
+                        let (variant_type_metadata, variant_llvm_type, member_desc_factory) =
+                            describe_enum_variant(cx,
+                                                  struct_def,
+                                                  &**self.variants.get(i),
+                                                  discriminant_info,
+                                                  self.containing_scope,
+                                                  self.file_metadata,
+                                                  self.span);
+
+                        let member_descriptions = member_desc_factory.create_member_descriptions(cx);
+
+                        set_members_of_composite_type(cx,
+                                                      variant_type_metadata,
+                                                      variant_llvm_type,
+                                                      member_descriptions.as_slice(),
+                                                      self.file_metadata,
+                                                      codemap::DUMMY_SP);
+                        MemberDescription {
+                            name: "".to_strbuf(),
+                            llvm_type: variant_llvm_type,
+                            type_metadata: variant_type_metadata,
+                            offset: FixedMemberOffset { bytes: 0 },
+                        }
+                    }).collect()
+            },
+            adt::Univariant(ref struct_def, _) => {
+                assert!(self.variants.len() == 1);
+                let (variant_type_metadata, variant_llvm_type, member_description_factory) =
                     describe_enum_variant(cx,
                                           struct_def,
-                                          &**self.variants.get(i),
-                                          RegularDiscriminant(self.discriminant_type_metadata),
+                                          &**self.variants.get(0),
+                                          NoDiscriminant,
                                           self.containing_scope,
                                           self.file_metadata,
                                           self.span);
 
-                let member_descriptions =
-                    member_desc_factory.create_member_descriptions(cx);
+                let member_descriptions = member_description_factory.create_member_descriptions(cx);
 
                 set_members_of_composite_type(cx,
                                               variant_type_metadata,
@@ -1477,13 +1502,47 @@ impl EnumMemberDescriptionFactory {
                                               member_descriptions.as_slice(),
                                               self.file_metadata,
                                               codemap::DUMMY_SP);
-                MemberDescription {
-                    name: "".to_strbuf(),
-                    llvm_type: variant_llvm_type,
-                    type_metadata: variant_type_metadata,
-                    offset: FixedMemberOffset { bytes: 0 },
-                }
-        }).collect()
+                vec![
+                    MemberDescription {
+                        name: "".to_strbuf(),
+                        llvm_type: variant_llvm_type,
+                        type_metadata: variant_type_metadata,
+                        offset: FixedMemberOffset { bytes: 0 },
+                    }
+                ]
+            }
+            adt::RawNullablePointer { nndiscr, nnty, ref nullfields } => {
+                fail!();
+            },
+            adt::StructWrappedNullablePointer { nonnull: ref struct_def, nndiscr, ptrfield, ..} => {
+                let (variant_type_metadata, variant_llvm_type, member_description_factory) =
+                    describe_enum_variant(cx,
+                                          struct_def,
+                                          &**self.variants.get(nndiscr as uint),
+                                          OptimizedDiscriminant(ptrfield),
+                                          self.containing_scope,
+                                          self.file_metadata,
+                                          self.span);
+
+                let member_descriptions = member_description_factory.create_member_descriptions(cx);
+
+                set_members_of_composite_type(cx,
+                                              variant_type_metadata,
+                                              variant_llvm_type,
+                                              member_descriptions.as_slice(),
+                                              self.file_metadata,
+                                              codemap::DUMMY_SP);
+                vec![
+                    MemberDescription {
+                        name: "".to_strbuf(),
+                        llvm_type: variant_llvm_type,
+                        type_metadata: variant_type_metadata,
+                        offset: FixedMemberOffset { bytes: 0 },
+                    }
+                ]
+            }
+            _ => cx.sess().bug("unreachable")
+        }
     }
 }
 
@@ -1670,92 +1729,53 @@ fn prepare_enum_metadata(cx: &CrateContext,
 
     let type_rep = adt::represent_type(cx, enum_type);
 
-    return match *type_rep {
+    let discriminant_type_metadata = match *type_rep {
         adt::CEnum(inttype, _, _) => {
-            FinalMetadata(discriminant_type_metadata(inttype))
-        }
-        adt::Univariant(ref struct_def, _) => {
-            assert!(variants.len() == 1);
-            let (metadata_stub,
-                 variant_llvm_type,
-                 member_description_factory) =
-                    describe_enum_variant(cx,
-                                          struct_def,
-                                          &**variants.get(0),
-                                          NoDiscriminant,
-                                          containing_scope,
-                                          file_metadata,
-                                          span);
-            UnfinishedMetadata {
-                cache_id: cache_id_for_type(enum_type),
-                metadata_stub: metadata_stub,
-                llvm_type: variant_llvm_type,
-                file_metadata: file_metadata,
-                member_description_factory: member_description_factory
-            }
-        }
-        adt::General(inttype, _) => {
-            let discriminant_type_metadata = discriminant_type_metadata(inttype);
-            let enum_llvm_type = type_of::type_of(cx, enum_type);
-            let (enum_type_size, enum_type_align) = size_and_align_of(cx, enum_llvm_type);
-            let unique_id = generate_unique_type_id("DI_ENUM_");
+            return FinalMetadata(discriminant_type_metadata(inttype))
+        },
+        adt::RawNullablePointer { .. }           |
+        adt::StructWrappedNullablePointer { .. } |
+        adt::Univariant(..)                      => None,
+        adt::General(inttype, _) => Some(discriminant_type_metadata(inttype)),
 
-            let enum_metadata = enum_name.as_slice().with_c_str(|enum_name| {
-                unique_id.as_slice().with_c_str(|unique_id| {
-                    unsafe {
-                        llvm::LLVMDIBuilderCreateUnionType(
-                        DIB(cx),
-                        containing_scope,
-                        enum_name,
-                        file_metadata,
-                        loc.line as c_uint,
-                        bytes_to_bits(enum_type_size),
-                        bytes_to_bits(enum_type_align),
-                        0, // Flags
-                        ptr::null(),
-                        0, // RuntimeLang
-                        unique_id)
-                    }
-                })
-            });
+    };
 
-            UnfinishedMetadata {
-                cache_id: cache_id_for_type(enum_type),
-                metadata_stub: enum_metadata,
-                llvm_type: enum_llvm_type,
-                file_metadata: file_metadata,
-                member_description_factory: EnumMDF(EnumMemberDescriptionFactory {
-                    type_rep: type_rep.clone(),
-                    variants: variants,
-                    discriminant_type_metadata: discriminant_type_metadata,
-                    containing_scope: containing_scope,
-                    file_metadata: file_metadata,
-                    span: span,
-                }),
+    let enum_llvm_type = type_of::type_of(cx, enum_type);
+    let (enum_type_size, enum_type_align) = size_and_align_of(cx, enum_llvm_type);
+    let unique_id = generate_unique_type_id("DI_ENUM_");
+
+    let enum_metadata = enum_name.as_slice().with_c_str(|enum_name| {
+        unique_id.as_slice().with_c_str(|unique_id| {
+            unsafe {
+                llvm::LLVMDIBuilderCreateUnionType(
+                DIB(cx),
+                containing_scope,
+                enum_name,
+                file_metadata,
+                loc.line as c_uint,
+                bytes_to_bits(enum_type_size),
+                bytes_to_bits(enum_type_align),
+                0, // Flags
+                ptr::null(),
+                0, // RuntimeLang
+                unique_id)
             }
-        }
-        adt::RawNullablePointer { nnty, .. } => {
-            FinalMetadata(type_metadata(cx, nnty, span))
-        }
-        adt::StructWrappedNullablePointer { nonnull: ref struct_def, nndiscr, ptrfield, .. } => {
-            let (metadata_stub,
-                 variant_llvm_type,
-                 member_description_factory) =
-                    describe_enum_variant(cx,
-                                          struct_def,
-                                          &**variants.get(nndiscr as uint),
-                                          OptimizedDiscriminant(ptrfield),
-                                          containing_scope,
-                                          file_metadata,
-                                          span);
-            UnfinishedMetadata {
-                cache_id: cache_id_for_type(enum_type),
-                metadata_stub: metadata_stub,
-                llvm_type: variant_llvm_type,
-                file_metadata: file_metadata,
-                member_description_factory: member_description_factory
-            }
-        }
+        })
+    });
+
+    return UnfinishedMetadata {
+        cache_id: cache_id_for_type(enum_type),
+        metadata_stub: enum_metadata,
+        llvm_type: enum_llvm_type,
+        file_metadata: file_metadata,
+        member_description_factory: EnumMDF(EnumMemberDescriptionFactory {
+            type_rep: type_rep.clone(),
+            variants: variants,
+            discriminant_type_metadata: discriminant_type_metadata,
+            containing_scope: containing_scope,
+            file_metadata: file_metadata,
+            span: span,
+        }),
     };
 
     fn get_enum_discriminant_name(cx: &CrateContext, def_id: ast::DefId) -> token::InternedString {
