@@ -536,6 +536,9 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     // We don't want to hang when calling `quit` while the process is still running
     let mut script_str = StrBuf::from_str("settings set auto-confirm true\n");
 
+    // Make LLDB emit its version, so we have it documented in the test output
+    script_str.push_str("version\n");
+
     // Switch LLDB into "Rust mode"
     script_str.push_str("command script import ./src/etc/lldb_rust_formatters.py\n");
     script_str.push_str("type summary add --no-value --python-function lldb_rust_formatters.print_val -x \".*\" --category Rust\n");
