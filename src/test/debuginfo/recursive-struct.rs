@@ -22,53 +22,53 @@
 
 // gdb-command:print stack_unique.value
 // gdb-check:$1 = 0
-// gdb-command:print stack_unique.next->value
+// gdb-command:print stack_unique.next.__RUST_ENCODED_ENUM_0_Empty.val->value
 // gdb-check:$2 = 1
 
 // gdb-command:print unique_unique->value
 // gdb-check:$3 = 2
-// gdb-command:print unique_unique->next->value
+// gdb-command:print unique_unique->next.__RUST_ENCODED_ENUM_0_Empty.val->value
 // gdb-check:$4 = 3
 
 // gdb-command:print box_unique->val.value
 // gdb-check:$5 = 4
-// gdb-command:print box_unique->val.next->value
+// gdb-command:print box_unique->val.next.__RUST_ENCODED_ENUM_0_Empty.val->value
 // gdb-check:$6 = 5
 
 // gdb-command:print vec_unique[0].value
 // gdb-check:$7 = 6.5
-// gdb-command:print vec_unique[0].next->value
+// gdb-command:print vec_unique[0].next.__RUST_ENCODED_ENUM_0_Empty.val->value
 // gdb-check:$8 = 7.5
 
 // gdb-command:print borrowed_unique->value
 // gdb-check:$9 = 8.5
-// gdb-command:print borrowed_unique->next->value
+// gdb-command:print borrowed_unique->next.__RUST_ENCODED_ENUM_0_Empty.val->value
 // gdb-check:$10 = 9.5
 
 // MANAGED
 // gdb-command:print stack_managed.value
 // gdb-check:$11 = 10
-// gdb-command:print stack_managed.next.val->value
+// gdb-command:print stack_managed.next.__RUST_ENCODED_ENUM_0_Empty.val->val.value
 // gdb-check:$12 = 11
 
 // gdb-command:print unique_managed->value
 // gdb-check:$13 = 12
-// gdb-command:print unique_managed->next.val->value
+// gdb-command:print unique_managed->next.__RUST_ENCODED_ENUM_0_Empty.val->val.value
 // gdb-check:$14 = 13
 
 // gdb-command:print box_managed.val->value
 // gdb-check:$15 = 14
-// gdb-command:print box_managed->val->next.val->value
+// gdb-command:print box_managed->val.next.__RUST_ENCODED_ENUM_0_Empty.val->val.value
 // gdb-check:$16 = 15
 
 // gdb-command:print vec_managed[0].value
 // gdb-check:$17 = 16.5
-// gdb-command:print vec_managed[0].next.val->value
+// gdb-command:print vec_managed[0].next.__RUST_ENCODED_ENUM_0_Empty.val->val.value
 // gdb-check:$18 = 17.5
 
 // gdb-command:print borrowed_managed->value
 // gdb-check:$19 = 18.5
-// gdb-command:print borrowed_managed->next.val->value
+// gdb-command:print borrowed_managed->next.__RUST_ENCODED_ENUM_0_Empty.val->val.value
 // gdb-check:$20 = 19.5
 
 // LONG CYCLE
@@ -99,14 +99,13 @@
 // gdb-command:print (*****long_cycle_w_anonymous_types).value
 // gdb-check:$31 = 30
 
-// gdb-command:print (*****((*****long_cycle_w_anonymous_types).next)).value
+// gdb-command:print (*****((*****long_cycle_w_anonymous_types).next.__RUST_ENCODED_ENUM_0_Empty.val)).value
 // gdb-check:$32 = 31
 
 // gdb-command:continue
 
 #![allow(unused_variable)]
 #![feature(struct_variant)]
-
 
 enum Opt<T> {
     Empty,

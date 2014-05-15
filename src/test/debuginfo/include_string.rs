@@ -17,9 +17,9 @@
 // gdb-command:print string1.length
 // gdb-check:$1 = 48
 // gdb-command:print string2.length
-// gdb-check:$2 = 48
+// gdb-check:$2 = 49
 // gdb-command:print string3.length
-// gdb-check:$3 = 48
+// gdb-check:$3 = 50
 // gdb-command:continue
 
 

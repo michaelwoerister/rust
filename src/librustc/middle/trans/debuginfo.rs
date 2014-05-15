@@ -1532,9 +1532,17 @@ impl EnumMemberDescriptionFactory {
                                               member_descriptions.as_slice(),
                                               self.file_metadata,
                                               codemap::DUMMY_SP);
+
+                let null_variant_index = (1 - nndiscr) as uint;
+                let null_variant_ident = self.variants.get(null_variant_index).name;
+                let null_variant_name = token::get_ident(null_variant_ident);
+
+                let name = format_strbuf!("__RUST_ENCODED_ENUM_{}_{}",
+                                          null_variant_index,
+                                          null_variant_name);
                 vec![
                     MemberDescription {
-                        name: "".to_strbuf(),
+                        name: name,
                         llvm_type: variant_llvm_type,
                         type_metadata: variant_type_metadata,
                         offset: FixedMemberOffset { bytes: 0 },
