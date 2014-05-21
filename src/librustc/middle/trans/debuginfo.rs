@@ -1511,8 +1511,26 @@ impl EnumMemberDescriptionFactory {
                     }
                 ]
             }
-            adt::RawNullablePointer { nndiscr, nnty, ref nullfields } => {
-                fail!();
+            adt::RawNullablePointer { nndiscr, nnty, .. } => {
+                let null_variant_index = (1 - nndiscr) as uint;
+                let null_variant_ident = self.variants.get(null_variant_index).name;
+                let null_variant_name = token::get_ident(null_variant_ident);
+
+                let member_name = format_strbuf!("RUST$ENCODED$ENUM${}${}",
+                                          0,
+                                          null_variant_name);
+
+                let non_null_llvm_type = type_of::type_of(cx, nnty);
+                let non_null_type_metadata = type_metadata(cx, nnty, self.span);
+
+                vec![
+                    MemberDescription {
+                        name: member_name,
+                        llvm_type: non_null_llvm_type,
+                        type_metadata: non_null_type_metadata,
+                        offset: FixedMemberOffset { bytes: 0 },
+                    }
+                ]
             },
             adt::StructWrappedNullablePointer { nonnull: ref struct_def, nndiscr, ptrfield, ..} => {
                 let (variant_type_metadata, variant_llvm_type, member_description_factory) =
@@ -1537,8 +1555,8 @@ impl EnumMemberDescriptionFactory {
                 let null_variant_ident = self.variants.get(null_variant_index).name;
                 let null_variant_name = token::get_ident(null_variant_ident);
 
-                let name = format_strbuf!("__RUST_ENCODED_ENUM_{}_{}",
-                                          null_variant_index,
+                let name = format_strbuf!("RUST$ENCODED$ENUM${}${}",
+                                          ptrfield,
                                           null_variant_name);
                 vec![
                     MemberDescription {
@@ -1744,8 +1762,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
         adt::RawNullablePointer { .. }           |
         adt::StructWrappedNullablePointer { .. } |
         adt::Univariant(..)                      => None,
-        adt::General(inttype, _) => Some(discriminant_type_metadata(inttype)),
-
+        adt::General(inttype, _) => Some(discriminant_type_metadata(inttype))
     };
 
     let enum_llvm_type = type_of::type_of(cx, enum_type);

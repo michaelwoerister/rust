@@ -116,6 +116,36 @@ def print_enum_val(val, internal_dict):
   '''Prints an enum value with Rust syntax'''
 
   assert val.GetType().GetTypeClass() == lldb.eTypeClassUnion
+
+  if val.num_children == 1:
+    first_variant_name = val.GetChildAtIndex(0).GetName()
+    if first_variant_name and first_variant_name.startswith("$RUST$ENCODED$ENUM$"):
+      # Try to extract the
+
+      last_separator_index = first_variant_name.rfind("$")
+      if last_separator_index == -1:
+        return "<invalid enum encoding: %s>" % first_variant_name
+
+      second_last_separator_index = first_variant_name.rfind("$", 0, last_separator_index)
+      if second_last_separator_index == -1:
+        return "<invalid enum encoding: %s>" % first_variant_name
+
+      try:
+        disr_field_index = first_variant_name[second_last_separator_index + 1 : last_separator_index]
+        disr_field_index = int(disr_field_index)
+      except:
+        return "<invalid enum encoding: %s>" % first_variant_name
+
+      disr_val = val.GetChildAtIndex(0).GetChildAtIndex(disr_field_index).GetValueAsUnsigned()
+
+      if disr_val == 0:
+        null_variant_name = first_variant_name[last_separator_index + 1:]
+        return null_variant_name
+      else:
+        return print_struct_val_starting_from(0, val.GetChildAtIndex(0), internal_dict)
+    else:
+      return print_struct_val_starting_from(0, val.GetChildAtIndex(0), internal_dict)
+
   # extract the discriminator value by
   disr_val = val.GetChildAtIndex(0).GetChildAtIndex(0)
   disr_type = disr_val.GetType()
@@ -135,7 +165,7 @@ def print_pointer_val(val, internal_dict):
   if type_name and type_name[0:1] in ["&", "~", "*"]:
     sigil = type_name[0:1]
 
-  return sigil + print_val(val.Dereference(), internal_dict)
+  return sigil + hex(val.GetValueAsUnsigned()) #print_val(val.Dereference(), internal_dict)
 
 
 def print_fixed_size_vec_val(val, internal_dict):
