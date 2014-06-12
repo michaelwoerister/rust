@@ -1320,6 +1320,9 @@ struct StructMemberDescriptionFactory {
 
 impl StructMemberDescriptionFactory {
     fn create_member_descriptions(&self, cx: &CrateContext) -> Vec<MemberDescription> {
+        let _indent = Indent::new();
+        print_indented("Struct::create_member_descriptions");
+
         if self.fields.len() == 0 {
             return Vec::new();
         }
@@ -1360,6 +1363,9 @@ fn prepare_struct_metadata(cx: &CrateContext,
                            substs: &ty::substs,
                            span: Span)
                         -> RecursiveTypeDescription {
+    let _indent = Indent::new();
+    print_indented(format!("struct_enum_metadata: {}", ppaux::ty_to_str(cx.tcx(), struct_type)).as_slice());
+
     let struct_name = ppaux::ty_to_str(cx.tcx(), struct_type);
     let struct_llvm_type = type_of::type_of(cx, struct_type);
 
@@ -1405,6 +1411,9 @@ struct TupleMemberDescriptionFactory {
 impl TupleMemberDescriptionFactory {
     fn create_member_descriptions(&self, cx: &CrateContext)
                                   -> Vec<MemberDescription> {
+        let _indent = Indent::new();
+        print_indented("Tuple::create_member_descriptions");
+
         self.component_types.iter().map(|&component_type| {
             MemberDescription {
                 name: "".to_string(),
@@ -1421,6 +1430,9 @@ fn prepare_tuple_metadata(cx: &CrateContext,
                           component_types: &[ty::t],
                           span: Span)
                        -> RecursiveTypeDescription {
+    let _indent = Indent::new();
+    print_indented(format!("prepare_tuple_metadata: {}", ppaux::ty_to_str(cx.tcx(), tuple_type)).as_slice());
+
     let tuple_name = ppaux::ty_to_str(cx.tcx(), tuple_type);
     let tuple_llvm_type = type_of::type_of(cx, tuple_type);
 
@@ -1446,6 +1458,36 @@ fn prepare_tuple_metadata(cx: &CrateContext,
 }
 
 
+static mut INDENTION: uint = 0;
+
+struct Indent;
+
+impl Indent {
+    fn new() -> Indent {
+        unsafe {
+            INDENTION += 2;
+        }
+        Indent
+    }
+}
+
+impl Drop for Indent {
+    fn drop(&mut self) {
+        unsafe {
+            INDENTION -= 2;
+        }
+    }
+}
+
+fn print_indented(s: &str) {
+    let indention = unsafe { INDENTION };
+    for _ in range(0, indention) {
+        print!(" ");
+    }
+
+    ::std::io::println(s);
+}
+
 //=-------------------------------------------------------------------------------------------------
 // Enums
 //=-------------------------------------------------------------------------------------------------
@@ -1455,6 +1497,7 @@ fn prepare_tuple_metadata(cx: &CrateContext,
 // variant of the given enum, this factory will produce one MemberDescription (all with no name and
 // a fixed offset of zero bytes).
 struct EnumMemberDescriptionFactory {
+    enum_type: ty::t,
     type_rep: Rc<adt::Repr>,
     variants: Rc<Vec<Rc<ty::VariantInfo>>>,
     discriminant_type_metadata: Option<DIType>,
@@ -1465,8 +1508,15 @@ struct EnumMemberDescriptionFactory {
 
 impl EnumMemberDescriptionFactory {
     fn create_member_descriptions(&self, cx: &CrateContext) -> Vec<MemberDescription> {
+        let _indent = Indent::new();
+        let enum_name = ppaux::ty_to_str(cx.tcx(), self.enum_type);
+        print_indented(format!("Enum::create_member_descriptions: {}", enum_name.as_slice()).as_slice());
+
         match *self.type_rep {
             adt::General(_, ref struct_defs) => {
+                let _indent = Indent::new();
+                print_indented("General case:");
+
                 let discriminant_info = RegularDiscriminant(self.discriminant_type_metadata
                     .expect(""));
 
@@ -1474,6 +1524,11 @@ impl EnumMemberDescriptionFactory {
                     .iter()
                     .enumerate()
                     .map(|(i, struct_def)| {
+                        let _indent = Indent::new();
+                        let variant_name = token::get_ident(self.variants.get(i).name);
+                        let extended_variant_name = format!("{}::{}", enum_name.as_slice(), variant_name.get());
+                        print_indented(extended_variant_name.as_slice());
+
                         let (variant_type_metadata, variant_llvm_type, member_desc_factory) =
                             describe_enum_variant(cx,
                                                   struct_def,
@@ -1486,10 +1541,8 @@ impl EnumMemberDescriptionFactory {
                         let member_descriptions = member_desc_factory
                             .create_member_descriptions(cx);
 
-
-
                         set_members_of_composite_type(cx,
-                                                      token::get_ident(self.variants.get(i).name).get(),
+                                                      extended_variant_name.as_slice(),
                                                       variant_type_metadata,
                                                       variant_llvm_type,
                                                       member_descriptions.as_slice(),
@@ -1504,11 +1557,18 @@ impl EnumMemberDescriptionFactory {
                     }).collect()
             },
             adt::Univariant(ref struct_def, _) => {
+                let _indent = Indent::new();
+                print_indented("Univariant case:");
                 assert!(self.variants.len() <= 1);
 
                 if self.variants.len() == 0 {
+                    print_indented("Empty Unary Enum");
                     vec![]
                 } else {
+                    let variant_name = token::get_ident(self.variants.get(0).name);
+                    let extended_variant_name = format!("{}::{}", enum_name.as_slice(), variant_name.get());
+                    print_indented(extended_variant_name.as_slice());
+
                     let (variant_type_metadata, variant_llvm_type, member_description_factory) =
                         describe_enum_variant(cx,
                                               struct_def,
@@ -1521,8 +1581,9 @@ impl EnumMemberDescriptionFactory {
                     let member_descriptions =
                         member_description_factory.create_member_descriptions(cx);
 
+
                     set_members_of_composite_type(cx,
-                                                  token::get_ident(self.variants.get(0).name).get(),
+                                                  variant_name.get(),
                                                   variant_type_metadata,
                                                   variant_llvm_type,
                                                   member_descriptions.as_slice(),
@@ -1539,6 +1600,9 @@ impl EnumMemberDescriptionFactory {
                 }
             }
             adt::RawNullablePointer { nndiscr: non_null_variant_index, nnty, .. } => {
+                let _indent = Indent::new();
+                print_indented("RawNullablePointer case:");
+
                 // As far as debuginfo is concerned, the pointer this enum represents is still
                 // wrapped in a struct. This is to make the DWARF representation of enums uniform.
 
@@ -1546,6 +1610,9 @@ impl EnumMemberDescriptionFactory {
                 let non_null_variant = self.variants.get(non_null_variant_index as uint);
                 let non_null_variant_ident = non_null_variant.name;
                 let non_null_variant_name = token::get_ident(non_null_variant_ident);
+
+                let extended_variant_name = format!("{}::{}", enum_name.as_slice(), non_null_variant_name.get());
+                print_indented(extended_variant_name.as_slice());
 
                 // The llvm type and metadata of the pointer
                 let non_null_llvm_type = type_of::type_of(cx, nnty);
@@ -1593,6 +1660,16 @@ impl EnumMemberDescriptionFactory {
                 ]
             },
             adt::StructWrappedNullablePointer { nonnull: ref struct_def, nndiscr, ptrfield, ..} => {
+                let _indent = Indent::new();
+                print_indented("StructWrappedNullablePointer case:");
+
+                let non_null_variant = self.variants.get(nndiscr as uint);
+                let non_null_variant_ident = non_null_variant.name;
+                let non_null_variant_name = token::get_ident(non_null_variant_ident);
+
+                let extended_variant_name = format!("{}::{}", enum_name.as_slice(), non_null_variant_name.get());
+                print_indented(extended_variant_name.as_slice());
+
                 // Create a description of the non-null variant
                 let (variant_type_metadata, variant_llvm_type, member_description_factory) =
                     describe_enum_variant(cx,
@@ -1605,10 +1682,6 @@ impl EnumMemberDescriptionFactory {
 
                 let variant_member_descriptions =
                     member_description_factory.create_member_descriptions(cx);
-
-                let non_null_variant = self.variants.get(nndiscr as uint);
-                let non_null_variant_ident = non_null_variant.name;
-                let non_null_variant_name = token::get_ident(non_null_variant_ident);
 
                 set_members_of_composite_type(cx,
                                               non_null_variant_name.get(),
@@ -1650,6 +1723,9 @@ struct VariantMemberDescriptionFactory {
 
 impl VariantMemberDescriptionFactory {
     fn create_member_descriptions(&self, cx: &CrateContext) -> Vec<MemberDescription> {
+        let _indent = Indent::new();
+        print_indented("Variant::create_member_descriptions");
+
         self.args.iter().enumerate().map(|(i, &(ref name, ty))| {
             MemberDescription {
                 name: name.to_string(),
@@ -1681,6 +1757,10 @@ fn describe_enum_variant(cx: &CrateContext,
                          file_metadata: DIFile,
                          span: Span)
                       -> (DICompositeType, Type, MemberDescriptionFactory) {
+    let _indent = Indent::new();
+    let variant_name = token::get_ident(variant_info.name);
+    print_indented(format!("describe_enum_variant: {}", variant_name.get()).as_slice());
+
     let variant_llvm_type =
         Type::struct_(cx, struct_def.fields
                                     .iter()
@@ -1746,6 +1826,9 @@ fn prepare_enum_metadata(cx: &CrateContext,
                          enum_def_id: ast::DefId,
                          span: Span)
                       -> RecursiveTypeDescription {
+    let _indent = Indent::new();
+    print_indented(format!("prepare_enum_metadata: {}", ppaux::ty_to_str(cx.tcx(), enum_type)).as_slice());
+
     let enum_name = ppaux::ty_to_str(cx.tcx(), enum_type);
 
     let (containing_scope, definition_span) = get_namespace_and_span_for_item(cx, enum_def_id);
@@ -1852,6 +1935,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
         llvm_type: enum_llvm_type,
         file_metadata: file_metadata,
         member_description_factory: EnumMDF(EnumMemberDescriptionFactory {
+            enum_type: enum_type,
             type_rep: type_rep.clone(),
             variants: variants,
             discriminant_type_metadata: discriminant_type_metadata,
@@ -1883,6 +1967,9 @@ fn composite_type_metadata(cx: &CrateContext,
                            file_metadata: DIFile,
                            definition_span: Span)
                         -> DICompositeType {
+    let _indent = Indent::new();
+    print_indented(format!("composite_type_metadata: {}", composite_type_name).as_slice());
+
     // Create the (empty) struct metadata node ...
     let composite_type_metadata = create_struct_stub(cx,
                                                      composite_llvm_type,
@@ -1910,6 +1997,9 @@ fn set_members_of_composite_type(cx: &CrateContext,
                                  member_descriptions: &[MemberDescription],
                                  file_metadata: DIFile,
                                  definition_span: Span) {
+    let _indent = Indent::new();
+    print_indented(format!("set_members_of_composite_type: {}", composite_type_name).as_slice());
+
     // In some rare cases LLVM metadata uniquing would lead to an existing type description being
     // used instead of a new one created in create_struct_stub. This would cause a hard to trace
     // assertion in DICompositeType::SetTypeArray(). The following check makes sure that we get a
@@ -1918,7 +2008,7 @@ fn set_members_of_composite_type(cx: &CrateContext,
         let mut composite_types_completed =
             debug_context(cx).composite_types_completed.borrow_mut();
         match composite_types_completed.find(&composite_type_metadata) {
-            Some(old_type_name) => cx.sess().span_bug(definition_span,
+            Some(old_type_name) => cx.sess().span_warn(definition_span,
                 format!("debuginfo::set_members_of_composite_type() - \
                          Already completed forward declaration \
                          re-encountered (old = {}, new = {})",
@@ -1982,6 +2072,9 @@ fn create_struct_stub(cx: &CrateContext,
     // We assign unique IDs to the type stubs so LLVM metadata uniquing does not reuse instances
     // where we don't want it.
     let unique_id = generate_unique_type_id("DI_STRUCT_");
+
+    let _indent = Indent::new();
+    print_indented(format!("create_struct_stub: {} (uid: {})", struct_type_name, unique_id.as_slice()).as_slice());
 
     return unsafe {
         struct_type_name.with_c_str(|name| {
