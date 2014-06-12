@@ -146,7 +146,6 @@ use std::c_str::{CString, ToCStr};
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use collections::HashMap;
-use collections::HashSet;
 use libc::{c_uint, c_ulonglong, c_longlong};
 use std::ptr;
 use std::string::String;
@@ -184,7 +183,7 @@ pub struct CrateDebugContext {
     namespace_map: RefCell<HashMap<Vec<ast::Name>, Rc<NamespaceTreeNode>>>,
     // This collection is used to assert that composite types (structs, enums, ...) have their
     // members only set once:
-    composite_types_completed: RefCell<HashSet<DIType>>,
+    composite_types_completed: RefCell<HashMap<DIType, String>>,
 }
 
 impl CrateDebugContext {
@@ -201,7 +200,7 @@ impl CrateDebugContext {
             created_types: RefCell::new(HashMap::new()),
             created_enum_disr_types: RefCell::new(HashMap::new()),
             namespace_map: RefCell::new(HashMap::new()),
-            composite_types_completed: RefCell::new(HashSet::new()),
+            composite_types_completed: RefCell::new(HashMap::new()),
         };
     }
 }
@@ -1263,6 +1262,7 @@ impl MemberDescriptionFactory {
 enum RecursiveTypeDescription {
     UnfinishedMetadata {
         cache_id: uint,
+        type_name: String,
         metadata_stub: DICompositeType,
         llvm_type: Type,
         file_metadata: DIFile,
@@ -1279,6 +1279,7 @@ impl RecursiveTypeDescription {
             FinalMetadata(metadata) => metadata,
             UnfinishedMetadata {
                 cache_id,
+                ref type_name,
                 metadata_stub,
                 llvm_type,
                 file_metadata,
@@ -1293,6 +1294,7 @@ impl RecursiveTypeDescription {
 
                 // ... and attach them to the stub to complete it.
                 set_members_of_composite_type(cx,
+                                              type_name.as_slice(),
                                               metadata_stub,
                                               llvm_type,
                                               member_descriptions.as_slice(),
@@ -1377,6 +1379,7 @@ fn prepare_struct_metadata(cx: &CrateContext,
 
     UnfinishedMetadata {
         cache_id: cache_id_for_type(struct_type),
+        type_name: struct_name,
         metadata_stub: struct_metadata_stub,
         llvm_type: struct_llvm_type,
         file_metadata: file_metadata,
@@ -1426,6 +1429,7 @@ fn prepare_tuple_metadata(cx: &CrateContext,
 
     UnfinishedMetadata {
         cache_id: cache_id_for_type(tuple_type),
+        type_name: tuple_name.clone(),
         metadata_stub: create_struct_stub(cx,
                                           tuple_llvm_type,
                                           tuple_name.as_slice(),
@@ -1482,7 +1486,10 @@ impl EnumMemberDescriptionFactory {
                         let member_descriptions = member_desc_factory
                             .create_member_descriptions(cx);
 
+
+
                         set_members_of_composite_type(cx,
+                                                      token::get_ident(self.variants.get(i).name).get(),
                                                       variant_type_metadata,
                                                       variant_llvm_type,
                                                       member_descriptions.as_slice(),
@@ -1515,6 +1522,7 @@ impl EnumMemberDescriptionFactory {
                         member_description_factory.create_member_descriptions(cx);
 
                     set_members_of_composite_type(cx,
+                                                  token::get_ident(self.variants.get(0).name).get(),
                                                   variant_type_metadata,
                                                   variant_llvm_type,
                                                   member_descriptions.as_slice(),
@@ -1598,7 +1606,12 @@ impl EnumMemberDescriptionFactory {
                 let variant_member_descriptions =
                     member_description_factory.create_member_descriptions(cx);
 
+                let non_null_variant = self.variants.get(nndiscr as uint);
+                let non_null_variant_ident = non_null_variant.name;
+                let non_null_variant_name = token::get_ident(non_null_variant_ident);
+
                 set_members_of_composite_type(cx,
+                                              non_null_variant_name.get(),
                                               variant_type_metadata,
                                               variant_llvm_type,
                                               variant_member_descriptions.as_slice(),
@@ -1834,6 +1847,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
 
     return UnfinishedMetadata {
         cache_id: cache_id_for_type(enum_type),
+        type_name: enum_name,
         metadata_stub: enum_metadata,
         llvm_type: enum_llvm_type,
         file_metadata: file_metadata,
@@ -1879,6 +1893,7 @@ fn composite_type_metadata(cx: &CrateContext,
 
     // ... and immediately create and add the member descriptions.
     set_members_of_composite_type(cx,
+                                  composite_type_name,
                                   composite_type_metadata,
                                   composite_llvm_type,
                                   member_descriptions,
@@ -1889,6 +1904,7 @@ fn composite_type_metadata(cx: &CrateContext,
 }
 
 fn set_members_of_composite_type(cx: &CrateContext,
+                                 composite_type_name: &str,
                                  composite_type_metadata: DICompositeType,
                                  composite_llvm_type: Type,
                                  member_descriptions: &[MemberDescription],
@@ -1901,13 +1917,18 @@ fn set_members_of_composite_type(cx: &CrateContext,
     {
         let mut composite_types_completed =
             debug_context(cx).composite_types_completed.borrow_mut();
-        if composite_types_completed.contains(&composite_type_metadata) {
-            cx.sess().span_bug(definition_span, "debuginfo::set_members_of_composite_type() - \
-                                                 Already completed forward declaration \
-                                                 re-encountered.");
-        } else {
-            composite_types_completed.insert(composite_type_metadata);
+        match composite_types_completed.find(&composite_type_metadata) {
+            Some(old_type_name) => cx.sess().span_bug(definition_span,
+                format!("debuginfo::set_members_of_composite_type() - \
+                         Already completed forward declaration \
+                         re-encountered (old = {}, new = {})",
+                         old_type_name.as_slice(),
+                         composite_type_name
+                         ).as_slice()),
+            None => { /* ... */ }
         }
+
+        composite_types_completed.insert(composite_type_metadata, composite_type_name.to_string());
     }
 
     let loc = span_start(cx, definition_span);
