@@ -12,6 +12,9 @@
 // ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+
+// === GDB TESTS ===================================================================================
+
 // gdb-command:rbreak zzz
 // gdb-command:run
 // gdb-command:finish
@@ -35,6 +38,30 @@
 // gdb-check:$6 = (int *) 0x0
 
 // gdb-command:continue
+
+
+// === LLDB TESTS ==================================================================================
+
+// lldb-command:run
+
+// lldb-command:print some
+// lldb-check:[...]$0 = Some(&0x12345678)
+
+// lldb-command:print none
+// lldb-check:[...]$1 = None
+
+// lldb-command:print full
+// lldb-check:[...]$2 = Full(454545, &0x87654321, 9988)
+
+// lldb-command:print empty
+// lldb-check:[...]$3 = Empty
+
+// lldb-command:print droid
+// lldb-check:[...]$4 = Droid { id: 675675, range: 10000001, internals: &0x43218765 }
+
+// lldb-command:print void_droid
+// lldb-check:[...]$5 = Void
+
 
 #![feature(struct_variant)]
 
@@ -77,8 +104,8 @@ fn main() {
 
     let full = Full(454545, unsafe { std::mem::transmute(0x87654321u) }, 9988);
 
-    let int_val = 0i;
-    let empty: &MoreFieldsRepr = unsafe { std::mem::transmute(&Empty) };
+    let empty = Empty;
+    let empty_gdb: &MoreFieldsRepr = unsafe { std::mem::transmute(&Empty) };
 
     let droid = Droid {
         id: 675675,
@@ -86,9 +113,10 @@ fn main() {
         internals: unsafe { std::mem::transmute(0x43218765u) }
     };
 
-    let void_droid: &NamedFieldsRepr = unsafe { std::mem::transmute(&Void) };
+    let void_droid = Void;
+    let void_droid_gdb: &NamedFieldsRepr = unsafe { std::mem::transmute(&Void) };
 
-    zzz();
+    zzz(); // #break
 }
 
 fn zzz() {()}
