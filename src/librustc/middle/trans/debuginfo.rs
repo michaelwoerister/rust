@@ -1127,6 +1127,10 @@ pub fn create_function_debug_context(cx: &CrateContext,
 
     let (ident, fn_decl, generics, top_level_block, span, has_path) = match fnitem {
         ast_map::NodeItem(ref item) => {
+            if contains_nodebug_attribute(item.attrs.as_slice()) {
+                return FunctionDebugContext { repr: FunctionWithoutDebugInfo };
+            }
+
             match item.node {
                 ast::ItemFn(fn_decl, _, _, ref generics, top_level_block) => {
                     (item.ident, fn_decl, generics, top_level_block, item.span, true)
@@ -1138,6 +1142,10 @@ pub fn create_function_debug_context(cx: &CrateContext,
             }
         }
         ast_map::NodeMethod(ref method) => {
+            if contains_nodebug_attribute(method.attrs.as_slice()) {
+                return FunctionDebugContext { repr: FunctionWithoutDebugInfo };
+            }
+
             (method.ident,
              method.decl,
              &method.generics,
@@ -1167,6 +1175,12 @@ pub fn create_function_debug_context(cx: &CrateContext,
         ast_map::NodeTraitMethod(ref trait_method) => {
             match **trait_method {
                 ast::Provided(ref method) => {
+                    if contains_nodebug_attribute(method.attrs.as_slice()) {
+                        return FunctionDebugContext {
+                            repr: FunctionWithoutDebugInfo
+                        };
+                    }
+
                     (method.ident,
                      method.decl,
                      &method.generics,
@@ -3162,6 +3176,23 @@ fn set_debug_location(cx: &CrateContext, debug_location: DebugLocation) {
 //=-----------------------------------------------------------------------------
 //  Utility Functions
 //=-----------------------------------------------------------------------------
+
+fn contains_nodebug_attribute(attributes: &[ast::Attribute]) -> bool {
+    for attribute in attributes.iter() {
+        let meta_item: &ast::MetaItem = &*attribute.node.value;
+
+        match meta_item.node {
+            ast::MetaWord(ref value) => {
+                if value.get() == "no_debug" {
+                    return true;
+                }
+            },
+            _ => { /* do nothing*/ }
+        }
+    }
+
+    return false;
+}
 
 /// Return codemap::Loc corresponding to the beginning of the span
 fn span_start(cx: &CrateContext, span: Span) -> codemap::Loc {
