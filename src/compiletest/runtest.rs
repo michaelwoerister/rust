@@ -535,6 +535,11 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
         breakpoint_lines
     } = parse_debugger_commands(testfile, "lldb");
 
+    let rust_src_root = match find_rust_src_root(config) {
+        Some(path) => path,
+        None => fatal("Could not find Rust source root directory")
+    };
+
     // Write debugger script:
     // We don't want to hang when calling `quit` while the process is still running
     let mut script_str = String::from_str("settings set auto-confirm true\n");
@@ -543,7 +548,13 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     script_str.push_str("version\n");
 
     // Switch LLDB into "Rust mode"
-    script_str.push_str("command script import ./src/etc/lldb_rust_formatters.py\n");
+    let rust_formatters_postfix = Path::new("./src/etc/lldb_rust_formatters.py");
+    let lldb_rust_formatters = rust_src_root.join(rust_formatters_postfix);
+
+    script_str.push_str("command script import ");
+    script_str.push_str(lldb_rust_formatters.as_str()
+        .expect("Could not convert lldb_rust_formatters path to UTF-8"));
+    script_str.push_str("\n");
     script_str.push_str("type summary add --no-value ");
     script_str.push_str("--python-function lldb_rust_formatters.print_val ");
     script_str.push_str("-x \".*\" --category Rust\n");
@@ -573,7 +584,13 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     let debugger_script = make_out_name(config, testfile, "debugger.script");
 
     // Let LLDB execute the script via lldb_batchmode.py
-    let debugger_run_result = run_lldb(config, &exe_file, &debugger_script);
+    let lldb_batchmode_path = rust_src_root
+        .join(Path::new("./src/etc/lldb_batchmode.py"));
+
+    let debugger_run_result = run_lldb(config,
+                                       &lldb_batchmode_path,
+                                       &exe_file,
+                                       &debugger_script);
 
     if !debugger_run_result.status.success() {
         fatal_proc_rec("Error while running LLDB", &debugger_run_result);
@@ -581,10 +598,14 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
 
     check_debugger_output(&debugger_run_result, check_lines.as_slice());
 
-    fn run_lldb(config: &Config, test_executable: &Path, debugger_script: &Path) -> ProcRes {
+    fn run_lldb(config: &Config,
+                lldb_batchmode: &Path,
+                test_executable: &Path,
+                debugger_script: &Path)
+             -> ProcRes {
         // Prepare the lldb_batchmode which executes the debugger script
         let mut cmd = Command::new("python");
-        cmd.arg("./src/etc/lldb_batchmode.py")
+        cmd.arg(lldb_batchmode)
            .arg(test_executable)
            .arg(debugger_script)
            .env_set_all([("PYTHONPATH", config.lldb_python_dir.clone().unwrap().as_slice())]);
@@ -611,6 +632,19 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
             stderr: err,
             cmdline: format!("{}", cmd)
         };
+    }
+
+    fn find_rust_src_root(config: &Config) -> Option<Path> {
+        let mut path = config.src_base.clone();
+        let path_postfix = Path::new("src/etc/lldb_batchmode.py");
+
+        while path.pop() {
+            if path.join(path_postfix.clone()).is_file() {
+                return Some(path);
+            }
+        }
+
+        return None;
     }
 }
 
