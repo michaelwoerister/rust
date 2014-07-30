@@ -93,7 +93,7 @@ def execute_command(command_interpreter, command):
         else:
           print_debug("registering breakpoint callback, id = " + str(breakpoint_id))
           callback_command = "breakpoint command add -F breakpoint_callback " + str(breakpoint_id)
-          command_interpreter.HandleCommand(callback_command, res)
+          # command_interpreter.HandleCommand(callback_command, res)
           if res.Succeeded():
             print_debug("successfully registered breakpoint callback, id = " + str(breakpoint_id))
             registered_breakpoints.add(breakpoint_id)
