@@ -82,8 +82,6 @@ def execute_command(command_interpreter, command):
       if res.HasResult():
           print(normalize_whitespace(res.GetOutput()), end = '\n')
 
-      time.sleep(0.2)
-
       # If the command introduced any breakpoints, make sure to register them with the breakpoint
       # callback
       while len(new_breakpoints) > 0:
@@ -114,9 +112,10 @@ def start_breakpoint_listener(target):
   def listen():
     print_debug("Started listening...")
     event = lldb.SBEvent()
-    wait_count = 0
+    listening_start_time_secs = time.clock()
+    MAX_LISTENING_TIME_SECS = 10
     try:
-      while wait_count < 5:
+      while time.clock() < (listening_start_time_secs + MAX_LISTENING_TIME_SECS):
         if listener.WaitForEvent(1, event):
           if lldb.SBBreakpoint.EventIsBreakpointEvent(event) and \
              lldb.SBBreakpoint.GetBreakpointEventTypeFromEvent(event) == \
@@ -124,8 +123,7 @@ def start_breakpoint_listener(target):
             global new_breakpoints
             breakpoint = lldb.SBBreakpoint.GetBreakpointFromEvent(event)
             print_debug("breakpoint added (not really...), id = " + str(breakpoint.id))
-            # new_breakpoints.append(breakpoint.id)
-        wait_count += 1
+            new_breakpoints.append(breakpoint.id)
     except:
       print_debug("breakpoint listener shutting down")
 

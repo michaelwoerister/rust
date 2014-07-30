@@ -1055,10 +1055,21 @@ fn link_rlib<'a>(sess: &'a Session,
             let bc_deflated = obj_filename.with_extension("bytecode.deflate");
             match fs::File::open(&bc).read_to_end().and_then(|data| {
                 fs::File::create(&bc_deflated)
-                    .write(match flate::deflate_bytes(data.as_slice()) {
-                        Some(compressed) => compressed,
-                        None => sess.fatal("failed to compress bytecode")
-                     }.as_slice())
+                    .write({
+                        let compressed = match flate::deflate_bytes(data.as_slice()) {
+                            Some(compressed) => compressed,
+                            None => sess.fatal("failed to compress bytecode")
+                        };
+
+                        let mut data_copy: Vec<u8> = Vec::with_capacity(compressed.as_slice().len() + 1);
+                        data_copy.push_all(compressed.as_slice());
+
+                        if compressed.as_slice().len() % 2 != 0 {
+                            data_copy.push(0u8);
+                        }
+
+                        data_copy
+                    }.as_slice())
             }) {
                 Ok(()) => {}
                 Err(e) => {
