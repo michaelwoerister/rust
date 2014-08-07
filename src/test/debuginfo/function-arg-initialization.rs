@@ -135,6 +135,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // IMMEDIATE ARGS
 // lldb-command:print a

@@ -76,6 +76,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print/d noPadding8
 // lldb-check:[...]$0 = (-100, 100)

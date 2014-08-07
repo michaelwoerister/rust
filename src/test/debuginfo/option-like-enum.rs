@@ -43,6 +43,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print some
 // lldb-check:[...]$0 = Some(&0x12345678)

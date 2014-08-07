@@ -36,6 +36,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print case1
 // lldb-check:[...]$0 = Case1 { a: 0, b: 31868, c: 31868, d: 31868, e: 31868 }

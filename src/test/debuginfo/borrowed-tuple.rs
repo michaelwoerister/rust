@@ -35,6 +35,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print *stack_val_ref
 // lldb-check:[...]$0 = (-14, -19)

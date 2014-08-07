@@ -31,6 +31,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print int_int
 // lldb-check:[...]$0 = AGenericStruct<int, int> { key: 0, value: 1 }

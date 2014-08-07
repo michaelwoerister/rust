@@ -60,6 +60,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print empty
 // lldb-check:[...]$0 = &[]

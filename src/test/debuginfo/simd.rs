@@ -9,7 +9,7 @@
 // except according to those terms.
 
 // Need a fix for LLDB first...
-// ignore-lldb
+// ignore-test
 
 // ignore-android: FIXME(#10381)
 

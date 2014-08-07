@@ -35,6 +35,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print no_padding1
 // lldb-check:[...]$0 = { x = (0, 1) y = 2 z = (3, 4, 5) }

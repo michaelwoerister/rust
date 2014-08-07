@@ -10,7 +10,7 @@
 
 // ignore-android: FIXME(#10381)
 
-// ignore-lldb
+// ignore-test
 
 // compile-flags:--debuginfo=1
 

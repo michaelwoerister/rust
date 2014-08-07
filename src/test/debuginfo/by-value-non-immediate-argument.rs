@@ -50,6 +50,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print s
 // lldb-check:[...]$0 = Struct { a: 1, b: 2.5 }

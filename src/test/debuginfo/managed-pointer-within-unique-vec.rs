@@ -35,6 +35,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print unique.ptr[0]->val
 // lldb-check:[...]$0 = 10

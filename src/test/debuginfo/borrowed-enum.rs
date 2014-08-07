@@ -31,6 +31,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print *the_a_ref
 // lldb-check:[...]$0 = TheA { x: 0, y: 8970181431921507452 }

@@ -49,6 +49,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print packed
 // lldb-check:[...]$0 = Packed { x: 123, y: 234, z: 345 }

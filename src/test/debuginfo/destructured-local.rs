@@ -132,6 +132,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print a
 // lldb-check:[...]$0 = 1

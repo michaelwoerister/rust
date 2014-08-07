@@ -33,6 +33,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 // lldb-command:print simple
 // lldb-check:[...]$0 = WithDestructor { x: 10, y: 20 }
 

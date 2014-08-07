@@ -9,7 +9,7 @@
 // except according to those terms.
 
 // LLDB can't handle zero-sized values
-// ignore-lldb
+// ignore-test
 
 // ignore-android: FIXME(#10381)
 

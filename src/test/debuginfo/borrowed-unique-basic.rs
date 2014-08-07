@@ -68,6 +68,7 @@
 // lldb-command:type format add -f decimal char
 // lldb-command:type format add -f decimal 'unsigned char'
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print *bool_ref
 // lldb-check:[...]$0 = true

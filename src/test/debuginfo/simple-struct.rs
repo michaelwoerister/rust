@@ -82,6 +82,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print no_padding16
 // lldb-check:[...]$0 = NoPadding16 { x: 10000, y: -10001 }

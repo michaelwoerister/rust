@@ -71,6 +71,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // STACK BY REF
 // lldb-command:print *self

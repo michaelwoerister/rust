@@ -33,6 +33,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print case1
 // lldb-check:[...]$0 = Case1(0, Struct { x: 2088533116, y: 2088533116, z: 31868 })

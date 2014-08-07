@@ -29,6 +29,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print constant
 // lldb-check:[...]$0 = 1

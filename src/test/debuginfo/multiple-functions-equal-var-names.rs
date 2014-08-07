@@ -35,6 +35,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print abc
 // lldb-check:[...]$0 = 10101

@@ -32,6 +32,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print *ordinary_unique
 // lldb-check:[...]$0 = (-1, -2)

@@ -146,6 +146,7 @@
 // lldb-command:breakpoint set --name while_expr
 // lldb-command:breakpoint set --name loop_expr
 // lldb-command:run
+// ignore-test
 
 // IMMEDIATE ARGS
 // lldb-command:print a

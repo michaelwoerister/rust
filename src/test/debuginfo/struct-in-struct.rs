@@ -33,6 +33,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print three_simple_structs
 // lldb-check:[...]$0 = ThreeSimpleStructs { x: Simple { x: 1 }, y: Simple { x: 2 }, z: Simple { x: 3 } }

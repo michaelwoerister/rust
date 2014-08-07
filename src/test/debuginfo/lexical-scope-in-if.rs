@@ -85,6 +85,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // BEFORE if
 // lldb-command:print x

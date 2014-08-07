@@ -39,6 +39,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // STRUCT
 // lldb-command:print arg1

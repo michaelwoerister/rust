@@ -51,6 +51,7 @@
 // === LLDB TESTS ==================================================================================
 
 // lldb-command:run
+// ignore-test
 
 // lldb-command:print *stack_val_ref
 // lldb-check:[...]$0 = SomeStruct { x: 10, y: 23.5 }
