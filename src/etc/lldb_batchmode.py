@@ -30,9 +30,10 @@ import sys
 import threading
 import re
 import atexit
+import time
 
 # Set this to True for additional output
-DEBUG_OUTPUT = False
+DEBUG_OUTPUT = True
 
 def print_debug(s):
   "Print something if DEBUG_OUTPUT is True"
@@ -104,13 +105,17 @@ def execute_command(command_interpreter, command):
 
 def start_breakpoint_listener(target):
   "Listens for breakpoints being added and adds new ones to the callback registration list"
+  print_debug("Creating breakpoint listener object")
   listener = lldb.SBListener("breakpoint listener")
 
   def listen():
+    print_debug("Started listening...")
     event = lldb.SBEvent()
+    listening_start_time_secs = time.clock()
+    MAX_LISTENING_TIME_SECS = 10
     try:
-      while True:
-        if listener.WaitForEvent(120, event):
+      while time.clock() < (listening_start_time_secs + MAX_LISTENING_TIME_SECS):
+        if listener.WaitForEvent(1, event):
           if lldb.SBBreakpoint.EventIsBreakpointEvent(event) and \
              lldb.SBBreakpoint.GetBreakpointEventTypeFromEvent(event) == \
              lldb.eBreakpointEventTypeAdded:
@@ -118,12 +123,14 @@ def start_breakpoint_listener(target):
             breakpoint = lldb.SBBreakpoint.GetBreakpointFromEvent(event)
             print_debug("breakpoint added, id = " + str(breakpoint.id))
             new_breakpoints.append(breakpoint.id)
-    except:
-      print_debug("breakpoint listener shutting down")
+    except Exception as e:
+      print_debug("exception in breakpoint listener (shutting down): " + str(e))
 
   # Start the listener and let it run as a daemon
+  print_debug("Creating listener thread")
   listener_thread = threading.Thread(target = listen)
   listener_thread.daemon = True
+  print_debug("Starting listener thread")
   listener_thread.start()
 
   # Register the listener with the target
@@ -143,10 +150,12 @@ script_path = sys.argv[2]
 
 
 # Create a new debugger instance
+print_debug("Creating LLDB debugger instance")
 debugger = lldb.SBDebugger.Create()
 
 # When we step or continue, don't return from the function until the process
 # stops. We do this by setting the async mode to false.
+print_debug("Switching debugger to async mode")
 debugger.SetAsync(False)
 
 # Create a target from a file and arch

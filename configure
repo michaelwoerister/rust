@@ -422,7 +422,7 @@ opt ccache 0 "invoke gcc/clang via ccache to reuse object files between builds"
 opt local-rust 0 "use an installed rustc rather than downloading a snapshot"
 opt inject-std-version 1 "inject the current compiler version of libstd into programs"
 opt llvm-static-stdcpp 0 "statically link to libstdc++ for LLVM"
-opt rpath 0 "build rpaths into rustc itself"
+opt rpath 1 "build rpaths into rustc itself"
 opt nightly 0 "build nightly packages"
 opt verify-install 1 "verify installed binaries work"
 opt jemalloc 1 "build liballoc with jemalloc"
@@ -511,20 +511,9 @@ probe CFG_LLDB             lldb
 
 if [ ! -z "$CFG_LLDB" ]
 then
-    # If CFG_LLDB_PYTHON_DIR is not already set from the outside and valid, try to read it from
-    # LLDB via the -P commandline options.
-    if [ -z "$CFG_LLDB_PYTHON_DIR" ] || [ ! -d "$CFG_LLDB_PYTHON_DIR" ]
-    then
-        CFG_LLDB_PYTHON_DIR=$($CFG_LLDB -P)
-
-        # If CFG_LLDB_PYTHON_DIR is not a valid directory, set it to something more readable
-        if [ ! -d "$CFG_LLDB_PYTHON_DIR" ]
-        then
-            CFG_LLDB_PYTHON_DIR="LLDB_PYTHON_DIRECTORY_NOT_FOUND"
-        fi
-
-        putvar CFG_LLDB_PYTHON_DIR
-    fi
+    # Try-branch hack
+    CFG_LLDB_PYTHON_DIR="/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/Resources/Python"
+    putvar CFG_LLDB_PYTHON_DIR
 fi
 
 step_msg "looking for target specific programs"
