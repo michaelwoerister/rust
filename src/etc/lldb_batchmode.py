@@ -177,6 +177,10 @@ try:
 
   for line in script_file:
     command = line.strip()
+
+    if command.startswith("WAIT!"):
+      time.sleep(1)
+
     if command != '':
       execute_command(command_interpreter, command)
 
@@ -187,4 +191,3 @@ except IOError as e:
   sys.exit(1)
 finally:
   script_file.close()
-

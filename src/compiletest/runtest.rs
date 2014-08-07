@@ -566,6 +566,8 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
                                     line).as_slice());
     }
 
+    script_str.push_str("WAIT!\n");
+
     // Append the other commands
     for line in commands.iter() {
         script_str.push_str(line.as_slice());
