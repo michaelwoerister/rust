@@ -590,7 +590,7 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     let debugger_run_result = run_lldb(config,
                                        &lldb_batchmode_path,
                                        &exe_file,
-                                       &debugger_script);
+                                       &rust_src_root.join(debugger_script));
 
     if !debugger_run_result.status.success() {
         fatal_proc_rec("Error while running LLDB", &debugger_run_result);
@@ -599,15 +599,15 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     check_debugger_output(&debugger_run_result, check_lines.as_slice());
 
     fn run_lldb(config: &Config,
-                lldb_batchmode: &Path,
+                _lldb_batchmode: &Path,
                 test_executable: &Path,
                 debugger_script: &Path)
              -> ProcRes {
         // Prepare the lldb_batchmode which executes the debugger script
-        let mut cmd = Command::new("python");
-        cmd.arg(lldb_batchmode)
-           .arg(test_executable)
-           .arg(debugger_script)
+        let mut cmd = Command::new("lldb");
+        cmd.arg("-O\"script lldb.debugger.SetAsync(False)\"")
+           .arg(format!("-s{}", debugger_script.as_str().unwrap()).as_slice())
+           .arg(format!("-f{}", test_executable.as_str().unwrap()).as_slice())
            .env_set_all([("PYTHONPATH", config.lldb_python_dir.clone().unwrap().as_slice())]);
 
         let (status, out, err) = match cmd.spawn() {
