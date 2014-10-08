@@ -693,8 +693,11 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
 
     fn run_lldb(config: &Config, test_executable: &Path, debugger_script: &Path) -> ProcRes {
         // Prepare the lldb_batchmode which executes the debugger script
+        let rust_src_root = find_rust_src_root(config).expect("Could not find Rust source root");
+        let lldb_script_path = rust_src_root.join(Path::new("./src/etc/lldb_batchmode.py"));
+
         let mut cmd = Command::new("python");
-        cmd.arg("./src/etc/lldb_batchmode.py")
+        cmd.arg(lldb_script_path)
            .arg(test_executable)
            .arg(debugger_script)
            .env_set_all([("PYTHONPATH", config.lldb_python_dir.clone().unwrap().as_slice())]);
