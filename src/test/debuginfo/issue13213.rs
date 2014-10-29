@@ -9,7 +9,6 @@
 // except according to those terms.
 
 // ignore-android: FIXME(#10381)
-// ignore-lldb
 
 // aux-build:issue13213aux.rs
 extern crate issue13213aux;
@@ -21,7 +20,5 @@ extern crate issue13213aux;
 // be available because they have been optimized out from the exporting crate.
 fn main() {
     let b: issue13213aux::S = issue13213aux::A;
-    zzz();
+    ::std::io::println("Nothing to do here...");
 }
-
-fn zzz() {()}

@@ -16,9 +16,6 @@
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
-
 // gdb-command:print 'simple-struct::NO_PADDING_16'
 // gdb-check:$1 = {x = 1000, y = -1001}
 
@@ -38,7 +35,6 @@
 // gdb-check:$6 = {x = 13, y = 14}
 
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print no_padding16
 // gdb-check:$7 = {x = 10000, y = -10001}
@@ -76,6 +72,7 @@
 // gdb-command:print 'simple-struct::PADDING_AT_END'
 // gdb-check:$18 = {x = -27, y = 28}
 
+// gdb-command:continue
 
 // === LLDB TESTS ==================================================================================
 
@@ -98,6 +95,8 @@
 
 // lldb-command:print padding_at_end
 // lldb-check:[...]$5 = PaddingAtEnd { x: -10014, y: 10015 }
+
+// lldb-command:continue
 
 #![allow(unused_variable)];
 #![allow(dead_code)];

@@ -10,13 +10,12 @@
 
 // ignore-android: FIXME(#10381)
 
-// ignore-lldb
-
 // compile-flags:-g
 // gdb-command:run
 
-#![allow(unused_variable)]
+// lldb-command:run
 
+#![allow(unused_variable)]
 
 trait Trait {
     fn method(&self) -> int { 0 }
