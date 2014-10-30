@@ -188,7 +188,9 @@ use driver::config;
 use driver::config::{FullDebugInfo, LimitedDebugInfo, NoDebugInfo};
 use llvm;
 use llvm::{ModuleRef, ContextRef, ValueRef};
-use llvm::debuginfo::*;
+use llvm::debuginfo::{DIType, DIScope, DISubprogram, DIFile, DISubrange,
+                      DIArray, DIBuilderRef, FlagPrototyped, DICompositeType,
+                      DIDescriptor};
 use metadata::csearch;
 use middle::subst::{mod, Subst};
 use middle::trans::adt;
@@ -2668,12 +2670,26 @@ fn create_struct_stub(cx: &CrateContext,
     return metadata_stub;
 }
 
-fn fixed_vec_metadata(cx: &CrateContext,
-                      unique_type_id: UniqueTypeId,
-                      element_type: ty::t,
-                      len: uint,
-                      span: Span)
-                   -> MetadataCreationResult {
+fn embedded_vec_metadata(cx: &CrateContext,
+                         unique_type_id: UniqueTypeId,
+                         mut element_type: ty::t,
+                         len: Option<uint>,
+                         span: Span)
+                      -> MetadataCreationResult {
+    let mut subranges = vec![len_to_subrange_metadata(cx, len)];
+    let mut combined_len = len.unwrap_or(0);
+
+    loop {
+        match ty::get(element_type).sty {
+            ty::ty_vec(typ, len) => {
+                element_type = typ;
+                subranges.push(len_to_subrange_metadata(cx, len));
+                combined_len *= len.unwrap_or(0);
+            },
+            _ => break
+        }
+    }
+
     let element_type_metadata = type_metadata(cx, element_type, span);
 
     return_if_metadata_created_in_meantime!(cx, unique_type_id);
@@ -2681,25 +2697,69 @@ fn fixed_vec_metadata(cx: &CrateContext,
     let element_llvm_type = type_of::type_of(cx, element_type);
     let (element_type_size, element_type_align) = size_and_align_of(cx, element_llvm_type);
 
-    let subrange = unsafe {
-        llvm::LLVMDIBuilderGetOrCreateSubrange(
-            DIB(cx),
-            0,
-            len as i64)
-    };
+    let subscripts = create_DIArray(DIB(cx), subranges[]);
 
-    let subscripts = create_DIArray(DIB(cx), [subrange]);
     let metadata = unsafe {
         llvm::LLVMDIBuilderCreateArrayType(
             DIB(cx),
-            bytes_to_bits(element_type_size * (len as u64)),
+            bytes_to_bits(element_type_size * (combined_len as u64)),
             bytes_to_bits(element_type_align),
             element_type_metadata,
             subscripts)
     };
 
     return MetadataCreationResult::new(metadata, false);
+
+    fn len_to_subrange_metadata(cx: &CrateContext,
+                                len: Option<uint>)
+                             -> DISubrange {
+        unsafe {
+            llvm::LLVMDIBuilderGetOrCreateSubrange(
+                DIB(cx),
+                0,
+                match len {
+                    Some(len) => len as i64,
+                    None => -1i64
+                })
+        }
+    }
 }
+
+// fn embedded_vec_metadata(cx: &CrateContext,
+//                          unique_type_id: UniqueTypeId,
+//                          element_type: ty::t,
+//                          len: Option<uint>,
+//                          span: Span)
+//                       -> MetadataCreationResult {
+//     let element_type_metadata = type_metadata(cx, element_type, span);
+
+//     return_if_metadata_created_in_meantime!(cx, unique_type_id);
+
+//     let element_llvm_type = type_of::type_of(cx, element_type);
+//     let (element_type_size, element_type_align) = size_and_align_of(cx, element_llvm_type);
+
+//     let subrange = unsafe {
+//         llvm::LLVMDIBuilderGetOrCreateSubrange(
+//             DIB(cx),
+//             0,
+//             match len {
+//                 Some(len) => len as i64,
+//                 None => -1i64
+//             })
+//     };
+
+//     let subscripts = create_DIArray(DIB(cx), [subrange]);
+//     let metadata = unsafe {
+//         llvm::LLVMDIBuilderCreateArrayType(
+//             DIB(cx),
+//             bytes_to_bits(element_type_size * (len.unwrap_or(0) as u64)),
+//             bytes_to_bits(element_type_align),
+//             element_type_metadata,
+//             subscripts)
+//     };
+
+//     return MetadataCreationResult::new(metadata, false);
+// }
 
 fn vec_slice_metadata(cx: &CrateContext,
                       vec_type: ty::t,
@@ -2893,12 +2953,12 @@ fn type_metadata(cx: &CrateContext,
         ty::ty_enum(def_id, _) => {
             prepare_enum_metadata(cx, t, def_id, unique_type_id, usage_site_span).finalize(cx)
         }
-        ty::ty_vec(typ, Some(len)) => {
-            fixed_vec_metadata(cx, unique_type_id, typ, len, usage_site_span)
+        ty::ty_vec(typ, len) => {
+            embedded_vec_metadata(cx, unique_type_id, typ, len, usage_site_span)
         }
-        // FIXME Can we do better than this for unsized vec/str fields?
-        ty::ty_vec(typ, None) => fixed_vec_metadata(cx, unique_type_id, typ, 0, usage_site_span),
-        ty::ty_str => fixed_vec_metadata(cx, unique_type_id, ty::mk_i8(), 0, usage_site_span),
+        ty::ty_str => {
+            embedded_vec_metadata(cx, unique_type_id, ty::mk_i8(), None, usage_site_span)
+        },
         ty::ty_trait(..) => {
             MetadataCreationResult::new(
                         trait_pointer_metadata(cx, t, None, unique_type_id),
