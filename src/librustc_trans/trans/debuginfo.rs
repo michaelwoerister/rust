@@ -766,6 +766,37 @@ pub fn finalize(cx: &CrateContext) {
             |s| llvm::LLVMRustAddModuleFlag(cx.llmod(), s,
                                             llvm::LLVMRustDebugMetadataVersion));
     };
+
+    let omit_gdb_pretty_printer_section = cx.tcx()
+                                            .map
+                                            .krate()
+                                            .attrs
+                                            .iter()
+                                            .any(|attr| {
+        let meta_item = &attr.node.value.node;
+        match *meta_item {
+            ast::MetaWord(ref val) if val.get() == "omit_gdb_pretty_printer_section" => true,
+            _=> false
+        }
+    });
+
+    if !omit_gdb_pretty_printer_section &&
+       !cx.sess().target.target.options.is_like_osx &&
+       !cx.sess().target.target.options.is_like_windows {
+        // Add a .debug_gdb_scripts section to this compile-unit. This will
+        // cause GDB to try and load the gdb_load_rust_pretty_printers.py file,
+        // which activates the Rust pretty printers for binary this section is
+        // contained in.
+        let asm = ".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1
+                   .byte 1
+                   .asciz \"gdb_load_rust_pretty_printers.py\"
+                   .popsection";
+        unsafe {
+            asm.with_c_str(
+                |asm| llvm::LLVMSetModuleInlineAsm(cx.llmod(), asm)
+            );
+        }
+    }
 }
 
 /// Creates debug information for the given global variable.

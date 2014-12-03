@@ -628,6 +628,7 @@ impl LintPass for UnusedAttributes {
             "static_assert",
             "thread_local",
             "no_debug",
+            "omit_gdb_pretty_printer_section",
             "unsafe_no_drop_flag",
 
             // used in resolve
