@@ -15,7 +15,7 @@ use super::rpath::RPathConfig;
 use super::svh::Svh;
 use session::config;
 use session::config::NoDebugInfo;
-use session::config::{OutputFilenames, Input, OutputTypeBitcode, OutputTypeExe, OutputTypeObject};
+use session::config::{OutputFilenames, Input, OutputTypeBitcode, OutputTypeExe, OutputTypeObject, FullDebugInfo};
 use session::Session;
 use metadata::common::LinkMeta;
 use metadata::{encoder, cstore, filesearch, csearch, creader};
@@ -867,6 +867,18 @@ fn link_args(cmd: &mut Command,
             cmd.arg(v.as_slice());
         } else {
             cmd.args(&["-Wl,--whole-archive", "-lmorestack", "-Wl,--no-whole-archive"]);
+        }
+    }
+
+    if sess.opts.debuginfo == FullDebugInfo {
+        if t.options.is_like_osx {
+            let morestack = lib_path.join("libgdb_debug_section.rlib");
+
+            let mut v = b"-Wl,-force_load,".to_vec();
+            v.push_all(morestack.as_vec());
+            cmd.arg(v.as_slice());
+        } else {
+            cmd.args(&["-Wl,--whole-archive", "-lgdb_debug_section", "-Wl,--no-whole-archive"]);
         }
     }
 

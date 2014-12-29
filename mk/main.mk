@@ -370,7 +370,8 @@ endif
 TSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(HSREQ$(1)_H_$(3)) \
 	$$(TLIB$(1)_T_$(2)_H_$(3))/libmorestack.a \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/libcompiler-rt.a
+	$$(TLIB$(1)_T_$(2)_H_$(3))/libcompiler-rt.a \
+	$$(TLIB$(1)_T_$(2)_H_$(3))/libgdb_debug_sections.a
 
 # Prerequisites for a working stageN compiler and libraries, for a specific
 # target

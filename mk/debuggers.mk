@@ -132,3 +132,19 @@ $(foreach stage,$(STAGES), \
   $(foreach target,$(CFG_TARGET), \
     $(foreach host,$(CFG_HOST), \
       $(eval $(call DEF_INSTALL_DEBUGGER_SCRIPTS_TARGET,$(stage),$(target),$(host))))))
+
+
+# $(1) is the stage number
+# $(2) is the target triple
+# $(3) is the host triple
+define DEF_COMPILE_DEBUG_SECTIONS
+
+$$(TLIB$(1)_T_$(2)_H_$(3))/libgdb_debug_sections.a: $$(S)/src/libgdb_debug_section/lib.rs
+	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$(TLIB$(1)_T_$(2)_H_$(3))/libgdb_sections.a
+
+endef
+
+$(foreach stage,$(STAGES), \
+  $(foreach target,$(CFG_TARGET), \
+    $(foreach host,$(CFG_HOST), \
+      $(eval $(call DEF_COMPILE_DEBUG_SECTIONS,$(stage),$(target),$(host))))))

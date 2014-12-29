@@ -787,15 +787,15 @@ pub fn finalize(cx: &CrateContext) {
         // cause GDB to try and load the gdb_load_rust_pretty_printers.py file,
         // which activates the Rust pretty printers for binary this section is
         // contained in.
-        let asm = ".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1
-                   .byte 1
-                   .asciz \"gdb_load_rust_pretty_printers.py\"
-                   .popsection";
-        unsafe {
-            asm.with_c_str(
-                |asm| llvm::LLVMSetModuleInlineAsm(cx.llmod(), asm)
-            );
-        }
+        // let asm = ".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1
+        //            .byte 1
+        //            .asciz \"gdb_load_rust_pretty_printers.py\"
+        //            .popsection";
+        // unsafe {
+        //     asm.with_c_str(
+        //         |asm| llvm::LLVMSetModuleInlineAsm(cx.llmod(), asm)
+        //     );
+        // }
     }
 }
 
