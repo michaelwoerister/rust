@@ -266,7 +266,8 @@ extern "C" LLVMValueRef LLVMDIBuilderCreateCompileUnit(
     bool isOptimized,
     const char* Flags,
     unsigned RuntimeVer,
-    const char* SplitName) {
+    const char* SplitName,
+    unsigned DebugEmissionKind) {
     return wrap(Builder->createCompileUnit(Lang,
                                            File,
                                            Dir,
@@ -274,7 +275,8 @@ extern "C" LLVMValueRef LLVMDIBuilderCreateCompileUnit(
                                            isOptimized,
                                            Flags,
                                            RuntimeVer,
-                                           SplitName));
+                                           SplitName,
+                                           (DIBuilder::DebugEmissionKind) DebugEmissionKind));
 }
 
 extern "C" LLVMValueRef LLVMDIBuilderCreateFile(
@@ -603,6 +605,16 @@ extern "C" LLVMValueRef LLVMDIBuilderCreateOpDeref(LLVMTypeRef IntTy)
 extern "C" LLVMValueRef LLVMDIBuilderCreateOpPlus(LLVMTypeRef IntTy)
 {
     return LLVMConstInt(IntTy, DIBuilder::OpPlus, true);
+}
+
+extern "C" uint LLVMDIBuilderGetDebugEmissionKind_Full()
+{
+    return static_cast<uint>(DIBuilder::FullDebug);
+}
+
+extern "C" uint LLVMDIBuilderGetDebugEmissionKind_LineTablesOnly()
+{
+    return static_cast<uint>(DIBuilder::LineTablesOnly);
 }
 
 extern "C" LLVMValueRef LLVMDIBuilderCreateComplexVariable(

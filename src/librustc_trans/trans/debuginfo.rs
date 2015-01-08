@@ -1629,8 +1629,18 @@ fn compile_unit_metadata(cx: &CrateContext) -> DIDescriptor {
     let compile_unit_name = compile_unit_name.as_ptr();
     let work_dir = CString::from_slice(work_dir.as_vec());
     let producer = CString::from_slice(producer.as_bytes());
-    let flags = "\0";
-    let split_name = "\0";
+    let flags = b"\0";
+    let split_name = b"\0";
+    let debug_emission_kind = if cx.sess().opts.debuginfo == FullDebugInfo {
+        unsafe {
+            llvm::LLVMDIBuilderGetDebugEmissionKind_Full()
+        }
+    } else {
+        unsafe {
+            llvm::LLVMDIBuilderGetDebugEmissionKind_LineTablesOnly()
+        }
+    };
+
     return unsafe {
         llvm::LLVMDIBuilderCreateCompileUnit(
             debug_context(cx).builder,
@@ -1641,7 +1651,8 @@ fn compile_unit_metadata(cx: &CrateContext) -> DIDescriptor {
             cx.sess().opts.optimize != config::No,
             flags.as_ptr() as *const _,
             0,
-            split_name.as_ptr() as *const _)
+            split_name.as_ptr() as *const _,
+            debug_emission_kind)
     };
 
     fn fallback_path(cx: &CrateContext) -> CString {

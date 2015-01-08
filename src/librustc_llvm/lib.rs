@@ -1744,7 +1744,8 @@ extern {
                                           isOptimized: bool,
                                           Flags: *const c_char,
                                           RuntimeVer: c_uint,
-                                          SplitName: *const c_char)
+                                          SplitName: *const c_char,
+                                          DebugEmissionKind: c_uint)
                                           -> DIDescriptor;
 
     pub fn LLVMDIBuilderCreateFile(Builder: DIBuilderRef,
@@ -1925,6 +1926,10 @@ extern {
     pub fn LLVMDIBuilderCreateOpDeref(IntType: TypeRef) -> ValueRef;
 
     pub fn LLVMDIBuilderCreateOpPlus(IntType: TypeRef) -> ValueRef;
+
+    pub fn LLVMDIBuilderGetDebugEmissionKind_Full() -> c_uint;
+
+    pub fn LLVMDIBuilderGetDebugEmissionKind_LineTablesOnly() -> c_uint;
 
     pub fn LLVMDIBuilderCreateComplexVariable(Builder: DIBuilderRef,
                                               Tag: c_uint,
