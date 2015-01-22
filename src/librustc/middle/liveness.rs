@@ -1566,7 +1566,8 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                         let span_semicolon = Span {
                             lo: original_span.hi - BytePos(1),
                             hi: original_span.hi,
-                            expn_id: original_span.expn_id
+                            expn_id: original_span.expn_id,
+                            extraspace: [0, 0, 0]
                         };
                         self.ir.tcx.sess.span_help(
                             span_semicolon, "consider removing this semicolon:");

@@ -1305,6 +1305,7 @@ fn new_span(cx: &ExtCtxt, sp: Span) -> Span {
         lo: sp.lo,
         hi: sp.hi,
         expn_id: cx.backtrace(),
+        extraspace: [0, 0, 0]
     }
 }
 

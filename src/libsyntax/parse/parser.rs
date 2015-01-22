@@ -3962,6 +3962,7 @@ impl<'a> Parser<'a> {
                     lo: span.lo,
                     hi: self.last_span.hi,
                     expn_id: span.expn_id,
+                    extraspace: [0, 0, 0]
                 };
                 stmts.push(P(Spanned {
                     node: StmtSemi(e, stmt_id),

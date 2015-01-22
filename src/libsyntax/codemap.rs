@@ -100,15 +100,20 @@ pub struct Span {
     pub hi: BytePos,
     /// Information about where the macro came from, if this piece of
     /// code was created by a macro expansion.
-    pub expn_id: ExpnId
+    pub expn_id: ExpnId,
+    pub extraspace: [u32; 3]
 }
 
-pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
+pub const DUMMY_SP: Span = Span { lo: BytePos(0),
+                                  hi: BytePos(0),
+                                  expn_id: NO_EXPANSION,
+                                  extraspace: [0, 0, 0] };
 
 // Generic span to be used for code originating from the command line
 pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
                                          hi: BytePos(0),
-                                         expn_id: COMMAND_LINE_EXPN };
+                                         expn_id: COMMAND_LINE_EXPN,
+                                         extraspace: [0, 0, 0] };
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show, Copy)]
 pub struct Spanned<T> {
@@ -152,7 +157,7 @@ pub fn dummy_spanned<T>(t: T) -> Spanned<T> {
 
 /* assuming that we're not in macro expansion */
 pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
-    Span {lo: lo, hi: hi, expn_id: NO_EXPANSION}
+    Span {lo: lo, hi: hi, expn_id: NO_EXPANSION, extraspace: [0, 0, 0]}
 }
 
 /// Return the span itself if it doesn't come from a macro expansion,

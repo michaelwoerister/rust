@@ -582,6 +582,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             lo: sp.lo - Pos::from_uint(field_name.get().len()),
             hi: sp.hi,
             expn_id: sp.expn_id,
+            extraspace: [0, 0, 0]
         };
 
         let id = Spanned { node: ident, span: field_span };
@@ -592,6 +593,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             lo: sp.lo - Pos::from_uint(idx.to_string().len()),
             hi: sp.hi,
             expn_id: sp.expn_id,
+            extraspace: [0, 0, 0]
         };
 
         let id = Spanned { node: idx, span: field_span };

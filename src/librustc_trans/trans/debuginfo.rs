@@ -1167,7 +1167,8 @@ pub fn get_cleanup_debug_loc_for_ast_node<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 cleanup_span = Span {
                     lo: node_span.hi - codemap::BytePos(1),
                     hi: node_span.hi,
-                    expn_id: node_span.expn_id
+                    expn_id: node_span.expn_id,
+                    extraspace: [0, 0, 0]
                 };
             }
         }

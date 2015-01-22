@@ -408,7 +408,7 @@ fn emit(dst: &mut EmitterWriter, cm: &codemap::CodeMap, rsp: RenderSpan,
         // we want to tell compiletest/runtest to look at the last line of the
         // span (since `custom_highlight_lines` displays an arrow to the end of
         // the span)
-        let span_end = Span { lo: sp.hi, hi: sp.hi, expn_id: sp.expn_id};
+        let span_end = Span { lo: sp.hi, hi: sp.hi, expn_id: sp.expn_id, extraspace: [0, 0, 0]};
         let ses = cm.span_to_string(span_end);
         try!(print_diagnostic(dst, &ses[], lvl, msg, code));
         if rsp.is_full_span() {
