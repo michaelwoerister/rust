@@ -191,13 +191,12 @@ use self::EnumDiscriminantInfo::*;
 use self::InternalDebugLocation::*;
 
 use llvm;
-use llvm::{ModuleRef, ContextRef, ValueRef};
 use llvm::debuginfo::*;
 use metadata::csearch;
 use middle::subst::{self, Substs};
 use trans::{self, adt, machine, type_of};
 use trans::common::{self, NodeIdAndSpan, CrateContext, FunctionContext, Block,
-                    C_bytes, C_i32, C_i64, NormalizingClosureTyper};
+                    C_bytes, C_i64, NormalizingClosureTyper};
 use trans::_match::{BindingInfo, TrByCopy, TrByMove, TrByRef};
 use trans::monomorphize;
 use trans::type_::Type;
@@ -623,7 +622,7 @@ macro_rules! return_if_metadata_created_in_meantime {
 
 /// A context object for maintaining all state needed by the debuginfo module.
 pub struct CrateDebugContext<'tcx> {
-    llcontext: ContextRef,
+    llcontext: llvm::ContextRef,
     builder: DIBuilderRef,
     current_debug_location: Cell<InternalDebugLocation>,
     created_files: RefCell<FnvHashMap<String, DIFile>>,
@@ -638,7 +637,7 @@ pub struct CrateDebugContext<'tcx> {
 }
 
 impl<'tcx> CrateDebugContext<'tcx> {
-    pub fn new(llmod: ModuleRef) -> CrateDebugContext<'tcx> {
+    pub fn new(llmod: llvm::ModuleRef) -> CrateDebugContext<'tcx> {
         debug!("CrateDebugContext::new");
         let builder = unsafe { llvm::LLVMDIBuilderCreate(llmod) };
         // DIBuilder inherits context from the module, so we'd better use the same one
@@ -699,10 +698,15 @@ struct FunctionDebugContextData {
 
 enum VariableAccess<'a> {
     // The llptr given is an alloca containing the variable's value
-    DirectVariable { alloca: ValueRef },
+    DirectVariable {
+        alloca: llvm::ValueRef
+    },
     // The llptr given is an alloca containing the start of some pointer chain
     // leading to the variable's content.
-    IndirectVariable { alloca: ValueRef, address_operations: &'a [ValueRef] }
+    IndirectVariable {
+        alloca: llvm::ValueRef,
+        address_operations: &'a [llvm::ValueRef]
+    }
 }
 
 enum VariableKind {
@@ -754,7 +758,7 @@ pub fn finalize(cx: &CrateContext) {
 /// Adds the created metadata nodes directly to the crate's IR.
 pub fn create_global_var_metadata(cx: &CrateContext,
                                   node_id: ast::NodeId,
-                                  global: ValueRef) {
+                                  global: llvm::ValueRef) {
     if cx.dbg_cx().is_none() {
         return;
     }
@@ -871,7 +875,7 @@ pub fn create_local_var_metadata(bcx: Block, local: &ast::Local) {
 /// Adds the created metadata nodes directly to the crate's IR.
 pub fn create_captured_var_metadata<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                 node_id: ast::NodeId,
-                                                env_pointer: ValueRef,
+                                                env_pointer: llvm::ValueRef,
                                                 env_index: uint,
                                                 captured_by_ref: bool,
                                                 span: Span) {
@@ -1267,7 +1271,8 @@ pub fn start_emitting_source_locations(fcx: &FunctionContext) {
 pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                                                fn_ast_id: ast::NodeId,
                                                param_substs: &Substs<'tcx>,
-                                               llfn: ValueRef) -> FunctionDebugContext {
+                                               llfn: llvm::ValueRef)
+                                            -> FunctionDebugContext {
     if cx.sess().opts.debuginfo == NoDebugInfo {
         return FunctionDebugContext::DebugInfoDisabled;
     }
@@ -3150,12 +3155,14 @@ fn set_debug_location(cx: &CrateContext, debug_location: InternalDebugLocation) 
             // Always set the column to zero like Clang and GCC
             let col = UNKNOWN_COLUMN_NUMBER;
             debug!("setting debug location to {} {}", line, col);
-            let elements = [C_i32(cx, line as i32), C_i32(cx, col as i32),
-                            scope, ptr::null_mut()];
+
             unsafe {
-                metadata_node = llvm::LLVMMDNodeInContext(debug_context(cx).llcontext,
-                                                          elements.as_ptr(),
-                                                          elements.len() as c_uint);
+                metadata_node = llvm::LLVMDIBuilderCreateDebugLocation(
+                    debug_context(cx).llcontext,
+                    line as c_uint,
+                    col as c_uint,
+                    scope,
+                    ptr::null_mut());
             }
         }
         UnknownLocation => {
