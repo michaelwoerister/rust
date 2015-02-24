@@ -3218,6 +3218,11 @@ pub fn trans_crate<'tcx>(analysis: ty::CrateAnalysis<'tcx>)
     let formats = shared_ccx.tcx().dependency_formats.borrow().clone();
     let no_builtins = attr::contains_name(&krate.attrs, "no_builtins");
 
+
+    ast_map::dump_spans(&shared_ccx.tcx().map,
+                        &link_meta.crate_name[],
+                        shared_ccx.tcx().sess.codemap());
+
     let translation = CrateTranslation {
         modules: modules,
         metadata_module: metadata_module,

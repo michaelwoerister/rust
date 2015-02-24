@@ -15,7 +15,7 @@ use self::MapEntry::*;
 use abi;
 use ast::*;
 use ast_util;
-use codemap::{DUMMY_SP, Span, Spanned};
+use codemap::{DUMMY_SP, Span, Spanned, Pos, CodeMap, ExpnId};
 use fold::Folder;
 use parse::token;
 use print::pprust;
@@ -25,10 +25,11 @@ use visit::{self, Visitor};
 use arena::TypedArena;
 use std::cell::RefCell;
 use std::fmt;
-use std::old_io::IoResult;
+use std::old_io::{IoResult};
 use std::iter::{self, repeat};
 use std::mem;
 use std::slice;
+use std::collections::HashSet;
 
 pub mod blocks;
 
@@ -1123,6 +1124,94 @@ fn node_id_to_string(map: &Map, id: NodeId, include_id: bool) -> String {
         }
         None => {
             format!("unknown node{}", id_str)
+        }
+    }
+}
+
+
+
+
+struct SpanCounter<'cm> {
+    codemap: &'cm CodeMap,
+    expn_ids_visited: HashSet<ExpnId>,
+    writer: ::std::old_io::File,
+}
+
+impl<'cm> Folder for SpanCounter<'cm> {
+    fn new_span(&mut self, sp: Span) -> Span {
+        self.count_span(sp);
+        sp
+    }
+}
+
+impl<'cm> SpanCounter<'cm> {
+    fn count_span(&mut self, span: Span) {
+        if span.hi < span.lo {
+            return;
+        }
+
+        let length: usize = span.hi.to_usize() - span.lo.to_usize();
+        let offset: usize = span.lo.to_usize();
+        let expn_id = span.expn_id.to_u32() as usize;
+
+        self.writer.write_le_u32(offset as u32).unwrap();
+        self.writer.write_le_u32(length as u32).unwrap();
+        self.writer.write_le_u32(expn_id as u32).unwrap();
+
+        if self.expn_ids_visited.contains(&span.expn_id) {
+            return;
+        } else {
+            self.expn_ids_visited.insert(span.expn_id);
+        }
+
+        let cm = self.codemap;
+
+        cm.with_expn_info(span.expn_id, |expn_info| {
+            if let Some(expn_info) = expn_info {
+                self.count_span(expn_info.call_site);
+
+                if let Some(ref sp) = expn_info.callee.span {
+                    self.count_span(*sp);
+                }
+            }
+        });
+    }
+}
+
+pub fn dump_spans(map: &Map,
+                  crate_name: &str,
+                  cm: &CodeMap) {
+
+    let path = ::std::old_path::Path::new(crate_name).with_extension("spandat");
+
+    let mut file = ::std::old_io::File::create(&path).unwrap();
+
+    cm.dump_expn_info(&mut file as &mut ::std::old_io::Writer);
+
+    let mut spc = SpanCounter {
+      codemap: cm,
+      expn_ids_visited: HashSet::new(),
+      writer: file
+    };
+
+    let _ = spc.fold_crate(map.krate().clone());
+
+    for entry in map.map.borrow().iter() {
+        if let RootInlinedParent(inlined_parent) = *entry {
+            match inlined_parent.ii {
+                IIItem(ref item) => {
+                    let _ = spc.fold_item(item.clone());
+                },
+                IITraitItem(_, ref trait_item) => {
+                    let _ = spc.fold_trait_item(trait_item.clone());
+                }
+                IIImplItem(_, ref impl_item) => {
+                    let _ = spc.fold_impl_item(impl_item.clone());
+                }
+                IIForeign(ref foreign_item) => {
+                    let _ = spc.fold_foreign_item(foreign_item.clone());
+                }
+            }
         }
     }
 }

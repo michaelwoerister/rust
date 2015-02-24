@@ -287,6 +287,11 @@ impl ExpnId {
         let ExpnId(cookie) = self;
         cookie as i32
     }
+
+    pub fn to_u32(self) -> u32 {
+        let ExpnId(cookie) = self;
+        cookie
+    }
 }
 
 // _____________________________________________________________________________
@@ -827,6 +832,22 @@ impl CodeMap {
         match id {
             NO_EXPANSION => f(None),
             ExpnId(i) => f(Some(&(*self.expansions.borrow())[i as usize]))
+        }
+    }
+
+    pub fn dump_expn_info(&self, writer: &mut ::std::old_io::Writer) {
+        writer.write_le_i32(self.expansions.borrow().len() as i32).unwrap();
+        for expn_info in self.expansions.borrow().iter() {
+            match expn_info.callee.span {
+                Some(span) => {
+                    writer.write_le_i64( span.lo.0 as i64 ).unwrap();
+                    writer.write_le_i64( span.hi.0 as i64 ).unwrap();
+                },
+                None => {
+                    writer.write_le_i64(-1).unwrap();
+                    writer.write_le_i64(-1).unwrap();
+                }
+            };
         }
     }
 
