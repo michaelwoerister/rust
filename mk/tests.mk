@@ -321,6 +321,7 @@ check-stage$(1)-T-$(2)-H-$(3)-exec: \
 	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-gdb-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-debuginfo-lldb-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-codegen-exec \
+	check-stage$(1)-T-$(2)-H-$(3)-codegen-units-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-doc-exec \
 	check-stage$(1)-T-$(2)-H-$(3)-pretty-exec
 
@@ -485,6 +486,7 @@ DEBUGINFO_GDB_RS := $(wildcard $(S)src/test/debuginfo/*.rs)
 DEBUGINFO_LLDB_RS := $(wildcard $(S)src/test/debuginfo/*.rs)
 CODEGEN_RS := $(wildcard $(S)src/test/codegen/*.rs)
 CODEGEN_CC := $(wildcard $(S)src/test/codegen/*.cc)
+CODEGEN_UNITS_RS := $(wildcard $(S)src/test/codegen-units/*.rs)
 RUSTDOCCK_RS := $(wildcard $(S)src/test/rustdoc/*.rs)
 
 # perf tests are the same as bench tests only they run under
@@ -505,6 +507,7 @@ PRETTY_TESTS := $(PRETTY_RS)
 DEBUGINFO_GDB_TESTS := $(DEBUGINFO_GDB_RS)
 DEBUGINFO_LLDB_TESTS := $(DEBUGINFO_LLDB_RS)
 CODEGEN_TESTS := $(CODEGEN_RS) $(CODEGEN_CC)
+CODEGEN_UNITS_TESTS := $(CODEGEN_UNITS_RS)
 RUSTDOCCK_TESTS := $(RUSTDOCCK_RS)
 
 CTEST_SRC_BASE_rpass = run-pass
@@ -571,6 +574,11 @@ CTEST_SRC_BASE_codegen = codegen
 CTEST_BUILD_BASE_codegen = codegen
 CTEST_MODE_codegen = codegen
 CTEST_RUNTOOL_codegen = $(CTEST_RUNTOOL)
+
+CTEST_SRC_BASE_codegen-units = codegen-units
+CTEST_BUILD_BASE_codegen-units = codegen-units
+CTEST_MODE_codegen-units = codegen-units
+CTEST_RUNTOOL_codegen-units = $(CTEST_RUNTOOL)
 
 CTEST_SRC_BASE_rustdocck = rustdoc
 CTEST_BUILD_BASE_rustdocck = rustdoc
@@ -696,6 +704,7 @@ CTEST_DEPS_debuginfo-lldb_$(1)-T-$(2)-H-$(3) = $$(DEBUGINFO_LLDB_TESTS) \
                                                $(S)src/etc/lldb_batchmode.py \
                                                $(S)src/etc/lldb_rust_formatters.py
 CTEST_DEPS_codegen_$(1)-T-$(2)-H-$(3) = $$(CODEGEN_TESTS)
+CTEST_DEPS_codegen-units_$(1)-T-$(2)-H-$(3) = $$(CODEGEN_UNITS_TESTS)
 CTEST_DEPS_rustdocck_$(1)-T-$(2)-H-$(3) = $$(RUSTDOCCK_TESTS) \
         $$(HBIN$(1)_H_$(3))/rustdoc$$(X_$(3)) \
 	$(S)src/etc/htmldocck.py
@@ -762,7 +771,7 @@ endif
 endef
 
 CTEST_NAMES = rpass rpass-valgrind rpass-full rfail-full cfail-full rfail cfail pfail \
-	bench perf debuginfo-gdb debuginfo-lldb codegen rustdocck
+	bench perf debuginfo-gdb debuginfo-lldb codegen codegen-units rustdocck
 
 $(foreach host,$(CFG_HOST), \
  $(eval $(foreach target,$(CFG_TARGET), \
@@ -941,6 +950,7 @@ TEST_GROUPS = \
 	debuginfo-gdb \
 	debuginfo-lldb \
 	codegen \
+	codegen-units \
 	doc \
 	$(foreach docname,$(DOC_NAMES),doc-$(docname)) \
 	pretty \

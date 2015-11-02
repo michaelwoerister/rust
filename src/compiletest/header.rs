@@ -18,6 +18,7 @@ use common::Config;
 use common;
 use util;
 
+#[derive(Clone)]
 pub struct TestProps {
     // Lines that should be expected, in order, on standard out
     pub error_patterns: Vec<String> ,
