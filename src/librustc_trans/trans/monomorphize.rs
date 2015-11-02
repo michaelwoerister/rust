@@ -20,6 +20,7 @@ use trans::attributes;
 use trans::base::{trans_enum_variant, push_ctxt, get_item_val};
 use trans::base::trans_fn;
 use trans::base;
+// use trans::codegen_item_collector::CodeGenItem;
 use trans::common::*;
 use trans::declare;
 use trans::foreign;

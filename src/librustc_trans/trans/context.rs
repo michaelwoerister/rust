@@ -23,6 +23,7 @@ use trans::debuginfo;
 use trans::declare;
 use trans::glue::DropGlueKind;
 use trans::monomorphize::MonoId;
+use trans::codegen_item_collector::CodeGenItem;
 use trans::type_::{Type, TypeNames};
 use middle::subst::Substs;
 use middle::ty::{self, Ty};
@@ -75,6 +76,8 @@ pub struct SharedCrateContext<'a, 'tcx: 'a> {
 
     available_drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, String>>,
     use_dll_storage_attrs: bool,
+    // TODO: Make this nicer
+    pub codegen_items: RefCell<FnvHashMap<CodeGenItem<'tcx>, CodeGenItemState>>,
 }
 
 /// The local portion of a `CrateContext`.  There is one `LocalCrateContext`
@@ -228,6 +231,12 @@ impl<'a, 'tcx> Iterator for CrateContextMaybeIterator<'a, 'tcx> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CodeGenItemState {
+    PredictedAndGenerated,
+    PredictedButNotGenerated,
+    NotPredictedButGenerated,
+}
 
 unsafe fn create_context_and_module(sess: &Session, mod_name: &str) -> (ContextRef, ModuleRef) {
     let llcx = llvm::LLVMContextCreate();
@@ -337,6 +346,7 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
             check_drop_flag_for_sanity: check_drop_flag_for_sanity,
             available_drop_glues: RefCell::new(FnvHashMap()),
             use_dll_storage_attrs: use_dll_storage_attrs,
+            codegen_items: RefCell::new(FnvHashMap()),
         };
 
         for i in 0..local_count {
@@ -810,6 +820,16 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
 
     pub fn mir_map(&self) -> &'b MirMap<'tcx> {
         self.shared.mir_map
+    }
+
+    pub fn record_codegen_item_as_generated(&self, cgi: CodeGenItem<'tcx>) {
+        let mut codegen_items = self.shared().codegen_items.borrow_mut();
+
+        if codegen_items.contains_key(&cgi) {
+            codegen_items.insert(cgi, CodeGenItemState::PredictedAndGenerated);
+        } else {
+            codegen_items.insert(cgi, CodeGenItemState::NotPredictedButGenerated);
+        }
     }
 }
 

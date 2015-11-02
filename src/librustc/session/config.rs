@@ -634,6 +634,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "don't clear the resolution tables after analysis"),
     keep_ast: bool = (false, parse_bool,
           "keep the AST after lowering it to HIR"),
+    print_codegen_items: Option<String> = (None, parse_opt_string,
+          "print the result of the codegen item collection pass"),
 }
 
 pub fn default_lib_output() -> CrateType {

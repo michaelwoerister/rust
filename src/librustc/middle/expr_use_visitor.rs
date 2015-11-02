@@ -276,7 +276,7 @@ enum PassArgs {
 impl<'d,'t,'a,'tcx> ExprUseVisitor<'d,'t,'a,'tcx> {
     pub fn new(delegate: &'d mut (Delegate<'tcx>+'d),
                typer: &'t infer::InferCtxt<'a, 'tcx>)
-               -> ExprUseVisitor<'d,'t,'a,'tcx> where 'tcx:'a+'d
+               -> ExprUseVisitor<'d,'t,'a,'tcx> where 'tcx:'a+'d, 'a: 't
     {
         let mc: mc::MemCategorizationContext<'t, 'a, 'tcx> =
             mc::MemCategorizationContext::new(typer);
