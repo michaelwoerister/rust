@@ -56,6 +56,7 @@ use trans::callee;
 use trans::cleanup::{self, CleanupMethods, DropHint};
 use trans::closure;
 use trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_int, C_uint, C_integral};
+use trans::codegen_item_collector;
 use trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_undef};
 use trans::common::{CrateContext, DropFlagHintsMap, Field, FunctionContext};
 use trans::common::{Result, NodeIdAndSpan, VariantInfo};
@@ -82,7 +83,7 @@ use trans::type_::Type;
 use trans::type_of;
 use trans::type_of::*;
 use trans::value::Value;
-use util::common::indenter;
+use util::common::{indenter, time};
 use util::sha2::Sha256;
 use util::nodemap::{NodeMap, NodeSet};
 
@@ -3028,6 +3029,8 @@ pub fn trans_crate<'tcx>(tcx: &ty::ctxt<'tcx>,
         // First, verify intrinsics.
         intrinsic::check_intrinsics(&ccx);
 
+        let _codegen_items = collect_code_gen_items(&ccx);
+
         // Next, translate all items. See `TransModVisitor` for
         // details on why we walk in this particular way.
         {
@@ -3184,4 +3187,17 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransItemsWithinModVisitor<'a, 'tcx> {
             }
         }
     }
+}
+
+fn collect_code_gen_items<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>) {
+  if ccx.sess().opts.debugging_opts.print_codegen_items {
+      let time_passes = ccx.sess().time_passes();
+      let items = time(time_passes, "codegen item collection",
+        || codegen_item_collector::collect_crate_codegen_items(&ccx));
+
+      // TODO: Make this output stable
+      for item in items.iter() {
+          println!("CODEGEN_ITEM {}", item.to_string(ccx));
+      }
+  }
 }

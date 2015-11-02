@@ -800,9 +800,13 @@ pub fn maybe_get_item_mir<'tcx>(cdata: Cmd,
         };
         let mut decoder = reader::Decoder::new(mir_doc);
 
+        assert!(decoder.position() == mir_doc.start);
+
         let mut mir = tls::enter_decoding_context(&dcx, &mut decoder, |_, decoder| {
             Decodable::decode(decoder).unwrap()
         });
+
+        assert!(decoder.position() == mir_doc.end);
 
         let mut def_id_and_span_translator = MirDefIdAndSpanTranslator {
             crate_metadata: cdata,

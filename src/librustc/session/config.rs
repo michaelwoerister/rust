@@ -622,6 +622,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "force nonzeroing move optimization on"),
     keep_mtwt_tables: bool = (false, parse_bool,
           "don't clear the resolution tables after analysis"),
+    print_codegen_items: bool = (false, parse_bool,
+          "print the result of the codegen item collection pass"),
 }
 
 pub fn default_lib_output() -> CrateType {

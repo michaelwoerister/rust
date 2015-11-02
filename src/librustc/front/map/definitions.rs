@@ -73,7 +73,7 @@ pub enum DefPathData {
     Misc,
 
     // Different kinds of items and item-like things:
-    Impl,
+    Impl(ast::Name),
     Type(ast::Name),
     Mod(ast::Name),
     Value(ast::Name),
@@ -185,6 +185,7 @@ impl DefPathData {
             LifetimeDef(name) |
             EnumVariant(name) |
             DetachedCrate(name) |
+            Impl(name) |
             Binding(name) => {
                 name.as_str()
             }
@@ -210,10 +211,6 @@ impl DefPathData {
 
             Misc => {
                 InternedString::new("?")
-            }
-
-            Impl => {
-                InternedString::new("<impl>")
             }
 
             ClosureExpr => {
