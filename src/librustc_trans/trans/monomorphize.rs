@@ -20,6 +20,7 @@ use trans::attributes;
 use trans::base::{trans_enum_variant, push_ctxt, get_item_val};
 use trans::base::trans_fn;
 use trans::base;
+// use trans::codegen_item_collector::CodeGenItem;
 use trans::common::*;
 use trans::declare;
 use trans::foreign;
@@ -185,6 +186,26 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                               ccx, &**decl, &**body, &[], d, psubsts, fn_node_id,
                               Some(&hash[..]));
                       } else {
+                          // let substs = ccx.tcx().mk_substs(ccx.tcx().erase_regions(psubsts));
+
+                          // let cgi = CodeGenItem::Fn(fn_node_id, substs);
+                          // if !ccx.shared()
+                          //            .codegen_items
+                          //            .borrow()
+                          //            .contains_key(&cgi) {
+                          //     println!("NOT FOUND: {}", cgi.to_string(ccx));
+                          //     match ref_id {
+                          //         //Some(id) => println!("REF_ID: {}", ccx.tcx().map.node_to_string(id)),
+                          //         Some(id) => {
+                          //             let span = ccx.tcx().map.span(id);
+                          //             ccx.sess().span_note(span, "ref");
+                          //         }
+                          //         None => println!("REF_ID: None"),
+                          //     };
+                          // } else {
+                          //     println!("FOUND: {}", cgi.to_string(ccx));
+                          // }
+
                           trans_fn(ccx, &**decl, &**body, d, psubsts, fn_node_id, &[]);
                       }
                   }
@@ -210,6 +231,24 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                     let d = mk_lldecl(abi::Rust);
                     let needs_body = setup_lldecl(d, &impl_item.attrs);
                     if needs_body {
+                        // let substs = ccx.tcx().mk_substs(ccx.tcx().erase_regions(psubsts));
+                        // let cgi = CodeGenItem::Fn(impl_item.id, substs);
+                          // if !ccx.shared()
+                          //            .codegen_items
+                          //            .borrow()
+                          //            .contains_key(&cgi) {
+                          //     println!("NOT FOUND: {}", cgi.to_string(ccx));
+                          //     match ref_id {
+                          //         Some(id) => {
+                          //             let span = ccx.tcx().map.span(id);
+                          //             ccx.sess().span_note(span, "ref");
+                          //         }
+                          //         None => println!("REF_ID: None"),
+                          //     };
+                          // } else {
+                          //     println!("FOUND: {}", cgi.to_string(ccx));
+                          // }
+
                         trans_fn(ccx,
                                  &sig.decl,
                                  body,

@@ -11,7 +11,7 @@
 use middle::const_eval::ConstVal;
 use middle::def_id::DefId;
 use middle::subst::Substs;
-use middle::ty::{AdtDef, ClosureSubsts, FnOutput, Region, Ty};
+use middle::ty::{self, AdtDef, ClosureSubsts, FnOutput, Region, Ty};
 use rustc_back::slice;
 use rustc_data_structures::tuple_slice::TupleSlice;
 use rustc_front::hir::InlineAsm;
@@ -334,7 +334,22 @@ impl<'tcx> Debug for Terminator<'tcx> {
             Return =>
                 write!(fmt, "return"),
             Call { data: ref c, targets } => {
-                try!(write!(fmt, "{:?} = {:?}(", c.destination, c.func));
+                match c.func {
+                    Operand::Constant(Constant { literal: Literal::Item { def_id, substs, .. }, .. }) => {
+                        try!(ty::tls::with(|tcx| {
+                            let path = tcx.item_path_str(def_id);
+                            write!(fmt,
+                                   "{:?} = {:?}<{:?}>(",
+                                    c.destination,
+                                    path,
+                                    *substs)
+                        }));
+                    }
+                    _ => {
+                        try!(write!(fmt, "{:?} = {:?}(", c.destination, c.func));
+                    }
+                }
+
                 for (index, arg) in c.args.iter().enumerate() {
                     if index > 0 {
                         try!(write!(fmt, ", "));
@@ -593,7 +608,7 @@ pub enum Rvalue<'tcx> {
     InlineAsm(InlineAsm),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum CastKind {
     Misc,
 

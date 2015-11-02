@@ -29,6 +29,7 @@ use middle::const_eval::eval_const_expr_partial;
 use middle::def_id::DefId;
 use trans::{adt, closure, debuginfo, expr, inline, machine};
 use trans::base::{self, push_ctxt};
+use trans::codegen_item_collector::CodeGenItem;
 use trans::common::{self, type_is_sized, ExprOrMethodCall, node_id_substs, C_nil, const_get_elt};
 use trans::common::{CrateContext, C_integral, C_floating, C_bool, C_str_slice, C_bytes, val_ty};
 use trans::common::C_floating_f64;
@@ -1040,6 +1041,9 @@ pub fn trans_static(ccx: &CrateContext,
                     id: ast::NodeId,
                     attrs: &[ast::Attribute])
                     -> Result<ValueRef, ConstEvalErr> {
+
+    ccx.record_codegen_item_as_generated(CodeGenItem::Static(id));
+
     unsafe {
         let _icx = push_ctxt("trans_static");
         let g = base::get_item_val(ccx, id);

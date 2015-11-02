@@ -28,6 +28,7 @@ use trans::build::*;
 use trans::callee;
 use trans::cleanup;
 use trans::cleanup::CleanupMethods;
+use trans::codegen_item_collector::CodeGenItem;
 use trans::common::*;
 use trans::debuginfo::DebugLoc;
 use trans::declare;
@@ -492,6 +493,9 @@ pub fn size_and_align_of_dst<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, t: Ty<'tcx>, in
 fn make_drop_glue<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, v0: ValueRef, g: DropGlueKind<'tcx>)
                               -> Block<'blk, 'tcx> {
     let t = g.ty();
+
+    bcx.ccx().record_codegen_item_as_generated(CodeGenItem::DropGlue(bcx.tcx().erase_regions(&t)));
+
     let skip_dtor = match g { DropGlueKind::Ty(_) => false, DropGlueKind::TyContents(_) => true };
     // NB: v0 is an *alias* of type t here, not a direct value.
     let _icx = push_ctxt("make_drop_glue");

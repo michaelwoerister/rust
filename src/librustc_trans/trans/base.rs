@@ -56,6 +56,7 @@ use trans::callee;
 use trans::cleanup::{self, CleanupMethods, DropHint};
 use trans::closure;
 use trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_int, C_uint, C_integral};
+use trans::codegen_item_collector::{self, CodeGenItem, CodegenItemCollectionMode};
 use trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_undef};
 use trans::common::{CrateContext, DropFlagHintsMap, Field, FunctionContext};
 use trans::common::{Result, NodeIdAndSpan, VariantInfo};
@@ -63,7 +64,7 @@ use trans::common::{node_id_type, return_type_is_void};
 use trans::common::{type_is_immediate, type_is_zero_size, val_ty};
 use trans::common;
 use trans::consts;
-use trans::context::SharedCrateContext;
+use trans::context::{SharedCrateContext, CodeGenItemState};
 use trans::controlflow;
 use trans::datum;
 use trans::debuginfo::{self, DebugLoc, ToDebugLoc};
@@ -82,7 +83,7 @@ use trans::type_::Type;
 use trans::type_of;
 use trans::type_of::*;
 use trans::value::Value;
-use util::common::indenter;
+use util::common::{indenter, time};
 use util::sha2::Sha256;
 use util::nodemap::{NodeMap, NodeSet};
 
@@ -1844,6 +1845,10 @@ pub fn trans_closure<'a, 'b, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                    closure_env: closure::ClosureEnv<'b>) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
+    ccx.record_codegen_item_as_generated(CodeGenItem::Fn(fn_ast_id,
+        ccx.tcx().mk_substs(ccx.tcx().erase_regions(param_substs)),
+        false));
+
     let _icx = push_ctxt("trans_closure");
     attributes::emit_uwtable(llfndecl, true);
 
@@ -3028,12 +3033,111 @@ pub fn trans_crate<'tcx>(tcx: &ty::ctxt<'tcx>,
         // First, verify intrinsics.
         intrinsic::check_intrinsics(&ccx);
 
+        collect_code_gen_items(&ccx);
+
         // Next, translate all items. See `TransModVisitor` for
         // details on why we walk in this particular way.
         {
             let _icx = push_ctxt("text");
             intravisit::walk_mod(&mut TransItemsWithinModVisitor { ccx: &ccx }, &krate.module);
             krate.visit_all_items(&mut TransModVisitor { ccx: &ccx });
+        }
+
+        {
+            use std::hash::{Hash, SipHasher, Hasher};
+
+            fn hash<T: Hash>(t: &T) -> u64 {
+                let mut s = SipHasher::new();
+                t.hash(&mut s);
+                s.finish()
+            }
+
+
+            let codegen_items = ccx.shared().codegen_items.borrow();
+
+            let mut cgi_str = HashMap::new();
+
+            for (cgi, cgi_state) in codegen_items.iter() {
+                let k = cgi.to_string(&ccx);
+
+                if cgi_str.contains_key(&k) {
+                    let prev: (CodeGenItem, CodeGenItemState) = cgi_str[&k];
+                    println!("DUPLICATE KEY: {}", k);
+                    println!("  a: {:?}, {:?}, hash: {}, raw: {}", prev.0, prev.1, hash(&prev.0), prev.0.to_raw_string());
+                    println!("  b: {:?}, {:?}, hash: {}, raw: {}", *cgi, *cgi_state, hash(cgi), cgi.to_raw_string());
+                    println!("  eq: {}", *cgi == prev.0);
+                } else {
+                    cgi_str.insert(k, (*cgi, *cgi_state));
+                }
+            }
+
+            let mut predicted_but_not_generated = HashSet::new();
+            let mut not_predicted_but_generated = HashSet::new();
+            let mut predicted = HashSet::new();
+            let mut generated = HashSet::new();
+
+            for (cgi, cgi_state) in codegen_items.iter() {
+                let cgi_key = cgi.to_string(&ccx);
+
+                match *cgi_state {
+                    CodeGenItemState::PredictedAndGenerated => {
+                        predicted.insert(cgi_key.clone());
+                        generated.insert(cgi_key);
+                    }
+                    CodeGenItemState::PredictedButNotGenerated => {
+                        let is_root = match *cgi {
+                            CodeGenItem::Fn(_, _, is_root) => is_root,
+                            _ => false
+                        };
+                        predicted_but_not_generated.insert((cgi_key.clone(), is_root));
+                        predicted.insert(cgi_key);
+                    }
+                    CodeGenItemState::NotPredictedButGenerated => {
+                        not_predicted_but_generated.insert(cgi_key.clone());
+                        generated.insert(cgi_key);
+                    }
+                }
+            }
+
+            println!("Total number of codegen items predicted: {}", predicted.len());
+            println!("Total number of codegen items generated: {}", generated.len());
+            println!("Total number of codegen items predicted but not generated: {}", predicted_but_not_generated.len());
+            println!("Total number of codegen items not predicted but generated: {}", not_predicted_but_generated.len());
+
+            if generated.len() > 0 {
+                println!("Failed to predict {}% of codegen items", 100 * not_predicted_but_generated.len() / generated.len());
+            }
+            if predicted.len() > 0 {
+                println!("Predict {}% too many codegen items", 100 * predicted_but_not_generated.len() / generated.len());
+            }
+
+            println!("");
+            println!("Not predicted but generated:");
+            println!("============================");
+            for cgi in not_predicted_but_generated {
+                println!(" - {}", cgi);
+            }
+
+            println!("");
+            println!("Predicted but not generated:");
+            println!("============================");
+            for (cgi, is_root) in predicted_but_not_generated {
+                println!(" - {}{}", cgi, if is_root { " (ROOT)" } else { "" });
+            }
+
+            println!("");
+            println!("All predicted:");
+            println!("============================");
+            for cgi in predicted {
+                println!(" - {}", cgi);
+            }
+
+            println!("");
+            println!("All generated:");
+            println!("============================");
+            for cgi in generated {
+                println!(" - {}", cgi);
+            }
         }
     }
 
@@ -3183,5 +3287,25 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TransItemsWithinModVisitor<'a, 'tcx> {
                 intravisit::walk_item(self, i);
             }
         }
+    }
+}
+
+fn collect_code_gen_items<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>) {
+    let time_passes = ccx.sess().time_passes();
+    let items = time(time_passes, "codegen item collection", || {
+        codegen_item_collector::collect_crate_codegen_items(&ccx, CodegenItemCollectionMode::Lazy)
+    });
+
+    if ccx.sess().opts.debugging_opts.print_codegen_items {
+        // TODO: Make this output stable
+        for item in items.iter() {
+            println!("CODEGEN_ITEM {}", item.to_string(ccx));
+        }
+    }
+
+    let mut ccx_map = ccx.shared().codegen_items.borrow_mut();
+
+    for cgi in items {
+        ccx_map.insert(cgi, CodeGenItemState::PredictedButNotGenerated);
     }
 }

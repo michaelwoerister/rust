@@ -41,10 +41,12 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId)
     let inlined = ccx.tcx().sess.cstore.maybe_get_item_ast(ccx.tcx(), fn_id);
     let inline_id = match inlined {
         FoundAst::NotFound => {
+            debug!("===> NotFound)");
             ccx.external().borrow_mut().insert(fn_id, None);
             return None;
         }
         FoundAst::Found(&InlinedItem::Item(ref item)) => {
+            debug!("===> Found(&InlinedItem::Item(ref item))");
             ccx.external().borrow_mut().insert(fn_id, Some(item.id));
             ccx.external_srcs().borrow_mut().insert(item.id, fn_id);
 
@@ -88,11 +90,13 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId)
             item.id
         }
         FoundAst::Found(&InlinedItem::Foreign(ref item)) => {
+            debug!("===> Found(&InlinedItem::Foreign(ref item))");
             ccx.external().borrow_mut().insert(fn_id, Some(item.id));
             ccx.external_srcs().borrow_mut().insert(item.id, fn_id);
             item.id
         }
         FoundAst::FoundParent(parent_id, &InlinedItem::Item(ref item)) => {
+            debug!("===> FoundParent(parent_id, &InlinedItem::Item(ref item))");
             ccx.external().borrow_mut().insert(parent_id, Some(item.id));
             ccx.external_srcs().borrow_mut().insert(item.id, parent_id);
 
@@ -127,6 +131,8 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId)
                             with a non-item parent");
         }
         FoundAst::Found(&InlinedItem::TraitItem(_, ref trait_item)) => {
+            debug!("===> instantiate_inline(Found(&InlinedItem::TraitItem(_, ref trait_item)))");
+
             ccx.external().borrow_mut().insert(fn_id, Some(trait_item.id));
             ccx.external_srcs().borrow_mut().insert(trait_item.id, fn_id);
 
@@ -147,6 +153,7 @@ fn instantiate_inline(ccx: &CrateContext, fn_id: DefId)
             trait_item.id
         }
         FoundAst::Found(&InlinedItem::ImplItem(impl_did, ref impl_item)) => {
+            debug!("===> Found(&InlinedItem::ImplItem(impl_did, ref impl_item))");
             ccx.external().borrow_mut().insert(fn_id, Some(impl_item.id));
             ccx.external_srcs().borrow_mut().insert(impl_item.id, fn_id);
 
