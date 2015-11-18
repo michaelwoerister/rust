@@ -52,6 +52,7 @@
 #![feature(vec_push_all)]
 #![feature(wrapping)]
 #![feature(cell_extras)]
+#![feature(fmt_radix)]
 #![cfg_attr(test, feature(test))]
 
 #![allow(trivial_casts)]

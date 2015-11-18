@@ -14,6 +14,7 @@
 #![allow(non_camel_case_types)]
 
 use std::cell::RefCell;
+use std::fmt;
 use std::io::Cursor;
 use std::io::prelude::*;
 
@@ -31,7 +32,7 @@ use syntax::abi::Abi;
 use syntax::ast;
 use syntax::diagnostic::SpanHandler;
 
-use rbml::writer::{self, Encoder};
+use rbml::writer::Encoder;
 
 macro_rules! mywrite { ($w:expr, $($arg:tt)*) => ({ write!($w.writer, $($arg)*); }) }
 
@@ -168,14 +169,20 @@ pub fn enc_ty<'a, 'tcx>(w: &mut Encoder, cx: &ctxt<'a, 'tcx>, t: Ty<'tcx>) {
     let end = w.mark_stable_position();
     let len = end - pos;
 
-    let buf: &mut [u8] = &mut [0; 16]; // vuint < 15 bytes
+    let buf: &mut [u8] = &mut [0; 32];
     let mut abbrev = Cursor::new(buf);
-    abbrev.write_all(b"#");
-    writer::write_vuint(&mut abbrev, pos as usize);
+    // second byte is for storing the number characters used to represent the offset
+    abbrev.write_all(b"# ");
+    // write the offset of this type in the stream
+    write!(abbrev, "{}", fmt::radix(pos, 36));
+    let abbrev_len = abbrev.position();
+    // store how many characters the offset has
+    abbrev.set_position(1);
+    write!(abbrev, "{}", fmt::radix(abbrev_len - 2, 36));
 
     cx.abbrevs.borrow_mut().insert(t, ty_abbrev {
-        s: if abbrev.position() < len {
-            abbrev.get_ref()[..abbrev.position() as usize].to_owned()
+        s: if abbrev_len < len {
+            abbrev.get_ref()[..abbrev_len as usize].to_owned()
         } else {
             // if the abbreviation is longer than the real type,
             // don't use #-notation. However, insert it here so

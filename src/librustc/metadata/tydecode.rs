@@ -98,10 +98,16 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
         return &self.data[start_pos..end_pos];
     }
 
-    fn parse_vuint(&mut self) -> usize {
-        let res = rbml::reader::vuint_at(self.data, self.pos).unwrap();
-        self.pos = res.next;
-        res.val
+    fn parse_ty_abbrev(&mut self) -> usize {
+        let byte_count_as_str = str::from_utf8(&self.data[self.pos..self.pos+1]).unwrap();
+        let byte_count = usize::from_str_radix(byte_count_as_str, 36).unwrap();
+        self.pos += 1;
+
+        let offset_as_str = str::from_utf8(&self.data[self.pos..self.pos+byte_count]).unwrap();
+        let offset = usize::from_str_radix(offset_as_str, 36).unwrap();
+        self.pos += byte_count;
+
+        offset
     }
 
     fn parse_name(&mut self, last: char) -> ast::Name {
@@ -378,8 +384,8 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
                 // can first check a cache (`tcx.rcache`) for that offset. If we find something,
                 // we return it (modulo closure types, see below). But if not, then we
                 // jump to offset 123 and read the type from there.
+                let pos = self.parse_ty_abbrev();
 
-                let pos = self.parse_vuint();
                 let key = ty::CReaderCacheKey { cnum: self.krate, pos: pos };
                 match tcx.rcache.borrow().get(&key).cloned() {
                     Some(tt) => {
