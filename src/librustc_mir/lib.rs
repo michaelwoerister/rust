@@ -29,6 +29,8 @@ extern crate rustc_front;
 extern crate rustc_back;
 extern crate syntax;
 
+extern crate serialize as rustc_serialize;
+
 pub mod build;
 pub mod mir_map;
 mod hair;

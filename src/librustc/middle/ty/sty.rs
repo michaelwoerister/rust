@@ -233,7 +233,7 @@ pub enum TypeVariants<'tcx> {
 /// closure C wind up influencing the decisions we ought to make for
 /// closure C (which would then require fixed point iteration to
 /// handle). Plus it fixes an ICE. :P
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, RustcEncodable)]
 pub struct ClosureSubsts<'tcx> {
     /// Lifetime and type parameters from the enclosing function.
     /// These are separated out because trans wants to pass them around
@@ -434,7 +434,7 @@ pub struct ClosureTy<'tcx> {
     pub sig: PolyFnSig<'tcx>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable)]
 pub enum FnOutput<'tcx> {
     FnConverging(Ty<'tcx>),
     FnDiverging
@@ -632,7 +632,7 @@ pub struct DebruijnIndex {
 ///
 /// [1] http://smallcultfollowing.com/babysteps/blog/2013/10/29/intermingled-parameter-lists/
 /// [2] http://smallcultfollowing.com/babysteps/blog/2013/11/04/intermingled-parameter-lists/
-#[derive(Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(Clone, PartialEq, Eq, Hash, Copy, RustcEncodable)]
 pub enum Region {
     // Region bound in a type or fn declaration which will be
     // substituted 'early' -- that is, at the same time when type
@@ -701,7 +701,7 @@ pub struct RegionVid {
     pub index: u32
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable)]
 pub struct SkolemizedRegionVid {
     pub index: u32
 }

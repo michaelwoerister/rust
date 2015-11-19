@@ -13,14 +13,19 @@
 pub use self::ParamSpace::*;
 pub use self::RegionSubsts::*;
 
+use metadata::{self, tyencode};
 use middle::ty::{self, Ty, HasTypeFlags, RegionEscape};
 use middle::ty::fold::{TypeFoldable, TypeFolder};
+
+use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 use std::fmt;
 use std::iter::IntoIterator;
 use std::slice::Iter;
 use std::vec::{Vec, IntoIter};
 use syntax::codemap::{Span, DUMMY_SP};
+
+
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -152,6 +157,27 @@ impl<'tcx> Substs<'tcx> {
         Substs { types: types, regions: regions }
     }
 }
+
+impl<'tcx> Encodable for Substs<'tcx> {
+
+    fn encode<S: Encoder>(&self, _: &mut S) -> Result<(), S::Error> {
+        unsafe {
+            metadata::encoder::tls::with(|ecx, rbml_w| {
+                let ecx: &metadata::encoder::EncodeContext<'tcx, 'tcx> =
+                    ::std::mem::transmute(ecx);
+                let ty_str_ctxt = &tyencode::ctxt {
+                    diag: ecx.diag,
+                    ds: metadata::encoder::def_to_string,
+                    tcx: ecx.tcx,
+                    abbrevs: &ecx.type_abbrevs
+                };
+                tyencode::enc_substs(rbml_w, ty_str_ctxt,self);
+                Ok(())
+            })
+        }
+    }
+}
+
 
 impl RegionSubsts {
     pub fn map<F>(self, op: F) -> RegionSubsts where

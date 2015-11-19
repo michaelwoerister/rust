@@ -21,7 +21,7 @@ pub use self::LvaluePreference::*;
 
 use front::map as ast_map;
 use front::map::LinkedPath;
-use metadata::csearch;
+use metadata::{self, csearch};
 use metadata::cstore::LOCAL_CRATE;
 use middle;
 use middle::def::{self, ExportMap};
@@ -48,6 +48,8 @@ use syntax::ast::{self, CrateNum, Name, NodeId};
 use syntax::attr::{self, AttrMetaMethods};
 use syntax::codemap::Span;
 use syntax::parse::token::{InternedString, special_idents};
+
+use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 use rustc_front::hir;
 use rustc_front::hir::{ItemImpl, ItemTrait};
@@ -1530,6 +1532,13 @@ impl<'tcx, 'container> Hash for AdtDefData<'tcx, 'container> {
     }
 }
 
+impl<'tcx> Encodable for AdtDef<'tcx> {
+
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_str(&metadata::encoder::def_to_string(self.did))
+    }
+}
+
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AdtKind { Struct, Enum }
@@ -2832,3 +2841,47 @@ pub trait HasTypeFlags {
         !self.has_type_flags(TypeFlags::HAS_LOCAL_NAMES)
     }
 }
+
+impl<'tcx> Encodable for Ty<'tcx> {
+    fn encode<S: Encoder>(&self, _: &mut S) -> Result<(), S::Error> {
+        unsafe {
+            metadata::encoder::tls::with(|ecx, rbml_w| {
+                let ecx: &metadata::encoder::EncodeContext<'tcx, 'tcx> =
+                    ::std::mem::transmute(ecx);
+                metadata::encoder::write_type(ecx, rbml_w, *self);
+                Ok(())
+            })
+        }
+    }
+}
+
+impl<'tcx> Decodable for Ty<'tcx> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Ty<'tcx>, D::Error> {
+        TyDecoder::new(data: &'a [u8],
+                       crate_num: ast::CrateNum,
+                       pos: usize,
+                       tcx: &'a ty::ctxt<'tcx>,
+                       conv: DefIdConvert<'a>)
+    }
+}
+
+// impl<'tcx> Decodable for Ty<'tcx> {
+//     fn decode<D: Decoder>(d: &mut D) -> Result<Ty<'tcx>, D::Error> {
+//         //Ok(BytePos(try!{ d.read_u32() }))
+//         tls::with(|tcx| {
+//             let tcx: &ctxt<'tcx> = unsafe {
+//                 ::std::mem::transmute(tcx)
+//             };
+
+//             let data = d.read_str().unwrap().into_bytes();
+
+//             let decoder = TyDecoder {
+//                 data: &data,
+//                 krate: ast::CrateNum,
+//                 pos: usize,
+//                 tcx: &'a ty::ctxt<'tcx>,
+//                 conv_def_id: DefIdConvert<'a>,
+//             }
+//         })
+//     }
+// }

@@ -83,6 +83,37 @@ impl<'a, 'tcx> EncodeContext<'a,'tcx> {
     }
 }
 
+pub mod tls {
+    use super::EncodeContext;
+    use rbml::writer::Encoder;
+
+    /// Marker type used for the scoped TLS slot.
+    /// The type context cannot be used directly because the scoped TLS
+    /// in libstd doesn't allow types generic over lifetimes.
+    struct ThreadLocalEncodingCx;
+
+    scoped_thread_local!(static TLS_ENCODING: ThreadLocalEncodingCx);
+
+    pub fn enter<'a, 'tcx, F, R>(ecx: &EncodeContext<'a, 'tcx>,
+                                 rbml_w: &mut Encoder,
+                                 f: F) -> R
+        where F: FnOnce(&EncodeContext<'a, 'tcx>, &mut Encoder) -> R,
+              'tcx: 'a
+    {
+        let tls_payload = (ecx as *const _, rbml_w as *mut _);
+        let tls_ptr = ((&tls_payload) as *const _) as *const ThreadLocalEncodingCx;
+        TLS_ENCODING.set(unsafe { &*tls_ptr }, || f(ecx, rbml_w))
+    }
+
+    pub unsafe fn with<F: FnOnce(&EncodeContext, &mut Encoder) -> R, R>(f: F) -> R {
+        TLS_ENCODING.with(|tls| {
+            let tls_payload = (tls as *const ThreadLocalEncodingCx)
+                                   as *mut (&EncodeContext, &mut Encoder);
+            f((*tls_payload).0, (*tls_payload).1)
+        })
+    }
+}
+
 /// "interned" entries referenced by id
 #[derive(PartialEq, Eq, Hash)]
 pub enum XRef<'tcx> { Predicate(ty::Predicate<'tcx>) }
@@ -1875,8 +1906,38 @@ fn encode_dylib_dependency_formats(rbml_w: &mut Encoder, ecx: &EncodeContext) {
 pub const metadata_encoding_version : &'static [u8] = &[b'r', b'u', b's', b't', 0, 0, 0, 2 ];
 
 pub fn encode_metadata(parms: EncodeParams, krate: &hir::Crate) -> Vec<u8> {
+    let EncodeParams {
+        item_symbols,
+        diag,
+        tcx,
+        reexports,
+        cstore,
+        encode_inlined_item,
+        link_meta,
+        reachable,
+        ..
+    } = parms;
+    let ecx = EncodeContext {
+        diag: diag,
+        tcx: tcx,
+        reexports: reexports,
+        item_symbols: item_symbols,
+        link_meta: link_meta,
+        cstore: cstore,
+        encode_inlined_item: RefCell::new(encode_inlined_item),
+        type_abbrevs: RefCell::new(FnvHashMap()),
+        reachable: reachable,
+     };
+
     let mut wr = Cursor::new(Vec::new());
-    encode_metadata_inner(&mut wr, parms, krate);
+
+    {
+        let mut rbml_w = Encoder::new(&mut wr);
+        tls::enter(&ecx, &mut rbml_w, |ecx, rbml_w| {
+            encode_metadata_inner(rbml_w, ecx, krate)
+        });
+    }
+
 
     // RBML compacts the encoded bytes whenever appropriate,
     // so there are some garbages left after the end of the data.
@@ -1911,8 +1972,8 @@ pub fn encode_metadata(parms: EncodeParams, krate: &hir::Crate) -> Vec<u8> {
     return v;
 }
 
-fn encode_metadata_inner(wr: &mut Cursor<Vec<u8>>,
-                         parms: EncodeParams,
+fn encode_metadata_inner(rbml_w: &mut Encoder,
+                         ecx: &EncodeContext,
                          krate: &hir::Crate) {
     struct Stats {
         attr_bytes: u64,
@@ -1946,101 +2007,77 @@ fn encode_metadata_inner(wr: &mut Cursor<Vec<u8>>,
         zero_bytes: 0,
         total_bytes: 0,
     };
-    let EncodeParams {
-        item_symbols,
-        diag,
-        tcx,
-        reexports,
-        cstore,
-        encode_inlined_item,
-        link_meta,
-        reachable,
-        ..
-    } = parms;
-    let ecx = EncodeContext {
-        diag: diag,
-        tcx: tcx,
-        reexports: reexports,
-        item_symbols: item_symbols,
-        link_meta: link_meta,
-        cstore: cstore,
-        encode_inlined_item: RefCell::new(encode_inlined_item),
-        type_abbrevs: RefCell::new(FnvHashMap()),
-        reachable: reachable,
-     };
 
-    let mut rbml_w = Encoder::new(wr);
-
-    encode_rustc_version(&mut rbml_w);
-    encode_crate_name(&mut rbml_w, &ecx.link_meta.crate_name);
-    encode_crate_triple(&mut rbml_w, &tcx.sess.opts.target_triple);
-    encode_hash(&mut rbml_w, &ecx.link_meta.crate_hash);
-    encode_dylib_dependency_formats(&mut rbml_w, &ecx);
+    encode_rustc_version(rbml_w);
+    encode_crate_name(rbml_w, &ecx.link_meta.crate_name);
+    encode_crate_triple(rbml_w, &ecx.tcx.sess.opts.target_triple);
+    encode_hash(rbml_w, &ecx.link_meta.crate_hash);
+    encode_dylib_dependency_formats(rbml_w, &ecx);
 
     let mut i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_attributes(&mut rbml_w, &krate.attrs);
+    encode_attributes(rbml_w, &krate.attrs);
     stats.attr_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_crate_deps(&mut rbml_w, ecx.cstore);
+    encode_crate_deps(rbml_w, ecx.cstore);
     stats.dep_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode the language items.
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_lang_items(&ecx, &mut rbml_w);
+    encode_lang_items(&ecx, rbml_w);
     stats.lang_item_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode the native libraries used
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_native_libraries(&ecx, &mut rbml_w);
+    encode_native_libraries(&ecx, rbml_w);
     stats.native_lib_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode the plugin registrar function
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_plugin_registrar_fn(&ecx, &mut rbml_w);
+    encode_plugin_registrar_fn(&ecx, rbml_w);
     stats.plugin_registrar_fn_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode codemap
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_codemap(&ecx, &mut rbml_w);
+    encode_codemap(&ecx, rbml_w);
     stats.codemap_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode macro definitions
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_macro_defs(&mut rbml_w, krate);
+    encode_macro_defs(rbml_w, krate);
     stats.macro_defs_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode the def IDs of impls, for coherence checking.
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_impls(&ecx, krate, &mut rbml_w);
+    encode_impls(&ecx, krate, rbml_w);
     stats.impl_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode miscellaneous info.
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_misc_info(&ecx, krate, &mut rbml_w);
-    encode_reachable(&ecx, &mut rbml_w);
+    encode_misc_info(&ecx, krate, rbml_w);
+    encode_reachable(&ecx, rbml_w);
     stats.misc_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     // Encode and index the items.
     rbml_w.start_tag(tag_items);
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    let index = encode_info_for_items(&ecx, &mut rbml_w);
+    let index = encode_info_for_items(&ecx, rbml_w);
     stats.item_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
     rbml_w.end_tag();
 
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_item_index(&mut rbml_w, index.items);
+    encode_item_index(rbml_w, index.items);
     stats.index_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
     i = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
-    encode_xrefs(&ecx, &mut rbml_w, index.xrefs);
+    encode_xrefs(&ecx, rbml_w, index.xrefs);
     stats.xref_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap() - i;
 
-    encode_struct_field_attrs(&ecx, &mut rbml_w, krate);
+    encode_struct_field_attrs(&ecx, rbml_w, krate);
 
     stats.total_bytes = rbml_w.writer.seek(SeekFrom::Current(0)).unwrap();
 
-    if tcx.sess.meta_stats() {
+    if ecx.tcx.sess.meta_stats() {
         for e in rbml_w.writer.get_ref() {
             if *e == 0 {
                 stats.zero_bytes += 1;
