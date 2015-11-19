@@ -17,6 +17,7 @@ use metadata::inline::InlinedItem;
 use middle::def_id::{DefId, DefIndex};
 use middle::lang_items;
 use middle::ty;
+use mir;
 use util::nodemap::FnvHashMap;
 
 use std::rc::Rc;
@@ -114,6 +115,14 @@ pub fn maybe_get_item_ast<'tcx>(tcx: &ty::ctxt<'tcx>, def: DefId,
     let cstore = &tcx.sess.cstore;
     let cdata = cstore.get_crate_data(def.krate);
     decoder::maybe_get_item_ast(&*cdata, tcx, def.index, decode_inlined_item)
+}
+
+pub fn maybe_get_item_mir<'tcx>(tcx: &ty::ctxt<'tcx>,
+                                def: DefId)
+                                -> Option<mir::repr::Mir<'tcx>> {
+    let cstore = &tcx.sess.cstore;
+    let cdata = cstore.get_crate_data(def.krate);
+    decoder::maybe_get_item_mir(&*cdata, tcx, def.index)
 }
 
 /// Returns information about the given implementation.

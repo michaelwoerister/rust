@@ -245,7 +245,7 @@ pub fn lookup_const_fn_by_id<'tcx>(tcx: &ty::ctxt<'tcx>, def_id: DefId)
     }
 }
 
-#[derive(Clone, Debug, RustcEncodable)]
+#[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum ConstVal {
     Float(f64),
     Int(i64),

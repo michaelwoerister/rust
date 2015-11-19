@@ -1533,9 +1533,21 @@ impl<'tcx, 'container> Hash for AdtDefData<'tcx, 'container> {
 }
 
 impl<'tcx> Encodable for AdtDef<'tcx> {
-
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_str(&metadata::encoder::def_to_string(self.did))
+    }
+}
+
+impl<'tcx> Decodable for AdtDef<'tcx> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<AdtDef<'tcx>, D::Error> {
+        let def_id = try!{ d.read_str() };
+        let def_id = metadata::tydecode::parse_defid(def_id.as_bytes());
+
+        metadata::decoder::tls::with(d, |dcx, _| {
+            let def_id = metadata::decoder::translate_def_id(dcx.crate_metadata,
+                                                             def_id);
+            Ok(csearch::get_adt_def(dcx.tcx, def_id))
+        })
     }
 }
 
@@ -2843,45 +2855,37 @@ pub trait HasTypeFlags {
 }
 
 impl<'tcx> Encodable for Ty<'tcx> {
-    fn encode<S: Encoder>(&self, _: &mut S) -> Result<(), S::Error> {
-        unsafe {
-            metadata::encoder::tls::with(|ecx, rbml_w| {
-                let ecx: &metadata::encoder::EncodeContext<'tcx, 'tcx> =
-                    ::std::mem::transmute(ecx);
-                metadata::encoder::write_type(ecx, rbml_w, *self);
-                Ok(())
-            })
-        }
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        metadata::encoder::tls::with(s, |ecx, rbml_w| {
+            metadata::encoder::write_type(ecx, rbml_w, *self);
+            Ok(())
+        })
     }
 }
 
 impl<'tcx> Decodable for Ty<'tcx> {
     fn decode<D: Decoder>(d: &mut D) -> Result<Ty<'tcx>, D::Error> {
-        TyDecoder::new(data: &'a [u8],
-                       crate_num: ast::CrateNum,
-                       pos: usize,
-                       tcx: &'a ty::ctxt<'tcx>,
-                       conv: DefIdConvert<'a>)
+        metadata::decoder::tls::with(d, |dcx, rbml_r| {
+            let def_id_convert = &mut |did| {
+                metadata::decoder::translate_def_id(dcx.crate_metadata, did)
+            };
+
+            let starting_position = rbml_r.position();
+
+            let mut ty_decoder = metadata::tydecode::TyDecoder::new(
+                dcx.crate_metadata.data.as_slice(),
+                dcx.crate_metadata.cnum,
+                starting_position,
+                dcx.tcx,
+                def_id_convert);
+
+            let ty = ty_decoder.parse_ty();
+
+            let end_position = ty_decoder.position();
+
+            rbml_r.advance(end_position - starting_position);
+            Ok(ty)
+        })
     }
 }
 
-// impl<'tcx> Decodable for Ty<'tcx> {
-//     fn decode<D: Decoder>(d: &mut D) -> Result<Ty<'tcx>, D::Error> {
-//         //Ok(BytePos(try!{ d.read_u32() }))
-//         tls::with(|tcx| {
-//             let tcx: &ctxt<'tcx> = unsafe {
-//                 ::std::mem::transmute(tcx)
-//             };
-
-//             let data = d.read_str().unwrap().into_bytes();
-
-//             let decoder = TyDecoder {
-//                 data: &data,
-//                 krate: ast::CrateNum,
-//                 pos: usize,
-//                 tcx: &'a ty::ctxt<'tcx>,
-//                 conv_def_id: DefIdConvert<'a>,
-//             }
-//         })
-//     }
-// }

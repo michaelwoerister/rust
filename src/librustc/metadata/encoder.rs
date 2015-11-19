@@ -84,31 +84,57 @@ impl<'a, 'tcx> EncodeContext<'a,'tcx> {
 }
 
 pub mod tls {
+    use rbml::writer::Encoder as RbmlEncoder;
+    use serialize;
+    use std::mem;
     use super::EncodeContext;
-    use rbml::writer::Encoder;
 
     /// Marker type used for the scoped TLS slot.
     /// The type context cannot be used directly because the scoped TLS
     /// in libstd doesn't allow types generic over lifetimes.
-    struct ThreadLocalEncodingCx;
+    struct TlsPayload;
 
-    scoped_thread_local!(static TLS_ENCODING: ThreadLocalEncodingCx);
+    scoped_thread_local!(static TLS_ENCODING: TlsPayload);
 
+    /// Execute f after pushing the given EncodingContext onto the TLS stack.
     pub fn enter<'a, 'tcx, F, R>(ecx: &EncodeContext<'a, 'tcx>,
-                                 rbml_w: &mut Encoder,
+                                 rbml_w: &mut RbmlEncoder,
                                  f: F) -> R
-        where F: FnOnce(&EncodeContext<'a, 'tcx>, &mut Encoder) -> R,
+        where F: FnOnce(&EncodeContext<'a, 'tcx>, &mut RbmlEncoder) -> R,
               'tcx: 'a
     {
         let tls_payload = (ecx as *const _, rbml_w as *mut _);
-        let tls_ptr = ((&tls_payload) as *const _) as *const ThreadLocalEncodingCx;
+        let tls_ptr = &tls_payload as *const _ as *const TlsPayload;
         TLS_ENCODING.set(unsafe { &*tls_ptr }, || f(ecx, rbml_w))
     }
 
-    pub unsafe fn with<F: FnOnce(&EncodeContext, &mut Encoder) -> R, R>(f: F) -> R {
+    /// Execute f with access to the thread-local encoding context and
+    /// rbml encoder. This function will panic if the encoder passed in and the
+    /// context encoder are not the same.
+    pub fn with<'encoder, 'tcx, E, F, R>(encoder: &'encoder mut E, f: F) -> R
+        where F: FnOnce(&EncodeContext, &mut RbmlEncoder) -> R,
+              E: serialize::Encoder,
+              'tcx: 'encoder
+    {
+        unsafe {
+            unsafe_with(|ecx, rbml_w| {
+                assert!(encoder as *mut _ as usize == rbml_w as *mut _ as usize);
+
+                let ecx: &EncodeContext<'encoder, 'tcx> = mem::transmute(ecx);
+
+                f(ecx, rbml_w)
+            })
+        }
+    }
+
+    /// Execute f with access to the thread-local encoding context and
+    /// rbml encoder.
+    pub unsafe fn unsafe_with<F, R>(f: F) -> R
+        where F: FnOnce(&EncodeContext, &mut RbmlEncoder) -> R
+    {
         TLS_ENCODING.with(|tls| {
-            let tls_payload = (tls as *const ThreadLocalEncodingCx)
-                                   as *mut (&EncodeContext, &mut Encoder);
+            let tls_payload = (tls as *const TlsPayload)
+                                   as *mut (&EncodeContext, &mut RbmlEncoder);
             f((*tls_payload).0, (*tls_payload).1)
         })
     }

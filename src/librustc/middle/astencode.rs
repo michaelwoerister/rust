@@ -35,7 +35,7 @@ use middle::region;
 use middle::subst;
 use middle::ty::{self, Ty};
 
-use syntax::{ast, ast_util, codemap};
+use syntax::{ast, ast_util};
 use syntax::ast::NodeIdAssigner;
 use syntax::codemap::Span;
 use syntax::ptr::P;
@@ -217,60 +217,12 @@ impl<'a, 'b, 'tcx> DecodeContext<'a, 'b, 'tcx> {
     }
 
     /// Translates a `Span` from an extern crate to the corresponding `Span`
-    /// within the local crate's codemap. `creader::import_codemap()` will
-    /// already have allocated any additionally needed FileMaps in the local
-    /// codemap as a side-effect of creating the crate_metadata's
-    /// `codemap_import_info`.
+    /// within the local crate's codemap.
     pub fn tr_span(&self, span: Span) -> Span {
-        let span = if span.lo > span.hi {
-            // Currently macro expansion sometimes produces invalid Span values
-            // where lo > hi. In order not to crash the compiler when trying to
-            // translate these values, let's transform them into something we
-            // can handle (and which will produce useful debug locations at
-            // least some of the time).
-            // This workaround is only necessary as long as macro expansion is
-            // not fixed. FIXME(#23480)
-            codemap::mk_sp(span.lo, span.lo)
-        } else {
-            span
-        };
-
-        let imported_filemaps = self.cdata.imported_filemaps(self.tcx.sess.codemap());
-        let filemap = {
-            // Optimize for the case that most spans within a translated item
-            // originate from the same filemap.
-            let last_filemap_index = self.last_filemap_index.get();
-            let last_filemap = &imported_filemaps[last_filemap_index];
-
-            if span.lo >= last_filemap.original_start_pos &&
-               span.lo <= last_filemap.original_end_pos &&
-               span.hi >= last_filemap.original_start_pos &&
-               span.hi <= last_filemap.original_end_pos {
-                last_filemap
-            } else {
-                let mut a = 0;
-                let mut b = imported_filemaps.len();
-
-                while b - a > 1 {
-                    let m = (a + b) / 2;
-                    if imported_filemaps[m].original_start_pos > span.lo {
-                        b = m;
-                    } else {
-                        a = m;
-                    }
-                }
-
-                self.last_filemap_index.set(a);
-                &imported_filemaps[a]
-            }
-        };
-
-        let lo = (span.lo - filemap.original_start_pos) +
-                  filemap.translated_filemap.start_pos;
-        let hi = (span.hi - filemap.original_start_pos) +
-                  filemap.translated_filemap.start_pos;
-
-        codemap::mk_sp(lo, hi)
+        decoder::translate_span(self.cdata,
+                                self.tcx.sess.codemap(),
+                                &self.last_filemap_index,
+                                span)
     }
 }
 

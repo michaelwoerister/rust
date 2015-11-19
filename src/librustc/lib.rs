@@ -145,6 +145,7 @@ pub mod mir {
     pub mod repr;
     pub mod tcx;
     pub mod visit;
+    mod serialize_impls;
 }
 
 pub mod session;

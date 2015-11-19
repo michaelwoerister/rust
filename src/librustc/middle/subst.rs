@@ -160,24 +160,57 @@ impl<'tcx> Substs<'tcx> {
 
 impl<'tcx> Encodable for Substs<'tcx> {
 
-    fn encode<S: Encoder>(&self, _: &mut S) -> Result<(), S::Error> {
-        unsafe {
-            metadata::encoder::tls::with(|ecx, rbml_w| {
-                let ecx: &metadata::encoder::EncodeContext<'tcx, 'tcx> =
-                    ::std::mem::transmute(ecx);
-                let ty_str_ctxt = &tyencode::ctxt {
-                    diag: ecx.diag,
-                    ds: metadata::encoder::def_to_string,
-                    tcx: ecx.tcx,
-                    abbrevs: &ecx.type_abbrevs
-                };
-                tyencode::enc_substs(rbml_w, ty_str_ctxt,self);
-                Ok(())
-            })
-        }
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        // TODO: lifetimes
+        metadata::encoder::tls::with(s, |ecx, rbml_w| {
+            let ty_str_ctxt = &tyencode::ctxt {
+                diag: ecx.diag,
+                ds: metadata::encoder::def_to_string,
+                tcx: ecx.tcx,
+                abbrevs: &ecx.type_abbrevs
+            };
+            tyencode::enc_substs(rbml_w, ty_str_ctxt, self);
+            Ok(())
+        })
     }
 }
 
+impl<'tcx> Decodable for Substs<'tcx> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Substs<'tcx>, D::Error> {
+        metadata::decoder::tls::with(d, |dcx, rbml_r| {
+            let def_id_convert = &mut |did| {
+                metadata::decoder::translate_def_id(dcx.crate_metadata, did)
+            };
+
+            let starting_position = rbml_r.position();
+
+            let mut ty_decoder = metadata::tydecode::TyDecoder::new(
+                dcx.crate_metadata.data.as_slice(),
+                dcx.crate_metadata.cnum,
+                starting_position,
+                dcx.tcx,
+                def_id_convert);
+
+            let substs = ty_decoder.parse_substs();
+
+            let end_position = ty_decoder.position();
+
+            rbml_r.advance(end_position - starting_position);
+            Ok(substs)
+        })
+    }
+}
+
+impl<'tcx> Decodable for &'tcx Substs<'tcx> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<&'tcx Substs<'tcx>, D::Error> {
+        let substs = metadata::decoder::tls::with(d, |dcx, rbml_r| {
+            let substs: Substs<'tcx> = Decodable::decode(rbml_r).unwrap();
+            dcx.tcx.mk_substs(substs)
+        });
+
+        Ok(substs)
+    }
+}
 
 impl RegionSubsts {
     pub fn map<F>(self, op: F) -> RegionSubsts where

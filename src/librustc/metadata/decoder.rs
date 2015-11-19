@@ -35,6 +35,8 @@ use middle::lang_items;
 use middle::subst;
 use middle::ty::{ImplContainer, TraitContainer};
 use middle::ty::{self, RegionEscape, Ty};
+use mir;
+use mir::visit::MutVisitor;
 use util::nodemap::FnvHashMap;
 
 use std::cell::{Cell, RefCell};
@@ -51,7 +53,7 @@ use syntax::parse::token::{IdentInterner, special_idents};
 use syntax::parse::token;
 use syntax::ast;
 use syntax::abi;
-use syntax::codemap;
+use syntax::codemap::{self, Span};
 use syntax::print::pprust;
 use syntax::ptr::P;
 
@@ -794,6 +796,57 @@ pub fn maybe_get_item_ast<'tcx>(cdata: Cmd, tcx: &ty::ctxt<'tcx>, id: DefIndex,
     }
 }
 
+pub fn maybe_get_item_mir<'tcx>(cdata: Cmd,
+                                tcx: &ty::ctxt<'tcx>,
+                                id: DefIndex)
+                                -> Option<mir::repr::Mir<'tcx>> {
+    let item_doc = cdata.lookup_item(id);
+
+    return reader::maybe_get_doc(item_doc, tag_mir as usize).map(|mir_doc| {
+        let dcx = tls::DecodingContext {
+            crate_metadata: cdata,
+            tcx: tcx,
+        };
+        let mut decoder = reader::Decoder::new(mir_doc);
+
+        let mut mir = tls::enter(&dcx, &mut decoder, |_, decoder| {
+            Decodable::decode(decoder).unwrap()
+        });
+
+        let mut def_id_and_span_translator = MirDefIdAndSpanTranslator {
+            crate_metadata: cdata,
+            codemap: tcx.sess.codemap(),
+            last_filemap_index_hint: Cell::new(0),
+        };
+
+        def_id_and_span_translator.visit_mir(&mut mir);
+
+        mir
+    });
+
+    struct MirDefIdAndSpanTranslator<'cdata, 'codemap> {
+        crate_metadata: Cmd<'cdata>,
+        codemap: &'codemap codemap::CodeMap,
+        last_filemap_index_hint: Cell<usize>
+    }
+
+    impl<'v, 'cdata, 'codemap> mir::visit::MutVisitor<'v>
+        for MirDefIdAndSpanTranslator<'cdata, 'codemap>
+    {
+        fn visit_def_id(&mut self, def_id: &mut DefId) {
+            *def_id = translate_def_id(self.crate_metadata, *def_id);
+        }
+
+        fn visit_span(&mut self, span: &mut Span) {
+            *span = translate_span(self.crate_metadata,
+                                   self.codemap,
+                                   &self.last_filemap_index_hint,
+                                   *span);
+        }
+    }
+}
+
+
 fn get_explicit_self(item: rbml::Doc) -> ty::ExplicitSelfCategory {
     fn get_mutability(ch: u8) -> hir::Mutability {
         match ch as char {
@@ -1247,6 +1300,64 @@ pub fn translate_def_id(cdata: Cmd, did: DefId) -> DefId {
     }
 }
 
+/// Translates a `Span` from an extern crate to the corresponding `Span`
+/// within the local crate's codemap.
+pub fn translate_span(cdata: Cmd,
+                      codemap: &codemap::CodeMap,
+                      last_filemap_index_hint: &Cell<usize>,
+                      span: Span)
+                      -> Span {
+    let span = if span.lo > span.hi {
+        // Currently macro expansion sometimes produces invalid Span values
+        // where lo > hi. In order not to crash the compiler when trying to
+        // translate these values, let's transform them into something we
+        // can handle (and which will produce useful debug locations at
+        // least some of the time).
+        // This workaround is only necessary as long as macro expansion is
+        // not fixed. FIXME(#23480)
+        codemap::mk_sp(span.lo, span.lo)
+    } else {
+        span
+    };
+
+    let imported_filemaps = cdata.imported_filemaps(&codemap);
+    let filemap = {
+        // Optimize for the case that most spans within a translated item
+        // originate from the same filemap.
+        let last_filemap_index = last_filemap_index_hint.get();
+        let last_filemap = &imported_filemaps[last_filemap_index];
+
+        if span.lo >= last_filemap.original_start_pos &&
+           span.lo <= last_filemap.original_end_pos &&
+           span.hi >= last_filemap.original_start_pos &&
+           span.hi <= last_filemap.original_end_pos {
+            last_filemap
+        } else {
+            let mut a = 0;
+            let mut b = imported_filemaps.len();
+
+            while b - a > 1 {
+                let m = (a + b) / 2;
+                if imported_filemaps[m].original_start_pos > span.lo {
+                    b = m;
+                } else {
+                    a = m;
+                }
+            }
+
+            last_filemap_index_hint.set(a);
+            &imported_filemaps[a]
+        }
+    };
+
+    let lo = (span.lo - filemap.original_start_pos) +
+              filemap.translated_filemap.start_pos;
+    let hi = (span.hi - filemap.original_start_pos) +
+              filemap.translated_filemap.start_pos;
+
+    codemap::mk_sp(lo, hi)
+}
+
 // Translate a DefId from the current compilation environment to a DefId
 // for an external crate.
 fn reverse_translate_def_id(cdata: Cmd, did: DefId) -> Option<DefId> {
@@ -1601,4 +1712,68 @@ pub fn def_path(cdata: Cmd, id: DefIndex) -> hir_map::DefPath {
         let parent_doc = cdata.lookup_item(parent);
         def_key(parent_doc)
     })
+}
+
+pub mod tls {
+    use middle::ty;
+    use rbml::reader::Decoder as RbmlDecoder;
+    use serialize;
+    use std::mem;
+    use super::Cmd;
+
+    pub struct DecodingContext<'a, 'tcx: 'a> {
+        pub crate_metadata: Cmd<'a>,
+        pub tcx: &'a ty::ctxt<'tcx>,
+    }
+
+    /// Marker type used for the scoped TLS slot.
+    /// The type context cannot be used directly because the scoped TLS
+    /// in libstd doesn't allow types generic over lifetimes.
+    struct TlsPayload;
+
+    scoped_thread_local!(static TLS_DECODING: TlsPayload);
+
+    /// Execute f after pushing the given DecodingContext onto the TLS stack.
+    pub fn enter<'a, 'tcx, F, R>(dcx: &DecodingContext<'a, 'tcx>,
+                                 rbml_r: &mut RbmlDecoder,
+                                 f: F) -> R
+        where F: FnOnce(&DecodingContext<'a, 'tcx>, &mut RbmlDecoder) -> R,
+              'tcx: 'a
+    {
+        let tls_payload = (dcx as *const _, rbml_r as *mut _);
+        let tls_ptr = &tls_payload as *const _ as *const TlsPayload;
+        TLS_DECODING.set(unsafe { &*tls_ptr }, || f(dcx, rbml_r))
+    }
+
+    /// Execute f with access to the thread-local decoding context and
+    /// rbml decoder. This function will panic if the decoder passed in and the
+    /// context decoder are not the same.
+    pub fn with<'decoder, 'tcx, D, F, R>(d: &'decoder mut D, f: F) -> R
+        where D: serialize::Decoder,
+              F: FnOnce(&DecodingContext<'decoder, 'tcx>,
+                        &mut RbmlDecoder) -> R,
+              'tcx: 'decoder
+    {
+        unsafe {
+            unsafe_with(|dcx, rbml_r| {
+                assert!((d as *mut _ as usize) == (rbml_r as *mut _ as usize));
+
+                let dcx: &DecodingContext<'decoder, 'tcx> = mem::transmute(dcx);
+
+                f(dcx, rbml_r)
+            })
+        }
+    }
+
+    /// Execute f with access to the thread-local decoding context and
+    /// rbml decoder.
+    pub unsafe fn unsafe_with<F, R>(f: F) -> R
+        where F: FnOnce(&DecodingContext, &mut RbmlDecoder) -> R
+    {
+        TLS_DECODING.with(|tls| {
+            let tls_payload = (tls as *const TlsPayload)
+                                   as *mut (&DecodingContext, &mut RbmlDecoder);
+            f((*tls_payload).0, (*tls_payload).1)
+        })
+    }
 }

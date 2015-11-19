@@ -68,6 +68,10 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
         }
     }
 
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
     fn peek(&self) -> char {
         self.data[self.pos] as char
     }
@@ -678,7 +682,7 @@ impl<'a,'tcx> TyDecoder<'a,'tcx> {
 }
 
 // Rust metadata parsing
-fn parse_defid(buf: &[u8]) -> DefId {
+pub fn parse_defid(buf: &[u8]) -> DefId {
     let mut colon_idx = 0;
     let len = buf.len();
     while colon_idx < len && buf[colon_idx] != ':' as u8 { colon_idx += 1; }

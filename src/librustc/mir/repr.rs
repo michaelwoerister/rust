@@ -22,7 +22,7 @@ use std::fmt::{Debug, Formatter, Error};
 use std::u32;
 
 /// Lowered representation of a single function.
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct Mir<'tcx> {
     pub basic_blocks: Vec<BasicBlockData<'tcx>>,
 
@@ -64,13 +64,13 @@ impl<'tcx> Mir<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Mutability and borrow kinds
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum Mutability {
     Mut,
     Not,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum BorrowKind {
     /// Data must be immutable and is aliasable.
     Shared,
@@ -121,7 +121,7 @@ pub enum BorrowKind {
 
 // A "variable" is a binding declared by the user as part of the fn
 // decl, a let, etc.
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct VarDecl<'tcx> {
     pub mutability: Mutability,
     pub name: Name,
@@ -130,7 +130,7 @@ pub struct VarDecl<'tcx> {
 
 // A "temp" is a temporary that we place on the stack. They are
 // anonymous, always mutable, and have only a type.
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct TempDecl<'tcx> {
     pub ty: Ty<'tcx>,
 }
@@ -146,7 +146,7 @@ pub struct TempDecl<'tcx> {
 //
 // there is only one argument, of type `(i32, u32)`, but two bindings
 // (`x` and `y`).
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct ArgDecl<'tcx> {
     pub ty: Ty<'tcx>,
 }
@@ -168,7 +168,7 @@ pub struct ArgDecl<'tcx> {
 ///                          <--- if statement == n
 ///
 /// where the block has `n` statements.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub struct ExecutionPoint {
     pub block: BasicBlock,
     pub statement: u32,
@@ -178,13 +178,13 @@ pub struct ExecutionPoint {
 /// these for every node-id during MIR construction. By construction
 /// we are assured that the entry dominates all points within, and
 /// that, for every interior point X, it is postdominated by some exit.
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct GraphExtent {
     pub entry: ExecutionPoint,
     pub exit: GraphExtentExit,
 }
 
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub enum GraphExtentExit {
     /// `Statement(X)`: a very common special case covering a span
     /// that is local to a single block. It starts at the entry point
@@ -202,7 +202,7 @@ pub enum GraphExtentExit {
 /// list of the `Mir`.
 ///
 /// (We use a `u32` internally just to save memory.)
-#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub struct BasicBlock(u32);
 
 impl BasicBlock {
@@ -226,13 +226,12 @@ impl Debug for BasicBlock {
 ///////////////////////////////////////////////////////////////////////////
 // BasicBlock and Terminator
 
-#[derive(Debug, RustcEncodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct BasicBlockData<'tcx> {
     pub statements: Vec<Statement<'tcx>>,
     pub terminator: Terminator<'tcx>,
 }
 
-#[derive(RustcEncodable)]
 pub enum Terminator<'tcx> {
     /// block should have one successor in the graph; we jump there
     Goto {
@@ -330,7 +329,7 @@ impl<'tcx> Terminator<'tcx> {
     }
 }
 
-#[derive(Debug, RustcEncodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct CallData<'tcx> {
     /// where the return value is written to
     pub destination: Lvalue<'tcx>,
@@ -387,19 +386,19 @@ impl<'tcx> Debug for Terminator<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Statements
 
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct Statement<'tcx> {
     pub span: Span,
     pub kind: StatementKind<'tcx>,
 }
 
-#[derive(Debug, RustcEncodable)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum StatementKind<'tcx> {
     Assign(Lvalue<'tcx>, Rvalue<'tcx>),
     Drop(DropKind, Lvalue<'tcx>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum DropKind {
     Free, // free a partially constructed box, should go away eventually
     Deep
@@ -420,7 +419,7 @@ impl<'tcx> Debug for Statement<'tcx> {
 
 /// A path to a value; something that can be evaluated without
 /// changing or disturbing program state.
-#[derive(Clone, PartialEq, RustcEncodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum Lvalue<'tcx> {
     /// local variable declared by the user
     Var(u32),
@@ -446,13 +445,13 @@ pub enum Lvalue<'tcx> {
 /// or `*B` or `B[index]`. Note that it is parameterized because it is
 /// shared between `Constant` and `Lvalue`. See the aliases
 /// `LvalueProjection` etc below.
-#[derive(Clone, Debug, PartialEq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Projection<'tcx, B, V> {
     pub base: B,
     pub elem: ProjectionElem<'tcx, V>,
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum ProjectionElem<'tcx, V> {
     Deref,
     Field(Field),
@@ -490,7 +489,7 @@ pub type LvalueElem<'tcx> =
     ProjectionElem<'tcx,Operand<'tcx>>;
 
 /// Index into the list of fields found in a `VariantDef`
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct Field(u32);
 
 impl Field {
@@ -566,7 +565,7 @@ impl<'tcx> Debug for Lvalue<'tcx> {
 // lvalue). They are intentionally limited to prevent rvalues from
 // being nested in one another.
 
-#[derive(Clone, PartialEq, RustcEncodable)]
+#[derive(Clone, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum Operand<'tcx> {
     Consume(Lvalue<'tcx>),
     Constant(Constant<'tcx>),
@@ -585,7 +584,7 @@ impl<'tcx> Debug for Operand<'tcx> {
 ///////////////////////////////////////////////////////////////////////////
 // Rvalues
 
-#[derive(Clone, RustcEncodable)]
+#[derive(Clone, RustcEncodable, RustcDecodable)]
 pub enum Rvalue<'tcx> {
     // x (either a move or copy, depending on type of x)
     Use(Operand<'tcx>),
@@ -629,7 +628,7 @@ pub enum Rvalue<'tcx> {
     InlineAsm(&'tcx InlineAsm),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum CastKind {
     Misc,
 
@@ -647,7 +646,7 @@ pub enum CastKind {
     Unsize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum AggregateKind<'tcx> {
     Vec,
     Tuple,
@@ -655,7 +654,7 @@ pub enum AggregateKind<'tcx> {
     Closure(DefId, &'tcx ClosureSubsts<'tcx>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum BinOp {
     /// The `+` operator (addition)
     Add,
@@ -691,7 +690,7 @@ pub enum BinOp {
     Gt,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub enum UnOp {
     /// The `!` operator for logical inversion
     Not,
@@ -727,14 +726,14 @@ impl<'tcx> Debug for Rvalue<'tcx> {
 // this does not necessarily mean that they are "==" in Rust -- in
 // particular one must be wary of `NaN`!
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Constant<'tcx> {
     pub span: Span,
     pub ty: Ty<'tcx>,
     pub literal: Literal<'tcx>,
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable)]
+#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum Literal<'tcx> {
     Item {
         def_id: DefId,
