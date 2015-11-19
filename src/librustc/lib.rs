@@ -140,6 +140,11 @@ pub mod middle {
 
 pub mod metadata;
 
+pub mod mir {
+    pub mod repr;
+    pub mod tcx;
+}
+
 pub mod session;
 
 pub mod plugin;

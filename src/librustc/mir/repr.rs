@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc::middle::const_eval::ConstVal;
-use rustc::middle::def_id::DefId;
-use rustc::middle::region::CodeExtent;
-use rustc::middle::subst::Substs;
-use rustc::middle::ty::{AdtDef, ClosureSubsts, FnOutput, Region, Ty};
+use middle::const_eval::ConstVal;
+use middle::def_id::DefId;
+use middle::region::CodeExtent;
+use middle::subst::Substs;
+use middle::ty::{AdtDef, ClosureSubsts, FnOutput, Region, Ty};
 use rustc_back::slice;
 use rustc_data_structures::fnv::FnvHashMap;
 use rustc_front::hir::InlineAsm;
