@@ -143,6 +143,7 @@ pub mod metadata;
 pub mod mir {
     pub mod repr;
     pub mod tcx;
+    pub mod visit;
 }
 
 pub mod session;
