@@ -2770,6 +2770,7 @@ pub fn crate_ctxt_to_encode_parms<'a, 'tcx>(cx: &'a SharedCrateContext<'a, 'tcx>
         cstore: &cx.sess().cstore,
         encode_inlined_item: ie,
         reachable: reachable,
+        mir_map: cx.mir_map(),
     }
 }
 

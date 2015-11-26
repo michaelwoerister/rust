@@ -28,6 +28,7 @@ use middle::dependency_format::Linkage;
 use middle::stability;
 use middle::subst;
 use middle::ty::{self, Ty};
+use mir::repr::Mir;
 use util::nodemap::{FnvHashMap, NodeMap, NodeSet};
 
 use serialize::Encodable;
@@ -63,6 +64,7 @@ pub struct EncodeParams<'a, 'tcx: 'a> {
     pub cstore: &'a cstore::CStore,
     pub encode_inlined_item: EncodeInlinedItem<'a>,
     pub reachable: &'a NodeSet,
+    pub mir_map: &'a NodeMap<Mir<'tcx>>,
 }
 
 pub struct EncodeContext<'a, 'tcx: 'a> {
@@ -75,6 +77,7 @@ pub struct EncodeContext<'a, 'tcx: 'a> {
     pub encode_inlined_item: RefCell<EncodeInlinedItem<'a>>,
     pub type_abbrevs: tyencode::abbrev_map<'tcx>,
     pub reachable: &'a NodeSet,
+    pub mir_map: &'a NodeMap<Mir<'tcx>>,
 }
 
 impl<'a, 'tcx> EncodeContext<'a,'tcx> {
@@ -112,7 +115,7 @@ pub mod tls {
     /// rbml encoder. This function will panic if the encoder passed in and the
     /// context encoder are not the same.
     pub fn with<'encoder, 'tcx, E, F, R>(encoder: &'encoder mut E, f: F) -> R
-        where F: FnOnce(&EncodeContext, &mut RbmlEncoder) -> R,
+        where F: FnOnce(&EncodeContext<'encoder, 'tcx>, &mut RbmlEncoder) -> R,
               E: serialize::Encoder,
               'tcx: 'encoder
     {
@@ -804,10 +807,12 @@ fn encode_info_for_method<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
             let needs_inline = any_types || is_default_impl ||
                                attr::requests_inline(&impl_item.attrs);
             if needs_inline || sig.constness == hir::Constness::Const {
+                let ii = InlinedItemRef::ImplItem(ecx.tcx.map.local_def_id(parent_id),
+                                                  impl_item);
                 encode_inlined_item(ecx,
                                     rbml_w,
-                                    InlinedItemRef::ImplItem(ecx.tcx.map.local_def_id(parent_id),
-                                                             impl_item));
+                                    ii);
+                encode_mir(ecx, rbml_w, ii);
             }
             encode_constness(rbml_w, sig.constness);
             if !any_types {
@@ -897,6 +902,21 @@ fn encode_inlined_item(ecx: &EncodeContext,
     let mut eii = ecx.encode_inlined_item.borrow_mut();
     let eii: &mut EncodeInlinedItem = &mut *eii;
     eii(ecx, rbml_w, ii)
+}
+
+fn encode_mir(ecx: &EncodeContext, rbml_w: &mut Encoder, ii: InlinedItemRef) {
+    let id = match ii {
+        InlinedItemRef::Item(item) => item.id,
+        InlinedItemRef::TraitItem(_, trait_item) => trait_item.id,
+        InlinedItemRef::ImplItem(_, impl_item) => impl_item.id,
+        InlinedItemRef::Foreign(foreign_item) => foreign_item.id
+    };
+
+    if let Some(mir) = ecx.mir_map.get(&id) {
+        rbml_w.start_tag(tag_mir as usize);
+        Encodable::encode(mir, rbml_w).unwrap();
+        rbml_w.end_tag();
+    }
 }
 
 const FN_FAMILY: char = 'f';
@@ -1014,7 +1034,9 @@ fn encode_info_for_item<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
         encode_attributes(rbml_w, &item.attrs);
         let needs_inline = tps_len > 0 || attr::requests_inline(&item.attrs);
         if needs_inline || constness == hir::Constness::Const {
-            encode_inlined_item(ecx, rbml_w, InlinedItemRef::Item(item));
+            let ii = InlinedItemRef::Item(item);
+            encode_inlined_item(ecx, rbml_w, ii);
+            encode_mir(ecx, rbml_w, ii);
         }
         if tps_len == 0 {
             encode_symbol(ecx, rbml_w, item.id);
@@ -1402,8 +1424,9 @@ fn encode_info_for_item<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
 
                     if body.is_some() {
                         encode_item_sort(rbml_w, 'p');
-                        encode_inlined_item(ecx, rbml_w,
-                                            InlinedItemRef::TraitItem(def_id, trait_item));
+                        let ii = InlinedItemRef::TraitItem(def_id, trait_item);
+                        encode_inlined_item(ecx, rbml_w, ii);
+                        encode_mir(ecx, rbml_w, ii);
                     } else {
                         encode_item_sort(rbml_w, 'r');
                     }
@@ -1440,7 +1463,9 @@ fn encode_info_for_foreign_item<'a, 'tcx>(ecx: &EncodeContext<'a, 'tcx>,
         encode_bounds_and_type_for_item(rbml_w, ecx, index, nitem.id);
         encode_name(rbml_w, nitem.name);
         if abi == abi::RustIntrinsic || abi == abi::PlatformIntrinsic {
-            encode_inlined_item(ecx, rbml_w, InlinedItemRef::Foreign(nitem));
+            let ii = InlinedItemRef::Foreign(nitem);
+            encode_inlined_item(ecx, rbml_w, ii);
+            encode_mir(ecx, rbml_w, ii);
         }
         encode_attributes(rbml_w, &*nitem.attrs);
         let stab = stability::lookup(ecx.tcx, ecx.tcx.map.local_def_id(nitem.id));
@@ -1941,6 +1966,7 @@ pub fn encode_metadata(parms: EncodeParams, krate: &hir::Crate) -> Vec<u8> {
         encode_inlined_item,
         link_meta,
         reachable,
+        mir_map,
         ..
     } = parms;
     let ecx = EncodeContext {
@@ -1953,6 +1979,7 @@ pub fn encode_metadata(parms: EncodeParams, krate: &hir::Crate) -> Vec<u8> {
         encode_inlined_item: RefCell::new(encode_inlined_item),
         type_abbrevs: RefCell::new(FnvHashMap()),
         reachable: reachable,
+        mir_map: mir_map,
      };
 
     let mut wr = Cursor::new(Vec::new());

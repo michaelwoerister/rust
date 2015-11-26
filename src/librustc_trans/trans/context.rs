@@ -425,6 +425,10 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
     pub fn use_dll_storage_attrs(&self) -> bool {
         self.use_dll_storage_attrs
     }
+
+    pub fn mir_map<'a>(&'a self) -> &'a MirMap<'tcx> {
+        &self.mir_map
+    }
 }
 
 impl<'tcx> LocalCrateContext<'tcx> {

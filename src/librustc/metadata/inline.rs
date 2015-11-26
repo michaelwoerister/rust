@@ -28,6 +28,7 @@ pub enum InlinedItem {
 }
 
 /// A borrowed version of `hir::InlinedItem`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum InlinedItemRef<'a> {
     Item(&'a hir::Item),
     TraitItem(DefId, &'a hir::TraitItem),
