@@ -37,7 +37,7 @@ use middle::ty::{self, Ty};
 
 use syntax::{ast, ast_util};
 use syntax::ast::NodeIdAssigner;
-use syntax::codemap::Span;
+use syntax::codemap::{self, Span};
 use syntax::ptr::P;
 
 use std::cell::Cell;

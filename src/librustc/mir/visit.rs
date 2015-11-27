@@ -57,6 +57,10 @@ pub trait Visitor<'tcx> {
         self.super_constant(constant);
     }
 
+    fn visit_literal(&mut self, literal: &Literal<'tcx>) {
+        self.super_literal(literal);
+    }
+
     fn visit_def_id(&mut self, def_id: DefId) {
         self.super_def_id(def_id);
     }
@@ -231,6 +235,18 @@ pub trait Visitor<'tcx> {
 
     fn super_constant(&mut self, constant: &Constant<'tcx>) {
         self.visit_span(constant.span);
+        self.visit_literal(&constant.literal);
+    }
+
+    fn super_literal(&mut self, literal: &Literal<'tcx>) {
+        match *literal {
+            Literal::Item { def_id, .. } => {
+                self.visit_def_id(def_id);
+            },
+            Literal::Value { .. } => {
+                // Nothing to do
+            }
+        }
     }
 
     fn super_def_id(&mut self, _def_id: DefId) {
@@ -307,6 +323,10 @@ pub trait MutVisitor<'tcx> {
 
     fn visit_constant(&mut self, constant: &mut Constant<'tcx>) {
         self.super_constant(constant);
+    }
+
+    fn visit_literal(&mut self, literal: &mut Literal<'tcx>) {
+        self.super_literal(literal);
     }
 
     fn visit_def_id(&mut self, def_id: &mut DefId) {
@@ -492,6 +512,18 @@ pub trait MutVisitor<'tcx> {
 
     fn super_constant(&mut self, constant: &mut Constant<'tcx>) {
         self.visit_span(&mut constant.span);
+        self.visit_literal(&mut constant.literal);
+    }
+
+    fn super_literal(&mut self, literal: &mut Literal<'tcx>) {
+        match *literal {
+            Literal::Item { ref mut def_id, .. } => {
+                self.visit_def_id(def_id);
+            },
+            Literal::Value { .. } => {
+                // Nothing to do
+            }
+        }
     }
 
     fn super_def_id(&mut self, _def_id: &mut DefId) {

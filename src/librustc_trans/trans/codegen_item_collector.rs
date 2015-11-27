@@ -57,9 +57,9 @@ use rustc::middle::{ty, traits};
 use rustc::middle::subst::{self, Substs};
 use rustc::session;
 
-use rustc_mir::repr as mir;
-use rustc_mir::visit as mir_visit;
-use rustc_mir::visit::Visitor as MirVisitor;
+use rustc::mir::repr as mir;
+use rustc::mir::visit as mir_visit;
+use rustc::mir::visit::Visitor as MirVisitor;
 
 use syntax::ast::{self, NodeId};
 use syntax::codemap::DUMMY_SP;
@@ -68,6 +68,8 @@ use trans::common::{type_needs_drop, fulfill_obligation};
 use trans::monomorphize;
 use trans::inline;
 use util::nodemap::FnvHashSet;
+
+use metadata::csearch;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum CodeGenItem<'tcx> {
@@ -269,6 +271,17 @@ fn push_def_id_as_string<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                               substs: Option<&Substs<'tcx>>,
                               output: &mut String) {
     if def_id.is_local() {
+        let node_id = ccx.tcx().map.as_local_node_id(def_id).unwrap();
+        let inlined_from = ccx.external_srcs()
+                              .borrow()
+                              .get(&node_id)
+                              .map(|&def_id| def_id);
+
+        if let Some(def_id) = inlined_from {
+            push_def_id_as_string(ccx, def_id, substs, output);
+            return;
+        }
+
         output.push_str(&ccx.link_meta().crate_name);
         output.push_str("::");
     }
@@ -394,36 +407,41 @@ fn collect_items_rec<'a, 'tcx: 'a>(ccx: &'a CrateContext<'a, 'tcx>,
         CodeGenItem::Const(_) |
         CodeGenItem::Static(_) => {}
         CodeGenItem::Fn(node_id, ref param_substs) => {
-
-            // Look through the MIR in order to find function calls, closures,
+            // Scan the MIR in order to find function calls, closures,
             // and drop-glue
-            {
-                let mir_not_found_error_message = || {
-                    format!("Could not find MIR for node_id: {}",
-                            ccx.tcx().map.node_to_string(node_id))
-                };
+            let mir_not_found_error_message = || {
+                format!("Could not find MIR for node_id: {}",
+                        ccx.tcx().map.node_to_string(node_id))
+            };
 
-                // TODO: Remove this once the MIR of external items is available
-                if ccx.mir_map().get(&node_id).is_none() {
-                    return;
+            let external_mir = ccx.external_srcs()
+                                  .borrow()
+                                  .get(&node_id)
+                                  .map(|did| csearch::maybe_get_item_mir(ccx.tcx(), *did))
+                                  .unwrap_or(None);
+
+            let mir_opt = match external_mir {
+                Some(ref mir) => {
+                    Some(mir)
                 }
+                None => {
+                    ccx.mir_map().get(&node_id)
+                }
+            };
 
-                let mir = session::expect(ccx.sess(),
-                                          ccx.mir_map().get(&node_id),
-                                          mir_not_found_error_message);
+            let mir = session::expect(ccx.sess(),
+                                      mir_opt,
+                                      mir_not_found_error_message);
 
-                let mut visitor = MirNeighborCollector {
-                    ccx: ccx,
-                    mir: mir,
-                    output: &mut neighbours,
-                    param_substs: param_substs,
-                    starting_point: starting_point,
-                };
+            let mut visitor = MirNeighborCollector {
+                ccx: ccx,
+                mir: mir,
+                output: &mut neighbours,
+                param_substs: param_substs,
+                starting_point: starting_point,
+            };
 
-                visitor.visit_mir(mir);
-            }
-
-
+            visitor.visit_mir(mir);
         }
     }
 

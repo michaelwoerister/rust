@@ -808,10 +808,13 @@ pub fn maybe_get_item_mir<'tcx>(cdata: Cmd,
             tcx: tcx,
         };
         let mut decoder = reader::Decoder::new(mir_doc);
+        assert!(decoder.position() == mir_doc.start);
 
         let mut mir = tls::enter(&dcx, &mut decoder, |_, decoder| {
             Decodable::decode(decoder).unwrap()
         });
+
+        assert!(decoder.position() == mir_doc.end);
 
         let mut def_id_and_span_translator = MirDefIdAndSpanTranslator {
             crate_metadata: cdata,
@@ -1777,3 +1780,205 @@ pub mod tls {
         })
     }
 }
+
+
+#[cfg(test)]
+mod test
+{
+    use metadata::{encoder, decoder, index, cstore};
+    use middle::ty;
+    use serialize::{Encoder, Encodable, Decoder, Decodable};
+    use rbml;
+    use flate;
+    use std::io::{Write, Cursor};
+    use std::{ptr, mem};
+    use syntax::util::small_vector::SmallVector;
+    use syntax::codemap;
+    use std::cell::{RefCell, Cell};
+    use util::nodemap::FnvHashMap;
+    use std::convert::From;
+
+    #[derive(Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, Debug)]
+    struct A {
+        x: u8,
+        b1: B,
+        c1: C,
+        b2: B,
+        y: u8,
+    }
+
+    #[derive(Clone, Copy, Eq, PartialEq, Debug)]
+    struct B {
+        c: C,
+        x: u8,
+    }
+
+    #[derive(Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, Debug)]
+    struct C {
+        x: i8,
+        y: u8
+    }
+
+    impl Encodable for B {
+        fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+            encoder::tls::with(s, |_, rbml_w| {
+                rbml_w.mark_stable_position();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.mark_stable_position();
+                Encodable::encode(&self.c, rbml_w).unwrap();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.writer.write_all(&[self.x]).unwrap();
+                rbml_w.mark_stable_position();
+                Ok(())
+            })
+        }
+    }
+
+    impl Decodable for B {
+        fn decode<S: Decoder>(s: &mut S) -> Result<B, S::Error> {
+            decoder::tls::with(s, |dcx, rbml_r| {
+                let data = dcx.crate_metadata.data.as_slice();
+                let position = rbml_r.position();
+                let x0 = data[position];
+                let x1 = data[position + 1];
+                let x2 = data[position + 2];
+
+                rbml_r.advance(3);
+
+                let c = Decodable::decode(rbml_r).unwrap();
+
+                let position = rbml_r.position();
+                let x3 = data[position];
+                let x4 = data[position + 1];
+                let x5 = data[position + 2];
+
+                rbml_r.advance(3);
+
+                assert!(x0 == x1);
+                assert!(x0 == x2);
+                assert!(x0 == x3);
+                assert!(x0 == x4);
+                assert!(x0 == x5);
+
+                Ok(B {
+                    c: c,
+                    x: x0,
+                })
+            })
+        }
+    }
+
+    #[test]
+    fn test_tls() {
+        const TAG: usize = 0x100;
+        let dummy_ecx: *const encoder::EncodeContext = ptr::null();
+        let dummy_ecx: &encoder::EncodeContext = unsafe { mem::transmute(dummy_ecx) };
+
+        let before = A {
+            x: 11,
+            b1: B {
+                c: C {
+                    x: 22,
+                    y: 33
+                },
+                x: 44,
+            },
+            c1: C{
+                x: 55,
+                y: 66
+            },
+            b2: B {
+                c: C{
+                    x: 77,
+                    y: 88
+                },
+                x: 99,
+            },
+            y: 111,
+        };
+
+        let mut data = Cursor::new(Vec::new());
+        // reserve space for metadata blob length header
+        data.write_all(&[0, 0, 0, 0]).unwrap();
+
+        {
+            let mut rbml_w = rbml::writer::Encoder::new(&mut data);
+
+            rbml_w.start_tag(TAG).unwrap();
+            encoder::tls::enter(dummy_ecx, &mut rbml_w, |ecx, rbml_w| {
+                before.encode(rbml_w).unwrap()
+            });
+            rbml_w.end_tag().unwrap();
+
+            mem::forget(dummy_ecx);
+        }
+
+        let metadata_header = data.position() - 4;
+        data.set_position(0);
+
+        let metadata_header = [(metadata_header >> 24) as u8,
+                               (metadata_header >> 16) as u8,
+                               (metadata_header >>  8) as u8,
+                               (metadata_header >>  0) as u8];
+        data.write_all(&metadata_header).unwrap();
+
+        let metadata_blob = {
+            let vec = data.into_inner();
+
+            let bytes = flate::Bytes::from(vec);
+
+            cstore::MetadataVec(bytes)
+        };
+
+        // dummy
+        let index_doc = rbml::Doc::new(&[]);
+
+        let crate_metadata = cstore::crate_metadata {
+            name: String::from(""),
+            local_path: RefCell::new(SmallVector::zero()),
+            local_def_path: RefCell::new(Vec::new()),
+            data: metadata_blob,
+            cnum_map: RefCell::new(FnvHashMap()),
+            cnum: 1,
+            codemap_import_info: RefCell::new(Vec::new()),
+            span: codemap::DUMMY_SP,
+            staged_api: false,
+
+            index: index::Index::from_rbml(index_doc),
+            xref_index: index::DenseIndex::from_buf(&[], 0, 0),
+            explicitly_linked: Cell::new(false),
+        };
+
+        let dummy_tcx: *const ty::ctxt = ptr::null();
+        let dummy_tcx: &ty::ctxt = unsafe { mem::transmute(dummy_tcx) };
+
+        {
+            let dcx = decoder::tls::DecodingContext {
+                crate_metadata: &crate_metadata,
+                tcx: dummy_tcx,
+            };
+
+            let root_doc = rbml::reader::get_doc(rbml::Doc::new(crate_metadata.data.as_slice()), TAG);
+
+            let mut rbml_r = rbml::reader::Decoder::new(root_doc);
+
+            assert_eq!(rbml_r.position(), root_doc.start);
+
+            let after: A = decoder::tls::enter(&dcx, &mut rbml_r, |_, rbml_r| {
+                Decodable::decode(rbml_r).unwrap()
+            });
+
+            assert_eq!(rbml_r.position(), root_doc.end);
+
+            assert_eq!(before, after);
+            mem::forget(dcx);
+        }
+
+        mem::forget(crate_metadata);
+        mem::forget(dummy_tcx);
+    }
+}
+

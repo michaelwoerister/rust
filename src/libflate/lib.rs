@@ -43,6 +43,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::ptr::Unique;
 use std::slice;
+use std::mem;
 
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Error {
@@ -64,6 +65,21 @@ impl fmt::Debug for Error {
 pub struct Bytes {
     ptr: Unique<u8>,
     len: usize,
+}
+
+impl ::std::convert::From<Vec<u8>> for Bytes {
+    fn from(mut vec: Vec<u8>) -> Bytes {
+        let bytes = unsafe{
+            Bytes {
+                ptr: Unique::new(vec.as_mut_ptr()),
+                len: vec.len(),
+            }
+        };
+
+        mem::forget(vec);
+
+        bytes
+    }
 }
 
 impl Deref for Bytes {

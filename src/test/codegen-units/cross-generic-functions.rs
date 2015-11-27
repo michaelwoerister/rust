@@ -1,0 +1,21 @@
+
+// ignore-tidy-linelength
+#![deny(dead_code)]
+
+// aux-build:cgi_generic_function.rs
+extern crate cgi_generic_function;
+
+//~ CODEGEN_ITEM fn cross_generic_functions::main[0]
+fn main()
+{
+    //~ CODEGEN_ITEM fn cgi_generic_function[0]::bar[0]<u32>
+    //~ CODEGEN_ITEM fn cgi_generic_function[0]::foo[0]<u32>
+    let _ = cgi_generic_function::foo(1u32);
+
+    //~ CODEGEN_ITEM fn cgi_generic_function[0]::bar[0]<u64>
+    //~ CODEGEN_ITEM fn cgi_generic_function[0]::foo[0]<u64>
+    let _ = cgi_generic_function::foo(2u64);
+
+    // This should not introduce a codegen item
+    let _ = cgi_generic_function::exported_but_not_generic(3);
+}

@@ -161,7 +161,6 @@ impl<'tcx> Substs<'tcx> {
 impl<'tcx> Encodable for Substs<'tcx> {
 
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        // TODO: lifetimes
         metadata::encoder::tls::with(s, |ecx, rbml_w| {
             let ty_str_ctxt = &tyencode::ctxt {
                 diag: ecx.diag,
@@ -169,7 +168,9 @@ impl<'tcx> Encodable for Substs<'tcx> {
                 tcx: ecx.tcx,
                 abbrevs: &ecx.type_abbrevs
             };
+            rbml_w.mark_stable_position();
             tyencode::enc_substs(rbml_w, ty_str_ctxt, self);
+            rbml_w.mark_stable_position();
             Ok(())
         })
     }

@@ -1546,7 +1546,7 @@ impl<'tcx> Decodable for AdtDef<'tcx> {
         metadata::decoder::tls::with(d, |dcx, _| {
             let def_id = metadata::decoder::translate_def_id(dcx.crate_metadata,
                                                              def_id);
-            Ok(csearch::get_adt_def(dcx.tcx, def_id))
+            Ok(dcx.tcx.lookup_adt_def(def_id))
         })
     }
 }
