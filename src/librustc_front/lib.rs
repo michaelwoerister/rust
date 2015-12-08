@@ -52,6 +52,7 @@ pub mod lowering;
 pub mod fold;
 pub mod intravisit;
 pub mod util;
+mod serialization_impls;
 
 pub mod print {
     pub mod pprust;

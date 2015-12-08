@@ -138,6 +138,7 @@ pub mod mir {
     pub mod repr;
     pub mod tcx;
     pub mod visit;
+    mod serialization_impls;
 }
 
 pub mod session;
