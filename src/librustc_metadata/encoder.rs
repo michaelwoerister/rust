@@ -157,7 +157,7 @@ pub fn def_to_u64(did: DefId) -> u64 {
     (did.krate as u64) << 32 | (did.index.as_usize() as u64)
 }
 
-pub fn def_to_string(did: DefId) -> String {
+pub fn def_to_string(_tcx: &ty::ctxt, did: DefId) -> String {
     format!("{}:{}", did.krate, did.index.as_usize())
 }
 
@@ -2094,11 +2094,14 @@ fn encode_metadata_inner(rbml_w: &mut Encoder,
 }
 
 // Get the encoded string for a type
-pub fn encoded_ty<'tcx>(tcx: &ty::ctxt<'tcx>, t: Ty<'tcx>) -> Vec<u8> {
+pub fn encoded_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
+                        t: Ty<'tcx>,
+                        def_id_to_string: fn(&ty::ctxt<'tcx>, DefId) -> String)
+                        -> Vec<u8> {
     let mut wr = Cursor::new(Vec::new());
     tyencode::enc_ty(&mut wr, &tyencode::ctxt {
         diag: tcx.sess.diagnostic(),
-        ds: def_to_string,
+        ds: def_id_to_string,
         tcx: tcx,
         abbrevs: &RefCell::new(FnvHashMap())
     }, t);
