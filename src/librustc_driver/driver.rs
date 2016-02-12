@@ -22,6 +22,7 @@ use rustc::middle::privacy::AccessLevels;
 use rustc::middle;
 use rustc::util::common::time;
 use rustc::util::nodemap::NodeSet;
+use rustc_back::sha2::{Sha256, Digest};
 use rustc_borrowck as borrowck;
 use rustc_resolve as resolve;
 use rustc_metadata::macro_import;
@@ -495,6 +496,7 @@ pub fn phase_2_configure_and_expand(sess: &Session,
 
     *sess.crate_types.borrow_mut() = collect_crate_types(sess, &krate.attrs);
     *sess.crate_metadata.borrow_mut() = collect_crate_metadata(sess, &krate.attrs);
+    *sess.crate_salt.borrow_mut() = compute_crate_salt(sess);
 
     time(time_passes, "recursion limit", || {
         middle::recursion_limit::update_recursion_limit(sess, &krate);
@@ -1111,6 +1113,16 @@ pub fn collect_crate_types(session: &Session, attrs: &[ast::Attribute]) -> Vec<c
 
 pub fn collect_crate_metadata(session: &Session, _attrs: &[ast::Attribute]) -> Vec<String> {
     session.opts.cg.metadata.clone()
+}
+
+pub fn compute_crate_salt(session: &Session) -> String {
+    let mut hasher = Sha256::new();
+
+    for s in &session.opts.cg.metadata {
+        hasher.input_str(&s[..]);
+    }
+
+    hasher.result_str()
 }
 
 pub fn build_output_filenames(input: &Input,
