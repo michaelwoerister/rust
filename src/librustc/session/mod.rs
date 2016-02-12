@@ -65,6 +65,7 @@ pub struct Session {
     pub crate_types: RefCell<Vec<config::CrateType>>,
     pub dependency_formats: RefCell<dependency_format::Dependencies>,
     pub crate_metadata: RefCell<Vec<String>>,
+    pub crate_salt: RefCell<String>,
     pub features: RefCell<feature_gate::Features>,
 
     /// The maximum recursion limit for potentially infinitely recursive
@@ -482,6 +483,7 @@ pub fn build_session_(sopts: config::Options,
         crate_types: RefCell::new(Vec::new()),
         dependency_formats: RefCell::new(FnvHashMap()),
         crate_metadata: RefCell::new(Vec::new()),
+        crate_salt: RefCell::new(String::new()),
         features: RefCell::new(feature_gate::Features::new()),
         recursion_limit: Cell::new(64),
         next_node_id: Cell::new(1),
