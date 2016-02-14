@@ -47,7 +47,7 @@ use std::rc::Rc;
 use syntax::abi::Abi;
 use syntax::ast::{self, Name, NodeId};
 use syntax::attr;
-use syntax::parse::token::special_idents;
+use syntax::parse::token::{self, special_idents};
 
 use rustc_front::hir;
 
@@ -415,6 +415,10 @@ pub struct ctxt<'tcx> {
     /// fragmented data to the set of unfragmented pieces that
     /// constitute it.
     pub fragment_infos: RefCell<DefIdMap<Vec<ty::FragmentInfo>>>,
+
+    /// The definite name of the current crate after taking into account
+    /// attributes, commandline parameters, etc.
+    pub crate_name: token::InternedString,
 }
 
 impl<'tcx> ctxt<'tcx> {
@@ -511,6 +515,7 @@ impl<'tcx> ctxt<'tcx> {
                                  region_maps: RegionMaps,
                                  lang_items: middle::lang_items::LanguageItems,
                                  stability: stability::Index<'tcx>,
+                                 crate_name: &str,
                                  f: F) -> R
                                  where F: FnOnce(&ctxt<'tcx>) -> R
     {
@@ -570,7 +575,8 @@ impl<'tcx> ctxt<'tcx> {
             const_qualif_map: RefCell::new(NodeMap()),
             custom_coerce_unsized_kinds: RefCell::new(DefIdMap()),
             cast_kinds: RefCell::new(NodeMap()),
-            fragment_infos: RefCell::new(DefIdMap())
+            fragment_infos: RefCell::new(DefIdMap()),
+            crate_name: token::intern_and_get_ident(crate_name),
        }, f)
     }
 }
