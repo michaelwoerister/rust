@@ -2510,8 +2510,7 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                                                                 &item.attrs,
                                                                 llfn,
                                                                 empty_substs,
-                                                                item.id,
-                                                                None);
+                                                                item.id);
                     } else {
                         trans_fn(ccx,
                                  &**decl,
