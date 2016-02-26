@@ -10,7 +10,7 @@ time: libc
 
 libc:
 	mkdir -p out/libc
-	$(RUSTC) in/libc/lib.rs --crate-name=libc -o out/libc/liblibc.rlib
+	$(RUSTC) in/libc/lib.rs --crate-name=libc -Cmetadata=foo -o out/libc/liblibc.rlib
 else
 all:
 endif
