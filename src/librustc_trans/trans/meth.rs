@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use arena::TypedArena;
-use back::link;
+use back::symbol_names;
 use llvm::{ValueRef, get_params};
 use middle::def_id::DefId;
 use middle::infer;
@@ -408,7 +408,9 @@ pub fn trans_object_shim<'a, 'tcx>(
     //
     let shim_fn_ty = tcx.mk_fn(None, fty);
     let method_bare_fn_ty = tcx.mk_fn(None, method_ty);
-    let function_name = link::mangle_internal_name_by_type_and_seq(ccx, shim_fn_ty, "object_shim");
+    let function_name = symbol_names::internal_name_from_type_and_suffix(ccx,
+                                                                         shim_fn_ty,
+                                                                         "object_shim");
     let llfn = declare::define_internal_rust_fn(ccx, &function_name, shim_fn_ty);
 
     let sig = ccx.tcx().erase_late_bound_regions(&fty.sig);
