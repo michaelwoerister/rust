@@ -77,6 +77,7 @@ use trans::expr;
 use trans::foreign;
 use trans::glue;
 use trans::intrinsic;
+use trans::link_guard;
 use trans::machine;
 use trans::machine::{llsize_of, llsize_of_real};
 use trans::meth;
@@ -2669,6 +2670,7 @@ pub fn create_entry_wrapper(ccx: &CrateContext, sp: Span, main_llfn: ValueRef) {
         unsafe {
             llvm::LLVMPositionBuilderAtEnd(bld, llbb);
 
+            link_guard::insert_reference_to_link_guard(ccx, llbb);
             debuginfo::gdb::insert_reference_to_gdb_debug_scripts_section_global(ccx);
 
             let (start_fn, args) = if use_start_lang_item {
@@ -3213,6 +3215,8 @@ pub fn trans_crate<'tcx>(tcx: &ty::ctxt<'tcx>,
         }
 
         collector::print_collection_results(&ccx);
+
+        link_guard::get_or_insert_link_guard(&ccx);
     }
 
     for ccx in shared_ccx.iter() {
@@ -3275,6 +3279,8 @@ pub fn trans_crate<'tcx>(tcx: &ty::ctxt<'tcx>,
     if sess.entry_fn.borrow().is_some() {
         reachable_symbols.push("main".to_string());
     }
+    reachable_symbols.push(link_guard::link_guard_name(&link_meta.crate_name,
+                                                       &link_meta.crate_hash));
 
     // For the purposes of LTO, we add to the reachable set all of the upstream
     // reachable extern fns. These functions are all part of the public ABI of

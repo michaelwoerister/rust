@@ -53,6 +53,7 @@ mod foreign;
 mod glue;
 mod inline;
 mod intrinsic;
+mod link_guard;
 mod llrepr;
 mod machine;
 mod _match;
