@@ -59,6 +59,7 @@ use attributes;
 use build::*;
 use builder::{Builder, noname};
 use callee::{Callee, CallArgs, ArgExprs, ArgVals};
+use cgu_partitioning::{self, InstantiationKind};
 use cleanup::{self, CleanupMethods, DropHint};
 use closure;
 use common::{Block, C_bool, C_bytes_in_context, C_i32, C_int, C_uint, C_integral};
@@ -2961,14 +2962,47 @@ fn collect_translation_items<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>) {
         None => TransItemCollectionMode::Lazy
     };
 
-    let items = time(time_passes, "translation item collection", || {
+    let (items, inlining_map) = time(time_passes, "translation item collection", || {
         collector::collect_crate_translation_items(&ccx, collection_mode)
     });
 
+    let codegen_units = time(time_passes, "codegen unit partitioning", || {
+        cgu_partitioning::partition(ccx, items.iter().cloned(), inlining_map)
+    });
+
     if ccx.sess().opts.debugging_opts.print_trans_items.is_some() {
-        let mut item_keys: Vec<_> = items.iter()
-                                         .map(|i| i.to_string(ccx))
-                                         .collect();
+        let mut item_to_cgus = HashMap::new();
+
+        for (cgu_name, cgu) in codegen_units {
+            for (trans_item, instantiation_kind) in cgu.items {
+                item_to_cgus.entry(trans_item)
+                            .or_insert(Vec::new())
+                            .push((cgu_name.clone(), instantiation_kind));
+            }
+        }
+
+        let mut item_keys: Vec<_> = items
+            .iter()
+            .map(|i| {
+                let mut output = i.to_string(ccx);
+                output.push_str(" @@");
+                let mut cgus = item_to_cgus.get_mut(i).unwrap();
+                cgus.as_mut_slice().sort_by_key(|&(ref name, _)| name.clone());
+                cgus.dedup();
+                for &(ref cgu_name, instantiation_kind) in cgus.iter() {
+                    output.push_str(" ");
+                    output.push_str(&cgu_name[..]);
+
+                    match instantiation_kind {
+                        InstantiationKind::Exported => output.push_str("[E]"),
+                        InstantiationKind::Private => output.push_str("[P]"),
+                        InstantiationKind::AvailableExternally => output.push_str("[A]"),
+                    }
+                }
+                output
+            })
+            .collect();
+
         item_keys.sort();
 
         for item in item_keys {
