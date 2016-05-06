@@ -1825,7 +1825,7 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                closure_env: closure::ClosureEnv) {
     ccx.stats().n_closures.set(ccx.stats().n_closures.get() + 1);
 
-    if collector::collecting_debug_information(ccx) {
+    if collector::collecting_debug_information(ccx.shared()) {
         ccx.record_translation_item_as_generated(TransItem::Fn(instance));
     }
 
@@ -2739,7 +2739,7 @@ pub fn trans_crate<'tcx>(tcx: &TyCtxt<'tcx>,
             krate.visit_all_items(&mut TransModVisitor { ccx: &ccx });
         }
 
-        collector::print_collection_results(&ccx);
+        collector::print_collection_results(ccx.shared());
 
         symbol_names_test::report_symbol_names(&ccx);
     }
@@ -2935,7 +2935,7 @@ fn collect_translation_items<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>) {
     };
 
     let (items, reference_map) = time(time_passes, "translation item collection", || {
-        collector::collect_crate_translation_items(&ccx, collection_mode)
+        collector::collect_crate_translation_items(ccx.shared(), collection_mode)
     });
 
     let strategy = if ccx.sess().opts.debugging_opts.incremental.is_some() {
