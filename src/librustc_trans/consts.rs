@@ -19,7 +19,7 @@ use rustc::hir::def::Def;
 use rustc::hir::def_id::DefId;
 use rustc::hir::map as hir_map;
 use {abi, adt, closure, debuginfo, expr, machine};
-use base::{self, exported_name, imported_name, push_ctxt};
+use base::{self, imported_name, push_ctxt};
 use callee::Callee;
 use collector::{self, TransItem};
 use common::{type_is_sized, C_nil, const_get_elt};
@@ -1023,26 +1023,22 @@ pub fn get_static<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, def_id: DefId)
 
     let g = if let Some(id) = ccx.tcx().map.as_local_node_id(def_id) {
         let llty = type_of::type_of(ccx, ty);
-        match ccx.tcx().map.get(id) {
+        let (g, attrs) = match ccx.tcx().map.get(id) {
             hir_map::NodeItem(&hir::Item {
                 ref attrs, span, node: hir::ItemStatic(..), ..
             }) => {
-                // If this static came from an external crate, then
-                // we need to get the symbol from metadata instead of
-                // using the current crate's name/version
-                // information in the hash of the symbol
-                let sym = exported_name(ccx, instance, attrs);
-                debug!("making {}", sym);
+                let item_symbols = ccx.item_symbols().borrow();
+                let sym = item_symbols.get(&id).unwrap();
 
-                // Create the global before evaluating the initializer;
-                // this is necessary to allow recursive statics.
-                let g = declare::define_global(ccx, &sym, llty).unwrap_or_else(|| {
-                    ccx.sess().span_fatal(span,
-                        &format!("symbol `{}` is already defined", sym))
-                });
+                assert!(!ccx.external_srcs().borrow().contains_key(&id));
+                if ccx.codegen_unit().items.contains_key(&TransItem::Static(id)) {
+                    assert!(declare::get_declared_value(ccx, &sym).is_some());
+                }
 
-                ccx.item_symbols().borrow_mut().insert(id, sym);
-                g
+                // TODO: error message
+                let g = declare::define_global(ccx, &sym, llty).unwrap();
+
+                (g, attrs)
             }
 
             hir_map::NodeForeignItem(&hir::ForeignItem {
@@ -1094,17 +1090,19 @@ pub fn get_static<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, def_id: DefId)
                     declare::declare_global(ccx, &ident, llty)
                 };
 
-                for attr in attrs {
-                    if attr.check_name("thread_local") {
-                        llvm::set_thread_local(g, true);
-                    }
-                }
-
-                g
+                (g, attrs)
             }
 
             item => bug!("get_static: expected static, found {:?}", item)
+        };
+
+        for attr in attrs {
+            if attr.check_name("thread_local") {
+                llvm::set_thread_local(g, true);
+            }
         }
+
+        g
     } else {
         // FIXME(nagisa): perhaps the map of externs could be offloaded to llvm somehow?
         // FIXME(nagisa): investigate whether it can be changed into define_global

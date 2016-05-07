@@ -83,6 +83,7 @@ use meth;
 use mir;
 use monomorphize::{self, Instance};
 use partitioning::{self, PartitioningStrategy, InstantiationMode, CodegenUnit};
+use predefine;
 use symbol_names_test;
 use tvec;
 use type_::Type;
@@ -2326,13 +2327,13 @@ pub fn trans_item(ccx: &CrateContext, item: &hir::Item) {
                 enum_variant_size_lint(ccx, enum_definition, item.span, item.id);
             }
         }
-        hir::ItemStatic(_, m, ref expr) => {
-            let g = match consts::trans_static(ccx, m, expr, item.id, &item.attrs) {
-                Ok(g) => g,
-                Err(err) => ccx.tcx().sess.span_fatal(expr.span, &err.description()),
-            };
-            set_global_section(ccx, g, item);
-            update_linkage(ccx, g, Some(item.id), OriginalTranslation);
+        hir::ItemStatic(..) => {
+            // let g = match consts::trans_static(ccx, m, expr, item.id, &item.attrs) {
+            //     Ok(g) => g,
+            //     Err(err) => ccx.tcx().sess.span_fatal(expr.span, &err.description()),
+            // };
+            // set_global_section(ccx, g, item);
+            // // update_linkage(ccx, g, Some(item.id), OriginalTranslation);
         }
         hir::ItemForeignMod(ref m) => {
             if m.abi == Abi::RustIntrinsic || m.abi == Abi::PlatformIntrinsic {
@@ -2727,10 +2728,36 @@ pub fn trans_crate<'tcx>(tcx: &TyCtxt<'tcx>,
 
     let codegen_units = collect_and_partition_translation_items(&shared_ccx);
     let codegen_unit_count = codegen_units.len();
+
     assert!(tcx.sess.opts.cg.codegen_units == codegen_unit_count ||
             tcx.sess.opts.debugging_opts.incremental.is_some());
 
     let crate_context_list = CrateContextList::new(&shared_ccx, codegen_units);
+
+    // Instantiate translation items without filling out definitions yet
+    for ccx in crate_context_list.iter() {
+        for (&trans_item, &instantiation_mode) in &ccx.codegen_unit().items {
+            predefine::predefine(&ccx, trans_item, instantiation_mode);
+        }
+    }
+
+    for ccx in crate_context_list.iter() {
+        for (&trans_item, &instantiation_mode) in &ccx.codegen_unit().items {
+            match (trans_item, instantiation_mode) {
+                (TransItem::Static(node_id), InstantiationMode::Def(_)) => {
+                    let item = ccx.tcx().map.expect_item(node_id);
+                    if let hir::ItemStatic(_, m, ref expr) = item.node {
+                        let g = match consts::trans_static(&ccx, m, expr, item.id, &item.attrs) {
+                            Ok(g) => g,
+                            Err(err) => ccx.tcx().sess.span_fatal(expr.span, &err.description()),
+                        };
+                        set_global_section(&ccx, g, item);
+                    }
+                }
+                _ => { }
+            }
+        }
+    }
 
     {
         let ccx = crate_context_list.get_ccx(0);
