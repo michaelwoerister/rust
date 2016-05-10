@@ -325,7 +325,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(scx: &SharedCrateContext<'a, 'tcx>,
         // We've been here already, no need to search again.
         return;
     }
-    debug!("BEGIN collect_items_rec({})", starting_point.to_string(scx));
+    debug!("BEGIN collect_items_rec({})", starting_point.to_string(scx.tcx()));
 
     let mut neighbors = Vec::new();
     let recursion_depth_reset;
@@ -396,7 +396,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(scx: &SharedCrateContext<'a, 'tcx>,
         recursion_depths.insert(def_id, depth);
     }
 
-    debug!("END collect_items_rec({})", starting_point.to_string(scx));
+    debug!("END collect_items_rec({})", starting_point.to_string(scx.tcx()));
 }
 
 fn record_inlining_canditates<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -637,7 +637,8 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                             let operand_ty = monomorphize::apply_param_substs(tcx,
                                                                               self.param_substs,
                                                                               &mt.ty);
-                            self.output.push(TransItem::DropGlue(DropGlueKind::Ty(operand_ty)));
+                            let ty = glue::get_drop_glue_type(tcx, operand_ty);
+                            self.output.push(TransItem::DropGlue(DropGlueKind::Ty(ty)));
                         } else {
                             bug!("Has the drop_in_place() intrinsic's signature changed?")
                         }
@@ -1052,6 +1053,14 @@ fn create_trans_items_for_vtable_methods<'a, 'tcx>(scx: &SharedCrateContext<'a, 
                         .collect::<Vec<_>>();
 
                     output.extend(items.into_iter());
+
+                    let destructor = {
+                        let dg_type = glue::get_drop_glue_type(scx.tcx(),
+                                                               trait_ref.self_ty());
+                        TransItem::DropGlue(DropGlueKind::Ty(dg_type))
+                    };
+
+                    output.push(destructor);
                 }
                 _ => { /* */ }
             }
@@ -1246,7 +1255,7 @@ pub enum TransItemState {
 }
 
 pub fn collecting_debug_information(scx: &SharedCrateContext) -> bool {
-    return scx.sess().opts.cg.debug_assertions == Some(true) &&
+    return cfg!(debug_assertions) &&
            scx.sess().opts.debugging_opts.print_trans_items.is_some();
 }
 
@@ -1270,7 +1279,7 @@ pub fn print_collection_results<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>) {
         let mut item_keys = FnvHashMap();
 
         for (item, item_state) in trans_items.iter() {
-            let k = item.to_string(scx);
+            let k = item.to_string(scx.tcx());
 
             if item_keys.contains_key(&k) {
                 let prev: (TransItem, TransItemState) = item_keys[&k];
@@ -1298,7 +1307,7 @@ pub fn print_collection_results<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>) {
     let mut generated = FnvHashSet();
 
     for (item, item_state) in trans_items.iter() {
-        let item_key = item.to_string(scx);
+        let item_key = item.to_string(scx.tcx());
 
         match *item_state {
             TransItemState::PredictedAndGenerated => {
