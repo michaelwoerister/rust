@@ -13,7 +13,9 @@ use syntax::ast::{self, NodeId};
 use syntax::attr;
 use syntax::parse::token;
 use type_of;
-
+use glue;
+use abi::{Abi, FnType};
+use back::symbol_names;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum TransItem<'tcx> {
@@ -52,6 +54,9 @@ impl<'tcx> TransItem<'tcx> {
             TransItem::Static(node_id) => {
                 TransItem::predefine_static(ccx, node_id, linkage);
             }
+            TransItem::DropGlue(dg) => {
+                TransItem::predefine_drop_glue(ccx, dg, linkage);
+            }
             _ => {
                 // Not yet implemented
             }
@@ -87,6 +92,38 @@ impl<'tcx> TransItem<'tcx> {
         }
     }
 
+    fn predefine_drop_glue<'a>(ccx: &CrateContext<'a, 'tcx>,
+                               dg: glue::DropGlueKind<'tcx>,
+                               linkage: llvm::Linkage) {
+        let tcx = ccx.tcx();
+        assert_eq!(dg.ty(), glue::get_drop_glue_type(tcx, dg.ty()));
+        let t = dg.ty();
+
+        let sig = ty::FnSig {
+            inputs: vec![tcx.mk_mut_ptr(tcx.types.i8)],
+            output: ty::FnOutput::FnConverging(tcx.mk_nil()),
+            variadic: false,
+        };
+
+        // Create a FnType for fn(*mut i8) and substitute the real type in
+        // later - that prevents FnType from splitting fat pointers up.
+        let mut fn_ty = FnType::new(ccx, Abi::Rust, &sig, &[]);
+        fn_ty.args[0].original_ty = type_of::type_of(ccx, t).ptr_to();
+        let llfnty = fn_ty.llvm_type(ccx);
+
+        let prefix = match dg {
+            DropGlueKind::Ty(_) => "drop",
+            DropGlueKind::TyContents(_) => "drop_contents",
+        };
+
+        let fn_nm = symbol_names::exported_name_from_type_and_prefix(ccx, t, prefix);
+        assert!(declare::get_defined_value(ccx, &fn_nm).is_none());
+        let llfn = declare::declare_cfn(ccx, &fn_nm, llfnty);
+        llvm::SetLinkage(llfn, linkage);
+        println!("inserting drop glue for {:?} -- {}", dg,
+            TransItem::DropGlue(dg).to_raw_string());
+        ccx.drop_glues().borrow_mut().insert(dg, (llfn, fn_ty));
+    }
 
     pub fn requests_inline(&self, tcx: &TyCtxt<'tcx>) -> bool {
         match *self {
@@ -176,7 +213,11 @@ impl<'tcx> TransItem<'tcx> {
     pub fn to_raw_string(&self) -> String {
         match *self {
             TransItem::DropGlue(dg) => {
-                format!("DropGlue({})", dg.ty() as *const _ as usize)
+                let prefix = match dg {
+                    DropGlueKind::Ty(_) => "Ty",
+                    DropGlueKind::TyContents(_) => "TyContents",
+                };
+                format!("DropGlue({}: {})", prefix, dg.ty() as *const _ as usize)
             }
             TransItem::Fn(instance) => {
                 format!("Fn({:?}, {})",

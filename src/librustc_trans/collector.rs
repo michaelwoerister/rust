@@ -623,7 +623,8 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                             let operand_ty = monomorphize::apply_param_substs(tcx,
                                                                               self.param_substs,
                                                                               &mt.ty);
-                            self.output.push(TransItem::DropGlue(DropGlueKind::Ty(operand_ty)));
+                            let ty = glue::get_drop_glue_type(tcx, operand_ty);
+                            self.output.push(TransItem::DropGlue(DropGlueKind::Ty(ty)));
                         } else {
                             bug!("Has the drop_in_place() intrinsic's signature changed?")
                         }

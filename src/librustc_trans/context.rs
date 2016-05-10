@@ -46,6 +46,7 @@ use std::rc::Rc;
 use std::str;
 use syntax::ast;
 use syntax::parse::token::InternedString;
+use abi::FnType;
 
 pub struct Stats {
     pub n_glues_created: Cell<usize>,
@@ -100,7 +101,7 @@ pub struct LocalCrateContext<'tcx> {
     codegen_unit: CodegenUnit<'tcx>,
     needs_unwind_cleanup_cache: RefCell<FnvHashMap<Ty<'tcx>, bool>>,
     fn_pointer_shims: RefCell<FnvHashMap<Ty<'tcx>, ValueRef>>,
-    drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, ValueRef>>,
+    drop_glues: RefCell<FnvHashMap<DropGlueKind<'tcx>, (ValueRef, FnType)>>,
     /// Track mapping of external ids to local items imported for inlining
     external: RefCell<DefIdMap<Option<ast::NodeId>>>,
     /// Backwards version of the `external` map (inlined items to where they
@@ -711,7 +712,7 @@ impl<'b, 'tcx> CrateContext<'b, 'tcx> {
         &self.local().fn_pointer_shims
     }
 
-    pub fn drop_glues<'a>(&'a self) -> &'a RefCell<FnvHashMap<DropGlueKind<'tcx>, ValueRef>> {
+    pub fn drop_glues<'a>(&'a self) -> &'a RefCell<FnvHashMap<DropGlueKind<'tcx>, (ValueRef, FnType)>> {
         &self.local().drop_glues
     }
 

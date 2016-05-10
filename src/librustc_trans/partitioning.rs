@@ -155,6 +155,11 @@ pub fn partition<'tcx, I>(tcx: &TyCtxt<'tcx>,
     // functions and statics defined in the local crate.
     let mut initial_partitioning = place_root_translation_items(tcx, trans_items);
 
+    println!("INITIAL PARTITONING:");
+    for cgu in &initial_partitioning.codegen_units {
+        dump_cgu(tcx, cgu);
+    }
+
     // If the partitioning should produce a fixed count of codegen units, merge
     // until that count is reached.
     if let PartitioningStrategy::FixedUnitCount(count) = strategy {
@@ -167,6 +172,12 @@ pub fn partition<'tcx, I>(tcx: &TyCtxt<'tcx>,
     // local functions the definition of which is marked with #[inline].
     let post_inlining = place_inlined_translation_items(initial_partitioning,
                                                         inlining_map);
+
+    println!("POST INLINING:");
+    for cgu in &post_inlining.0 {
+        dump_cgu(tcx, cgu);
+    }
+
     post_inlining.0
 }
 
@@ -398,4 +409,14 @@ fn compute_codegen_unit_name<'tcx>(tcx: &TyCtxt<'tcx>,
     }
 
     return token::intern_and_get_ident(&mod_path[..]);
+}
+
+fn dump_cgu<'tcx>(tcx: &TyCtxt<'tcx>, cgu: &CodegenUnit<'tcx>) {
+    println!("CodegenUnit {}:", cgu.name);
+
+    for (trans_item, linkage) in &cgu.items {
+        println!(" - {} [{:?}]", trans_item.to_string(tcx), linkage);
+    }
+
+    println!("");
 }

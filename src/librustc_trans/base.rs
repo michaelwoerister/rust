@@ -2771,6 +2771,18 @@ pub fn trans_crate<'tcx>(tcx: &TyCtxt<'tcx>,
         symbol_names_test::report_symbol_names(&ccx);
     }
 
+    // ... and now that we have everything pre-defined, fill out those definitions.
+    for ccx in crate_context_list.iter() {
+        for (&trans_item, _) in &ccx.codegen_unit().items {
+            match trans_item {
+                TransItem::DropGlue(dg) => {
+                    glue::implement_drop_glue(&ccx, dg);
+                }
+                _ => { }
+            }
+        }
+    }
+
     for ccx in crate_context_list.iter() {
         if ccx.sess().opts.debuginfo != NoDebugInfo {
             debuginfo::finalize(&ccx);
