@@ -104,7 +104,7 @@ use util::sha2::{Digest, Sha256};
 use rustc::middle::{cstore, weak_lang_items};
 use rustc::hir::def_id::DefId;
 use rustc::ty::{self, TyCtxt, TypeFoldable};
-use rustc::ty::item_path::{ItemPathBuffer, RootMode};
+use rustc::ty::item_path::{self, ItemPathBuffer, RootMode};
 use rustc::hir::map::definitions::{DefPath, DefPathData};
 
 use std::fmt::Write;
@@ -265,7 +265,10 @@ pub fn exported_name<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
     let mut buffer = SymbolPathBuffer {
         names: Vec::with_capacity(def_path.data.len())
     };
-    scx.tcx().push_item_path(&mut buffer, def_id);
+
+    item_path::with_forced_absolute_paths(|| {
+        scx.tcx().push_item_path(&mut buffer, def_id);
+    });
 
     mangle(buffer.names.into_iter(), Some(&hash[..]))
 }
