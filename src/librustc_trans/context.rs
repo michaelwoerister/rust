@@ -509,6 +509,10 @@ impl<'b, 'tcx> SharedCrateContext<'b, 'tcx> {
                 self.link_meta().crate_name,
                 self.link_meta().crate_hash)
     }
+
+    pub fn symbol_hasher(&self) -> &RefCell<Sha256> {
+        &self.symbol_hasher
+    }
 }
 
 impl<'tcx> LocalCrateContext<'tcx> {
