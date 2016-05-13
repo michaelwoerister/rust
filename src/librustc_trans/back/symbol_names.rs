@@ -109,7 +109,7 @@ use rustc::hir::map::definitions::{DefPath, DefPathData};
 
 use std::fmt::Write;
 use syntax::parse::token::{self, InternedString};
-use serialize::hex::ToHex;
+use rustc_serialize::hex::ToHex;
 
 pub fn def_id_to_string<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> String {
     let def_path = tcx.def_path(def_id);

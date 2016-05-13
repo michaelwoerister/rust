@@ -13,6 +13,7 @@ arena = { path = "../libarena" }
 flate = { path = "../libflate" }
 graphviz = { path = "../libgraphviz" }
 log = { path = "../liblog" }
+rbml = { path = "../librbml" }
 rustc = { path = "../librustc" }
 rustc_back = { path = "../librustc_back" }
 rustc_const_eval = { path = "../librustc_const_eval" }

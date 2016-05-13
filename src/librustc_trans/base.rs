@@ -46,6 +46,7 @@ use rustc::ty::adjustment::CustomCoerceUnsized;
 use rustc::dep_graph::DepNode;
 use rustc::hir::map as hir_map;
 use rustc::util::common::time;
+use rustc::middle::cstore::LOCAL_CRATE;
 use rustc::mir::mir_map::MirMap;
 use session::config::{self, NoDebugInfo, FullDebugInfo};
 use session::Session;
@@ -91,13 +92,15 @@ use value::Value;
 use Disr;
 use util::common::indenter;
 use util::sha2::Sha256;
-use util::nodemap::{NodeMap, NodeSet};
+use util::nodemap::{NodeMap, NodeSet, FnvHashMap};
 
 use arena::TypedArena;
 use libc::c_uint;
 use std::ffi::{CStr, CString};
+use std::fs;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::result::Result as StdResult;
 use std::str;
 use std::{i8, i16, i32, i64};
 use syntax::codemap::{Span, DUMMY_SP};
@@ -3019,4 +3022,73 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
     }
 
     codegen_units
+}
+
+fn handle_partitioning<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
+                                 current_partitioning: &[CodegenUnit<'tcx>])
+                                 -> StdResult<(), String> {
+    const PARTITIONING_HASHES: &'static str = "partitioning-hashes.bin";
+    let current_hashes: FnvHashMap<String, String> =
+        current_partitioning.iter()
+                            .map(|cgu| {
+                                (String::from(&cgu.name[..]), cgu.compute_hash(scx))
+                            })
+                            .collect();
+
+    // let file_path = incremental::persist::util::path(scx.tcx(),
+    //                                                  LOCAL_CRATE,
+    //                                                  PARTITIONING_HASHES);
+    let file_path = Some(::std::path::PathBuf::new());
+
+    let file_path = match file_path {
+        Some(file_path) => file_path,
+        None => {
+            return Err(format!("Could not create incremental compilation cache directory"));
+        }
+    };
+
+    let prev_hashes = try!(partitioning::load_codegen_unit_hashes(&file_path));
+
+    if let Some(prev_hashes) = prev_hashes {
+        for (cgu_name, current_hash) in &current_hashes {
+            if let Some(prev_hash) = prev_hashes.get(cgu_name) {
+                // This codegen-unit has existed before
+                if current_hash != prev_hash {
+                    // The set of symbols for this codegen unit has changed, so
+                    // delete it entirely
+                    try!(remove_codegen_unit_artifacts(&cgu_name[..]));
+                }
+            }
+        }
+
+        for (cgu_name, prev_hashes) in &prev_hashes {
+            // If there is still a codegen unit around from a previous
+            // compilation but is not used anymore, remove it
+            if !current_hashes.contains_key(cgu_name) {
+                try!(remove_codegen_unit_artifacts(&cgu_name[..]));
+            }
+        }
+    }
+
+    return partitioning::write_codegen_unit_hashes(&file_path, &current_hashes);
+
+    fn remove_codegen_unit_artifacts(cgu_name: &str) -> StdResult<(), String> {
+        let file_path = Some(::std::path::PathBuf::new());
+        let file_path = match file_path {
+            Some(file_path) => file_path,
+            None => {
+                return Err(format!("Could not create incremental compilation cache directory"));
+            }
+        };
+
+        match fs::remove_file(&file_path) {
+            Ok(_) => Ok(()),
+            Err(ref e) if e.kind() == ::std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => {
+                Err(format!("Error removing codegen unit artifact for '{}': {}",
+                            cgu_name,
+                            e))
+            }
+        }
+    }
 }

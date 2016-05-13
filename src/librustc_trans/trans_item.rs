@@ -14,7 +14,7 @@
 //! item-path. This is used for unit testing the code that generates
 //! paths etc in all kinds of annoying scenarios.
 
-use base::llvm_linkage_by_name;
+use base;
 use glue::DropGlueKind;
 use llvm;
 use monomorphize::Instance;
@@ -316,7 +316,7 @@ impl<'tcx> TransItem<'tcx> {
 
         let attributes = tcx.get_attrs(def_id);
         if let Some(name) = attr::first_attr_value_str_by_name(&attributes, "linkage") {
-            if let Some(linkage) = llvm_linkage_by_name(&name) {
+            if let Some(linkage) = base::llvm_linkage_by_name(&name) {
                 Some(linkage)
             } else {
                 let span = tcx.map.span_if_local(def_id);

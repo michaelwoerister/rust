@@ -116,16 +116,29 @@
 //! source-level module, functions from the same module will be available for
 //! inlining, even when they are not marked #[inline].
 
+use back::symbol_names;
+use base;
 use collector::InliningMap;
+use context::SharedCrateContext;
+use glue;
 use llvm;
-use monomorphize;
+use monomorphize::{self, Instance};
+use rbml::opaque::{Encoder, Decoder};
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::DefPathData;
 use rustc::ty::TyCtxt;
 use rustc::ty::item_path::characteristic_def_id_of_type;
+use std::fs::{File, OpenOptions};
+use std::path::Path;
 use syntax::parse::token::{self, InternedString};
 use trans_item::TransItem;
 use util::nodemap::{FnvHashMap, FnvHashSet};
+use util::sha2::Digest;
+
+use rustc_serialize::{Decodable, Encodable};
+use std::io::{self, Read, Write};
+
+const CODEGEN_UNIT_HASHES_FILE_HEADER: &'static [u8] = b"RUSTC_CGU_HASHES";
 
 pub struct CodegenUnit<'tcx> {
     pub name: InternedString,
@@ -398,4 +411,118 @@ fn compute_codegen_unit_name<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     return token::intern_and_get_ident(&mod_path[..]);
+}
+
+impl<'tcx> CodegenUnit<'tcx> {
+
+    // FIXME: Inefficient
+    pub fn compute_hash<'a>(&self, scx: &SharedCrateContext<'a, 'tcx>) -> String {
+
+        let tcx = scx.tcx();
+        let mut symbol_names: Vec<(String, llvm::Linkage)> = vec![];
+
+        for (trans_item, &linkage) in self.items.iter() {
+            let symbol_name = match *trans_item {
+                TransItem::Fn(instance) => {
+                    if let Some(node_id) = tcx.map.as_local_node_id(instance.def) {
+                        let attrs = tcx.map.attrs(node_id);
+                        // base::exported_name(scx, instance, attrs)
+                        String::new()
+                    } else {
+                        let attrs = tcx.sess.cstore.item_attrs(instance.def);
+                        // base::exported_name(scx, instance, &attrs)
+                        String::new()
+                    }
+                }
+                TransItem::Static(node_id) => {
+                    let def_id = tcx.map.local_def_id(node_id);
+                    let attrs = tcx.map.attrs(node_id);
+                    let instance = Instance::mono(scx, def_id);
+                    // base::exported_name(scx, instance, attrs)
+                    String::new()
+                }
+                TransItem::DropGlue(dg) => {
+                    let (prefix, t) = match dg {
+                        glue::DropGlueKind::Ty(t) => ("Ty", t),
+                        glue::DropGlueKind::TyContents(t) => ("TyContents", t),
+                    };
+                    // FIXME: Should be exported_name_from_type_and_prefix
+                    // symbol_names::internal_name_from_type_and_suffix(scx, t, prefix)
+                    String::new()
+                }
+            };
+
+            symbol_names.push((symbol_name, linkage));
+        }
+
+        symbol_names.as_mut_slice().sort_by(|v1, v2| { v1.0.cmp(&v2.0) });
+
+        let mut hash_state = scx.symbol_hasher().borrow_mut();
+        hash_state.reset();
+
+        for &(ref symbol_name, linkage) in &symbol_names {
+            hash_state.input_str(&format!("{:?}|{:x}", linkage, symbol_name.len()));
+            hash_state.input_str(&symbol_name);
+        }
+
+        hash_state.result_str()
+    }
+}
+
+
+pub fn load_codegen_unit_hashes(file_path: &Path)
+                                -> Result<Option<FnvHashMap<String, String>>, String> {
+    // Load codegen unit hashes from previous compilation from disk
+    if !file_path.exists() {
+        Ok(None)
+    } else if !file_path.is_file() {
+        Err(format!("'{}' is not a file.", file_path.display()))
+    } else {
+        let mut file = try! {
+            File::open(file_path)
+                 .map_err(|e| format!("Error while opening codegen unit hashes file: {}", e))
+        };
+        let mut contents = vec![];
+        let _ = try! {
+            file.read_to_end(&mut contents)
+                .map_err(|e| format!("Could not read contents of codegen unit hashes file: {}", e))
+        };
+
+        if contents.len() < CODEGEN_UNIT_HASHES_FILE_HEADER.len() ||
+           &contents[0 .. CODEGEN_UNIT_HASHES_FILE_HEADER.len()] !=
+                CODEGEN_UNIT_HASHES_FILE_HEADER {
+            return Err(format!("Corrupt codegen unit hashes file: {}", file_path.display()));
+        }
+
+        let mut decoder = Decoder::new(&contents[..], CODEGEN_UNIT_HASHES_FILE_HEADER.len());
+
+        let hashes: FnvHashMap<String, String> = try! {
+            Decodable::decode(&mut decoder)
+                      .map_err(|_| {
+                format!("Corrupt codegen unit hashes file: {}", file_path.display())
+            })
+        };
+
+        Ok(Some(hashes))
+    }
+}
+
+pub fn write_codegen_unit_hashes(file_path: &Path,
+                                 hashes: &FnvHashMap<String, String>)
+                                 -> Result<(), String> {
+    let mut cursor = io::Cursor::new(vec![]);
+    cursor.write_all(CODEGEN_UNIT_HASHES_FILE_HEADER).unwrap();
+    hashes.encode(&mut Encoder::new(&mut cursor)).unwrap();
+    let data = cursor.into_inner();
+
+    let mut file = try! {
+        OpenOptions::new().write(true)
+                          .create(true)
+                          .truncate(true)
+                          .open(file_path)
+                          .map_err(|e| format!("Error creating codegen unit hashes file: {}", e))
+    };
+
+    file.write_all(&data[..])
+        .map_err(|e| format!("Error writing codegen unit hashes file: {}", e))
 }

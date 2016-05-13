@@ -43,6 +43,7 @@ extern crate flate;
 extern crate getopts;
 extern crate graphviz;
 extern crate libc;
+extern crate rbml;
 #[macro_use] extern crate rustc;
 extern crate rustc_back;
 extern crate rustc_data_structures;
@@ -50,7 +51,7 @@ extern crate rustc_incremental;
 pub extern crate rustc_llvm as llvm;
 extern crate rustc_mir;
 extern crate rustc_platform_intrinsics as intrinsics;
-extern crate serialize;
+extern crate serialize as rustc_serialize; // used by deriving
 extern crate rustc_const_math;
 extern crate rustc_const_eval;
 
