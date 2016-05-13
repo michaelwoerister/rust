@@ -325,7 +325,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(scx: &SharedCrateContext<'a, 'tcx>,
         // We've been here already, no need to search again.
         return;
     }
-    debug!("BEGIN collect_items_rec({})", starting_point.to_string(scx.tcx()));
+    debug!("BEGIN collect_items_rec({})", starting_point.to_string(scx));
 
     let mut neighbors = Vec::new();
     let recursion_depth_reset;
@@ -396,7 +396,7 @@ fn collect_items_rec<'a, 'tcx: 'a>(scx: &SharedCrateContext<'a, 'tcx>,
         recursion_depths.insert(def_id, depth);
     }
 
-    debug!("END collect_items_rec({})", starting_point.to_string(scx.tcx()));
+    debug!("END collect_items_rec({})", starting_point.to_string(scx));
 }
 
 fn record_inlining_canditates<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -456,12 +456,25 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
         match *rvalue {
             mir::Rvalue::Aggregate(mir::AggregateKind::Closure(def_id,
                                                                ref substs), _) => {
-                assert!(can_have_local_instance(self.scx.tcx(), def_id));
-                let trans_item = create_fn_trans_item(self.scx.tcx(),
-                                                      def_id,
-                                                      substs.func_substs,
-                                                      self.param_substs);
-                self.output.push(trans_item);
+                let mir = errors::expect(self.scx.sess().diagnostic(), self.scx.get_mir(def_id),
+                                         || format!("Could not find MIR for closure: {:?}", def_id));
+
+                let concrete_substs = monomorphize::apply_param_substs(self.scx.tcx(),
+                                                                       self.param_substs,
+                                                                       &substs.func_substs);
+                let concrete_substs = self.scx.tcx().erase_regions(&concrete_substs);
+
+                let mut visitor = MirNeighborCollector {
+                    scx: self.scx,
+                    mir: &mir,
+                    output: self.output,
+                    param_substs: concrete_substs
+                };
+
+                visitor.visit_mir(&mir);
+                for promoted in &mir.promoted {
+                    visitor.visit_mir(promoted);
+                }
             }
             // When doing an cast from a regular pointer to a fat pointer, we
             // have to instantiate all methods of the trait being cast to, so we
@@ -859,6 +872,7 @@ fn do_static_trait_method_dispatch<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
                                                        &callee_substs);
 
     let trait_ref = ty::Binder(rcvr_substs.to_trait_ref(tcx, trait_id));
+    let trait_ref = tcx.normalize_associated_type(&trait_ref);
     let vtbl = fulfill_obligation(scx, DUMMY_SP, trait_ref);
 
     // Now that we know which impl is being used, we can dispatch to
@@ -1105,9 +1119,8 @@ impl<'b, 'a, 'v> hir_visit::Visitor<'v> for RootCollector<'b, 'a, 'v> {
                                         self.scx.tcx().map.local_def_id(item.id)));
                 self.output.push(TransItem::Static(item.id));
             }
-            hir::ItemFn(_, _, constness, _, ref generics, _) => {
-                if !generics.is_type_parameterized() &&
-                   constness == hir::Constness::NotConst {
+            hir::ItemFn(_, _, _, _, ref generics, _) => {
+                if !generics.is_type_parameterized() {
                     let def_id = self.scx.tcx().map.local_def_id(item.id);
 
                     debug!("RootCollector: ItemFn({})",
@@ -1127,9 +1140,8 @@ impl<'b, 'a, 'v> hir_visit::Visitor<'v> for RootCollector<'b, 'a, 'v> {
         match ii.node {
             hir::ImplItemKind::Method(hir::MethodSig {
                 ref generics,
-                constness,
                 ..
-            }, _) if constness == hir::Constness::NotConst => {
+            }, _) => {
                 let hir_map = &self.scx.tcx().map;
                 let parent_node_id = hir_map.get_parent_node(ii.id);
                 let is_impl_generic = match hir_map.expect_item(parent_node_id) {
@@ -1258,7 +1270,7 @@ pub fn print_collection_results<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>) {
         let mut item_keys = FnvHashMap();
 
         for (item, item_state) in trans_items.iter() {
-            let k = item.to_string(scx.tcx());
+            let k = item.to_string(scx);
 
             if item_keys.contains_key(&k) {
                 let prev: (TransItem, TransItemState) = item_keys[&k];
@@ -1286,7 +1298,7 @@ pub fn print_collection_results<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>) {
     let mut generated = FnvHashSet();
 
     for (item, item_state) in trans_items.iter() {
-        let item_key = item.to_string(scx.tcx());
+        let item_key = item.to_string(scx);
 
         match *item_state {
             TransItemState::PredictedAndGenerated => {
