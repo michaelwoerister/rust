@@ -586,6 +586,13 @@ ifeq ($(findstring msvc,$(CFG_TARGET)),msvc)
 CTEST_DISABLE_debuginfo-gdb = "gdb tests are disabled on MSVC"
 endif
 
+BLACKLISTED_LLDB_VERSIONS= "lldb-350.0.21.3 \
+                            lldb-350.0.21.9"
+
+ifneq ($(findstring $(CFG_LLDB_VERSION),$(BLACKLISTED_LLDB_VERSIONS)),)
+CTEST_DISABLE_debuginfo-lldb = "lldb version '$(CFG_LLDB_VERSION)' has known issues"
+endif
+
 # CTEST_DISABLE_NONSELFHOST_$(TEST_GROUP), if set, will cause that
 # test group to be disabled *unless* the target is able to build a
 # compiler (i.e. when the target triple is in the set of host
