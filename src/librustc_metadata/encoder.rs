@@ -1789,7 +1789,7 @@ fn encode_dylib_dependency_formats(rbml_w: &mut Encoder, ecx: &EncodeContext) {
 }
 
 fn encode_panic_strategy(rbml_w: &mut Encoder, ecx: &EncodeContext) {
-    match ecx.tcx.sess.opts.cg.panic {
+    match ecx.tcx.sess.opts.cg.panic() {
         PanicStrategy::Unwind => {
             rbml_w.wr_tagged_u8(tag_panic_strategy, b'U');
         }

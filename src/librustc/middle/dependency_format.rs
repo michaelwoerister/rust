@@ -104,7 +104,7 @@ fn calculate_type(sess: &session::Session,
     match ty {
         // If the global prefer_dynamic switch is turned off, first attempt
         // static linkage (this can fail).
-        config::CrateTypeExecutable if !sess.opts.cg.prefer_dynamic => {
+        config::CrateTypeExecutable if !sess.opts.cg.prefer_dynamic() => {
             if let Some(v) = attempt_static(sess) {
                 return v;
             }
@@ -133,7 +133,7 @@ fn calculate_type(sess: &session::Session,
         // Generating a dylib without `-C prefer-dynamic` means that we're going
         // to try to eagerly statically link all dependencies. This is normally
         // done for end-product dylibs, not intermediate products.
-        config::CrateTypeDylib if !sess.opts.cg.prefer_dynamic => {
+        config::CrateTypeDylib if !sess.opts.cg.prefer_dynamic() => {
             if let Some(v) = attempt_static(sess) {
                 return v;
             }
@@ -352,7 +352,7 @@ fn verify_ok(sess: &session::Session, list: &[Linkage]) {
     // only one, but we perform validation here that all the panic strategy
     // compilation modes for the whole DAG are valid.
     if let Some((cnum, found_strategy)) = panic_runtime {
-        let desired_strategy = sess.opts.cg.panic.clone();
+        let desired_strategy = sess.opts.cg.panic();
 
         // First up, validate that our selected panic runtime is indeed exactly
         // our same strategy.

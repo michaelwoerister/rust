@@ -237,13 +237,13 @@ pub fn compile_input(sess: &Session,
 }
 
 fn keep_hygiene_data(sess: &Session) -> bool {
-    sess.opts.debugging_opts.keep_hygiene_data
+    sess.opts.debugging_opts.keep_hygiene_data()
 }
 
 fn keep_ast(sess: &Session) -> bool {
-    sess.opts.debugging_opts.keep_ast ||
-    sess.opts.debugging_opts.save_analysis ||
-    sess.opts.debugging_opts.save_analysis_csv
+    sess.opts.debugging_opts.keep_ast() ||
+    sess.opts.debugging_opts.save_analysis() ||
+    sess.opts.debugging_opts.save_analysis_csv()
 }
 
 /// The name used for source code that doesn't originate in a file
@@ -501,16 +501,16 @@ pub fn phase_1_parse_input<'a>(sess: &'a Session,
 
     sess.diagnostic().set_continue_after_error(true);
 
-    if sess.opts.debugging_opts.ast_json_noexpand {
+    if sess.opts.debugging_opts.ast_json_noexpand() {
         println!("{}", json::as_json(&krate));
     }
 
-    if sess.opts.debugging_opts.input_stats {
+    if sess.opts.debugging_opts.input_stats() {
         println!("Lines of code:             {}", sess.codemap().count_lines());
         println!("Pre-expansion node count:  {}", count_nodes(&krate));
     }
 
-    if let Some(ref s) = sess.opts.debugging_opts.show_span {
+    if let Some(ref s) = sess.opts.debugging_opts.show_span() {
         syntax::show_span::run(sess.diagnostic(), s, &krate);
     }
 
@@ -667,7 +667,7 @@ pub fn phase_2_configure_and_expand<'a, F>(sess: &Session,
             crate_name: crate_name.to_string(),
             features: Some(&features),
             recursion_limit: sess.recursion_limit.get(),
-            trace_mac: sess.opts.debugging_opts.trace_macros,
+            trace_mac: sess.opts.debugging_opts.trace_macros(),
             should_test: sess.opts.test,
         };
         let mut loader = macro_import::MacroLoader::new(sess, &cstore, crate_name);
@@ -698,11 +698,11 @@ pub fn phase_2_configure_and_expand<'a, F>(sess: &Session,
 
     let krate = time(sess.time_passes(), "assigning node ids", || resolver.assign_node_ids(krate));
 
-    if sess.opts.debugging_opts.input_stats {
+    if sess.opts.debugging_opts.input_stats() {
         println!("Post-expansion node count: {}", count_nodes(&krate));
     }
 
-    if sess.opts.debugging_opts.ast_json {
+    if sess.opts.debugging_opts.ast_json() {
         println!("{}", json::as_json(&krate));
     }
 
@@ -1025,7 +1025,7 @@ pub fn phase_4_translate_to_llvm<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 pub fn phase_5_run_llvm_passes(sess: &Session,
                                trans: &trans::CrateTranslation,
                                outputs: &OutputFilenames) -> CompileResult {
-    if sess.opts.cg.no_integrated_as {
+    if sess.opts.cg.no_integrated_as() {
         let mut map = HashMap::new();
         map.insert(OutputType::Assembly, None);
         time(sess.time_passes(),
@@ -1035,7 +1035,7 @@ pub fn phase_5_run_llvm_passes(sess: &Session,
         write::run_assembler(sess, outputs);
 
         // Remove assembly source, unless --save-temps was specified
-        if !sess.opts.cg.save_temps {
+        if !sess.opts.cg.save_temps() {
             fs::remove_file(&outputs.temp_path(OutputType::Assembly, None)).unwrap();
         }
     } else {
@@ -1206,7 +1206,7 @@ pub fn collect_crate_types(session: &Session, attrs: &[ast::Attribute]) -> Vec<c
 pub fn compute_crate_disambiguator(session: &Session) -> String {
     let mut hasher = Sha256::new();
 
-    let mut metadata = session.opts.cg.metadata.clone();
+    let mut metadata = session.opts.cg.metadata();
     // We don't want the crate_disambiguator to dependent on the order
     // -C metadata arguments, so sort them:
     metadata.sort();
@@ -1260,7 +1260,7 @@ pub fn build_output_filenames(input: &Input,
                 out_directory: dirpath,
                 out_filestem: stem,
                 single_output_file: None,
-                extra: sess.opts.cg.extra_filename.clone(),
+                extra: sess.opts.cg.extra_filename(),
                 outputs: sess.opts.output_types.clone(),
             }
         }
@@ -1292,7 +1292,7 @@ pub fn build_output_filenames(input: &Input,
                                       .unwrap()
                                       .to_string(),
                 single_output_file: ofile,
-                extra: sess.opts.cg.extra_filename.clone(),
+                extra: sess.opts.cg.extra_filename(),
                 outputs: sess.opts.output_types.clone(),
             }
         }

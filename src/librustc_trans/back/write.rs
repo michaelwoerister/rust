@@ -130,7 +130,7 @@ impl Emitter for SharedEmitter {
 // arise as some of intrinsics are converted into function calls
 // and nobody provides implementations those functions
 fn target_feature(sess: &Session) -> String {
-    format!("{},{}", sess.target.target.options.features, sess.opts.cg.target_feature)
+    format!("{},{}", sess.target.target.options.features, sess.opts.cg.target_feature())
 }
 
 fn get_llvm_opt_level(optimize: config::OptLevel) -> llvm::CodeGenOptLevel {
@@ -152,11 +152,11 @@ fn get_llvm_opt_size(optimize: config::OptLevel) -> llvm::CodeGenOptSize {
 }
 
 pub fn create_target_machine(sess: &Session) -> TargetMachineRef {
-    let reloc_model_arg = match sess.opts.cg.relocation_model {
-        Some(ref s) => &s[..],
-        None => &sess.target.target.options.relocation_model[..],
+    let reloc_model_arg = match sess.opts.cg.relocation_model() {
+        Some(s) => s,
+        None => sess.target.target.options.relocation_model.clone(),
     };
-    let reloc_model = match reloc_model_arg {
+    let reloc_model = match &reloc_model_arg[..] {
         "pic" => llvm::RelocPIC,
         "static" => llvm::RelocStatic,
         "default" => llvm::RelocDefault,
@@ -165,14 +165,14 @@ pub fn create_target_machine(sess: &Session) -> TargetMachineRef {
             sess.err(&format!("{:?} is not a valid relocation mode",
                              sess.opts
                                  .cg
-                                 .relocation_model));
+                                 .relocation_model()));
             sess.abort_if_errors();
             bug!();
         }
     };
 
     let opt_level = get_llvm_opt_level(sess.opts.optimize);
-    let use_softfp = sess.opts.cg.soft_float;
+    let use_softfp = sess.opts.cg.soft_float();
 
     let any_library = sess.crate_types.borrow().iter().any(|ty| {
         *ty != config::CrateTypeExecutable
@@ -181,12 +181,12 @@ pub fn create_target_machine(sess: &Session) -> TargetMachineRef {
     let ffunction_sections = sess.target.target.options.function_sections;
     let fdata_sections = ffunction_sections;
 
-    let code_model_arg = match sess.opts.cg.code_model {
-        Some(ref s) => &s[..],
-        None => &sess.target.target.options.code_model[..],
+    let code_model_arg = match sess.opts.cg.code_model() {
+        Some(s) => s,
+        None => sess.target.target.options.code_model.clone(),
     };
 
-    let code_model = match code_model_arg {
+    let code_model = match &code_model_arg[..] {
         "default" => llvm::CodeModelDefault,
         "small" => llvm::CodeModelSmall,
         "kernel" => llvm::CodeModelKernel,
@@ -196,7 +196,7 @@ pub fn create_target_machine(sess: &Session) -> TargetMachineRef {
             sess.err(&format!("{:?} is not a valid code model",
                              sess.opts
                                  .cg
-                                 .code_model));
+                                 .code_model()));
             sess.abort_if_errors();
             bug!();
         }
@@ -206,9 +206,9 @@ pub fn create_target_machine(sess: &Session) -> TargetMachineRef {
 
     let tm = unsafe {
         let triple = CString::new(triple.as_bytes()).unwrap();
-        let cpu = match sess.opts.cg.target_cpu {
-            Some(ref s) => &**s,
-            None => &*sess.target.target.options.cpu
+        let cpu = match sess.opts.cg.target_cpu() {
+            Some(s) => s,
+            None => sess.target.target.options.cpu.clone()
         };
         let cpu = CString::new(cpu.as_bytes()).unwrap();
         let features = CString::new(target_feature(sess).as_bytes()).unwrap();
@@ -302,19 +302,19 @@ impl ModuleConfig {
 
     fn set_flags(&mut self, sess: &Session, trans: &CrateTranslation) {
         self.no_verify = sess.no_verify();
-        self.no_prepopulate_passes = sess.opts.cg.no_prepopulate_passes;
+        self.no_prepopulate_passes = sess.opts.cg.no_prepopulate_passes();
         self.no_builtins = trans.no_builtins;
         self.time_passes = sess.time_passes();
-        self.inline_threshold = sess.opts.cg.inline_threshold;
+        self.inline_threshold = sess.opts.cg.inline_threshold();
         self.obj_is_bitcode = sess.target.target.options.obj_is_bitcode;
 
         // Copy what clang does by turning on loop vectorization at O2 and
         // slp vectorization at O3. Otherwise configure other optimization aspects
         // of this pass manager builder.
-        self.vectorize_loop = !sess.opts.cg.no_vectorize_loops &&
+        self.vectorize_loop = !sess.opts.cg.no_vectorize_loops() &&
                              (sess.opts.optimize == config::OptLevel::Default ||
                               sess.opts.optimize == config::OptLevel::Aggressive);
-        self.vectorize_slp = !sess.opts.cg.no_vectorize_slp &&
+        self.vectorize_slp = !sess.opts.cg.no_vectorize_slp() &&
                             sess.opts.optimize == config::OptLevel::Aggressive;
 
         self.merge_functions = sess.opts.optimize == config::OptLevel::Default ||
@@ -343,7 +343,7 @@ impl<'a> CodegenContext<'a> {
             lto_ctxt: Some((sess, reachable)),
             handler: sess.diagnostic(),
             plugin_passes: sess.plugin_llvm_passes.borrow().clone(),
-            remark: sess.opts.cg.remark.clone(),
+            remark: sess.opts.cg.remark(),
             worker: 0,
         }
     }
@@ -643,7 +643,7 @@ pub fn run_passes(sess: &Session,
     // case, but it would be confusing to have the validity of
     // `-Z lto -C codegen-units=2` depend on details of the crate being
     // compiled, so we complain regardless.
-    if sess.lto() && sess.opts.cg.codegen_units > 1 {
+    if sess.lto() && sess.opts.cg.codegen_units() > 1 {
         // This case is impossible to handle because LTO expects to be able
         // to combine the entire crate and all its dependencies into a
         // single compilation unit, but each codegen unit is in a separate
@@ -652,21 +652,21 @@ pub fn run_passes(sess: &Session,
     }
 
     // Sanity check
-    assert!(trans.modules.len() == sess.opts.cg.codegen_units ||
-            sess.opts.debugging_opts.incremental.is_some());
+    assert!(trans.modules.len() == sess.opts.cg.codegen_units() ||
+            sess.opts.debugging_opts.incremental().is_some());
 
     let tm = create_target_machine(sess);
 
     // Figure out what we actually need to build.
 
-    let mut modules_config = ModuleConfig::new(tm, sess.opts.cg.passes.clone());
+    let mut modules_config = ModuleConfig::new(tm, sess.opts.cg.passes());
     let mut metadata_config = ModuleConfig::new(tm, vec!());
 
     modules_config.opt_level = Some(get_llvm_opt_level(sess.opts.optimize));
     modules_config.opt_size = Some(get_llvm_opt_size(sess.opts.optimize));
 
     // Save all versions of the bytecode if we're saving our temporaries.
-    if sess.opts.cg.save_temps {
+    if sess.opts.cg.save_temps() {
         modules_config.emit_no_opt_bc = true;
         modules_config.emit_bc = true;
         modules_config.emit_lto_bc = true;
@@ -764,7 +764,7 @@ pub fn run_passes(sess: &Session,
             let path = crate_output.temp_path(output_type, module_name);
             copy_gracefully(&path,
                             &crate_output.path(output_type));
-            if !sess.opts.cg.save_temps && !keep_numbered {
+            if !sess.opts.cg.save_temps() && !keep_numbered {
                 // The user just wants `foo.x`, not `foo.#module-name#.x`.
                 remove(sess, &path);
             }
@@ -836,7 +836,7 @@ pub fn run_passes(sess: &Session,
     // We may create additional files if requested by the user (through
     // `-C save-temps` or `--emit=` flags).
 
-    if !sess.opts.cg.save_temps {
+    if !sess.opts.cg.save_temps() {
         // Remove the temporary .#module-name#.o objects.  If the user didn't
         // explicitly request bitcode (with --emit=bc), and the bitcode is not
         // needed for building an rlib, then we must remove .#module-name#.bc as
@@ -855,10 +855,10 @@ pub fn run_passes(sess: &Session,
         // where .#module-name#.bc files are (maybe) deleted after making an
         // rlib.
         let keep_numbered_bitcode = needs_crate_bitcode ||
-                (user_wants_bitcode && sess.opts.cg.codegen_units > 1);
+                (user_wants_bitcode && sess.opts.cg.codegen_units() > 1);
 
         let keep_numbered_objects = needs_crate_object ||
-                (user_wants_objects && sess.opts.cg.codegen_units > 1);
+                (user_wants_objects && sess.opts.cg.codegen_units() > 1);
 
         for module_name in trans.modules.iter().map(|m| Some(&m.name[..])) {
             if modules_config.emit_obj && !keep_numbered_objects {
@@ -887,7 +887,7 @@ pub fn run_passes(sess: &Session,
 
     // FIXME: time_llvm_passes support - does this use a global context or
     // something?
-    if sess.opts.cg.codegen_units == 1 && sess.time_llvm_passes() {
+    if sess.opts.cg.codegen_units() == 1 && sess.time_llvm_passes() {
         unsafe { llvm::LLVMRustPrintPassTimings(); }
     }
 }
@@ -949,7 +949,7 @@ fn run_work_multithreaded(sess: &Session,
         let work_items_arc = work_items_arc.clone();
         let diag_emitter = diag_emitter.clone();
         let plugin_passes = sess.plugin_llvm_passes.borrow().clone();
-        let remark = sess.opts.cg.remark.clone();
+        let remark = sess.opts.cg.remark();
 
         let (tx, rx) = channel();
         let mut tx = Some(tx);

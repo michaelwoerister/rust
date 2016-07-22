@@ -1145,7 +1145,7 @@ pub fn trans_static(ccx: &CrateContext,
         let datum = get_static(ccx, def_id);
 
         let check_attrs = |attrs: &[ast::Attribute]| {
-            let default_to_mir = ccx.sess().opts.debugging_opts.orbit;
+            let default_to_mir = ccx.sess().opts.debugging_opts.orbit();
             let invert = if default_to_mir { "rustc_no_mir" } else { "rustc_mir" };
             default_to_mir ^ attrs.iter().any(|item| item.check_name(invert))
         };

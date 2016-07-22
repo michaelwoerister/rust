@@ -44,9 +44,9 @@ pub fn dump_mir<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                           src: MirSource,
                           mir: &Mir<'tcx>,
                           auxiliary: Option<&ScopeAuxiliaryVec>) {
-    let filters = match tcx.sess.opts.debugging_opts.dump_mir {
+    let filters = match tcx.sess.opts.debugging_opts.dump_mir() {
         None => return,
-        Some(ref filters) => filters,
+        Some(filters) => filters,
     };
     let node_id = src.item_id();
     let node_path = tcx.item_path_str(tcx.map.local_def_id(node_id));

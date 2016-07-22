@@ -675,7 +675,7 @@ impl<'a> CrateReader<'a> {
         // The logic for finding the panic runtime here is pretty much the same
         // as the allocator case with the only addition that the panic strategy
         // compilation mode also comes into play.
-        let desired_strategy = self.sess.opts.cg.panic.clone();
+        let desired_strategy = self.sess.opts.cg.panic();
         let mut runtime_found = false;
         let mut needs_panic_runtime = attr::contains_name(&krate.attrs,
                                                           "needs_panic_runtime");
@@ -791,7 +791,7 @@ impl<'a> CrateReader<'a> {
         // * Binaries use jemalloc
         // * Staticlibs and Rust dylibs use system malloc
         // * Rust dylibs used as dependencies to rust use jemalloc
-        let name = if need_lib_alloc && !self.sess.opts.cg.prefer_dynamic {
+        let name = if need_lib_alloc && !self.sess.opts.cg.prefer_dynamic() {
             &self.sess.target.target.options.lib_allocation_crate
         } else {
             &self.sess.target.target.options.exe_allocation_crate

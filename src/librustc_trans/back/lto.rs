@@ -28,7 +28,7 @@ pub fn run(sess: &session::Session, llmod: ModuleRef,
            tm: TargetMachineRef, reachable: &[String],
            config: &ModuleConfig,
            temp_no_opt_bc_filename: &Path) {
-    if sess.opts.cg.prefer_dynamic {
+    if sess.opts.cg.prefer_dynamic() {
         sess.struct_err("cannot prefer dynamic linking when performing LTO")
             .note("only 'staticlib', 'bin', and 'cdylib' outputs are \
                    supported with LTO")
@@ -131,7 +131,7 @@ pub fn run(sess: &session::Session, llmod: ModuleRef,
         }
     }
 
-    if sess.opts.cg.save_temps {
+    if sess.opts.cg.save_temps() {
         let cstr = path2cstr(temp_no_opt_bc_filename);
         unsafe {
             llvm::LLVMWriteBitcodeToFile(llmod, cstr.as_ptr());

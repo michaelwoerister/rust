@@ -205,7 +205,7 @@ impl<'a> Linker for GnuLinker<'a> {
         if self.sess.target.target.options.is_like_osx {
             self.cmd.args(&["-dynamiclib", "-Wl,-dylib"]);
 
-            if self.sess.opts.cg.rpath {
+            if self.sess.opts.cg.rpath() {
                 let mut v = OsString::from("-Wl,-install_name,@rpath/");
                 v.push(out_filename.file_name().unwrap());
                 self.cmd.arg(&v);

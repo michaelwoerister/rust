@@ -67,7 +67,7 @@ const ID: &'static str = "id";
 pub fn assert_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     let _ignore = tcx.dep_graph.in_ignore();
 
-    if tcx.sess.opts.debugging_opts.dump_dep_graph {
+    if tcx.sess.opts.debugging_opts.dump_dep_graph() {
         dump_graph(tcx);
     }
 
@@ -81,7 +81,7 @@ pub fn assert_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     };
 
     if !if_this_changed.is_empty() || !then_this_would_need.is_empty() {
-        assert!(tcx.sess.opts.debugging_opts.query_dep_graph,
+        assert!(tcx.sess.opts.debugging_opts.query_dep_graph(),
                 "cannot use the `#[{}]` or `#[{}]` annotations \
                  without supplying `-Z query-dep-graph`",
                 IF_THIS_CHANGED, THEN_THIS_WOULD_NEED);

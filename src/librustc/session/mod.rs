@@ -279,34 +279,34 @@ impl Session {
     pub fn codemap<'a>(&'a self) -> &'a codemap::CodeMap {
         self.parse_sess.codemap()
     }
-    pub fn verbose(&self) -> bool { self.opts.debugging_opts.verbose }
-    pub fn time_passes(&self) -> bool { self.opts.debugging_opts.time_passes }
+    pub fn verbose(&self) -> bool { self.opts.debugging_opts.verbose() }
+    pub fn time_passes(&self) -> bool { self.opts.debugging_opts.time_passes() }
     pub fn count_llvm_insns(&self) -> bool {
-        self.opts.debugging_opts.count_llvm_insns
+        self.opts.debugging_opts.count_llvm_insns()
     }
     pub fn time_llvm_passes(&self) -> bool {
-        self.opts.debugging_opts.time_llvm_passes
+        self.opts.debugging_opts.time_llvm_passes()
     }
-    pub fn trans_stats(&self) -> bool { self.opts.debugging_opts.trans_stats }
-    pub fn meta_stats(&self) -> bool { self.opts.debugging_opts.meta_stats }
-    pub fn asm_comments(&self) -> bool { self.opts.debugging_opts.asm_comments }
-    pub fn no_verify(&self) -> bool { self.opts.debugging_opts.no_verify }
-    pub fn borrowck_stats(&self) -> bool { self.opts.debugging_opts.borrowck_stats }
+    pub fn trans_stats(&self) -> bool { self.opts.debugging_opts.trans_stats() }
+    pub fn meta_stats(&self) -> bool { self.opts.debugging_opts.meta_stats() }
+    pub fn asm_comments(&self) -> bool { self.opts.debugging_opts.asm_comments() }
+    pub fn no_verify(&self) -> bool { self.opts.debugging_opts.no_verify() }
+    pub fn borrowck_stats(&self) -> bool { self.opts.debugging_opts.borrowck_stats() }
     pub fn print_llvm_passes(&self) -> bool {
-        self.opts.debugging_opts.print_llvm_passes
+        self.opts.debugging_opts.print_llvm_passes()
     }
     pub fn lto(&self) -> bool {
-        self.opts.cg.lto
+        self.opts.cg.lto()
     }
     pub fn no_landing_pads(&self) -> bool {
-        self.opts.debugging_opts.no_landing_pads ||
-            self.opts.cg.panic == PanicStrategy::Abort
+        self.opts.debugging_opts.no_landing_pads() ||
+            self.opts.cg.panic() == PanicStrategy::Abort
     }
     pub fn unstable_options(&self) -> bool {
-        self.opts.debugging_opts.unstable_options
+        self.opts.debugging_opts.unstable_options()
     }
     pub fn nonzeroing_move_hints(&self) -> bool {
-        self.opts.debugging_opts.enable_nonzeroing_move_hints
+        self.opts.debugging_opts.enable_nonzeroing_move_hints()
     }
 
     pub fn must_not_eliminate_frame_pointers(&self) -> bool {
@@ -405,13 +405,11 @@ fn split_msg_into_multilines(msg: &str) -> Option<String> {
 }
 
 pub fn build_session(sopts: config::Options,
-                     dep_graph: &DepGraph,
                      local_crate_source_file: Option<PathBuf>,
                      registry: errors::registry::Registry,
                      cstore: Rc<for<'a> CrateStore<'a>>)
                      -> Session {
     build_session_with_codemap(sopts,
-                               dep_graph,
                                local_crate_source_file,
                                registry,
                                cstore,
@@ -419,7 +417,6 @@ pub fn build_session(sopts: config::Options,
 }
 
 pub fn build_session_with_codemap(sopts: config::Options,
-                                  dep_graph: &DepGraph,
                                   local_crate_source_file: Option<PathBuf>,
                                   registry: errors::registry::Registry,
                                   cstore: Rc<for<'a> CrateStore<'a>>,
@@ -454,7 +451,6 @@ pub fn build_session_with_codemap(sopts: config::Options,
                                       emitter);
 
     build_session_(sopts,
-                   dep_graph,
                    local_crate_source_file,
                    diagnostic_handler,
                    codemap,
@@ -462,7 +458,6 @@ pub fn build_session_with_codemap(sopts: config::Options,
 }
 
 pub fn build_session_(sopts: config::Options,
-                      dep_graph: &DepGraph,
                       local_crate_source_file: Option<PathBuf>,
                       span_diagnostic: errors::Handler,
                       codemap: Rc<codemap::CodeMap>,
@@ -491,7 +486,7 @@ pub fn build_session_(sopts: config::Options,
     );
 
     let sess = Session {
-        dep_graph: dep_graph.clone(),
+        dep_graph: sopts.dep_graph.clone(),
         target: target_cfg,
         host: host,
         opts: sopts,
@@ -562,7 +557,7 @@ unsafe fn configure_llvm(sess: &Session) {
         if sess.time_llvm_passes() { add("-time-passes"); }
         if sess.print_llvm_passes() { add("-debug-pass=Structure"); }
 
-        for arg in &sess.opts.cg.llvm_args {
+        for arg in &sess.opts.cg.llvm_args() {
             add(&(*arg));
         }
     }

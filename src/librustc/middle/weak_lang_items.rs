@@ -91,7 +91,7 @@ fn verify(sess: &Session, items: &lang_items::LanguageItems) {
     // symbols. Other panic runtimes ensure that the relevant symbols are
     // available to link things together, but they're never exercised.
     let mut whitelisted = HashSet::new();
-    if sess.opts.cg.panic != PanicStrategy::Unwind {
+    if sess.opts.cg.panic() != PanicStrategy::Unwind {
         whitelisted.insert(lang_items::EhPersonalityLangItem);
         whitelisted.insert(lang_items::EhUnwindResumeLangItem);
     }

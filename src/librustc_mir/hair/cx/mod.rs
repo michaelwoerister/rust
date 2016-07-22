@@ -71,7 +71,7 @@ impl<'a, 'gcx, 'tcx> Cx<'a, 'gcx, 'tcx> {
         });
 
         // Respect -Z force-overflow-checks=on and -C debug-assertions.
-        check_overflow |= infcx.tcx.sess.opts.debugging_opts.force_overflow_checks
+        check_overflow |= infcx.tcx.sess.opts.debugging_opts.force_overflow_checks()
                .unwrap_or(infcx.tcx.sess.opts.debug_assertions);
 
         // Constants and const fn's always need overflow checks.

@@ -126,6 +126,9 @@ pub enum DepNode<D: Clone + Debug> {
     TraitItems(D),
     ReprHints(D),
     TraitSelect(D, Vec<D>),
+
+    // CommandLineArgument(CommandLineArgument)
+    CommandLineArgOptLevel
 }
 
 impl<D: Clone + Debug> DepNode<D> {
@@ -226,6 +229,7 @@ impl<D: Clone + Debug> DepNode<D> {
                 let type_ds = try_opt!(type_ds.iter().map(|d| op(d)).collect());
                 Some(TraitSelect(d, type_ds))
             }
+            CommandLineArgOptLevel => Some(CommandLineArgOptLevel),
         }
     }
 }

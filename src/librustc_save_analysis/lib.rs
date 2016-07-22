@@ -780,7 +780,7 @@ pub fn process_crate<'l, 'tcx>(tcx: TyCtxt<'l, 'tcx, 'tcx>,
         "lib".to_owned()
     };
     out_name.push_str(&cratename);
-    out_name.push_str(&tcx.sess.opts.cg.extra_filename);
+    out_name.push_str(&tcx.sess.opts.cg.extra_filename());
     out_name.push_str(format.extension());
     root_path.push(&out_name);
     let mut output_file = File::create(&root_path).unwrap_or_else(|e| {

@@ -205,7 +205,7 @@ pub fn instrument_move_fragments<'a, 'tcx>(this: &MoveData<'tcx>,
                                            id: ast::NodeId) {
     let span_err = tcx.map.attrs(id).iter()
                           .any(|a| a.check_name("rustc_move_fragments"));
-    let print = tcx.sess.opts.debugging_opts.print_move_fragments;
+    let print = tcx.sess.opts.debugging_opts.print_move_fragments();
 
     if !span_err && !print { return; }
 

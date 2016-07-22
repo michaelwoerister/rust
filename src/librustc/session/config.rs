@@ -16,6 +16,8 @@ pub use self::CrateType::*;
 pub use self::Passes::*;
 pub use self::DebugInfoLevel::*;
 
+use dep_graph::DepGraph;
+
 use session::{early_error, early_warn, Session};
 use session::search_paths::SearchPaths;
 
@@ -155,7 +157,9 @@ pub struct Options {
     /// out-of-tree drivers.
     pub alt_std_name: Option<String>,
     /// Indicates how the compiler should treat unstable features
-    pub unstable_features: UnstableFeatures
+    pub unstable_features: UnstableFeatures,
+
+    pub dep_graph: DepGraph
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -287,6 +291,8 @@ pub fn host_triple() -> &'static str {
 
 /// Some reasonable defaults
 pub fn basic_options() -> Options {
+    let dep_graph = DepGraph::new(false);
+
     Options {
         crate_types: Vec::new(),
         optimize: OptLevel::No,
@@ -307,9 +313,15 @@ pub fn basic_options() -> Options {
         mir_opt_level: 1,
         incremental: None,
         no_analysis: false,
-        debugging_opts: basic_debugging_options(),
+        debugging_opts: DebuggingOptions {
+            dep_graph: Some(dep_graph.clone()),
+            .. basic_debugging_options()
+        },
         prints: Vec::new(),
-        cg: basic_codegen_options(),
+        cg: CodegenOptions{
+            dep_graph: Some(dep_graph.clone()),
+            ..  basic_codegen_options()
+        },
         error_format: ErrorOutputType::default(),
         externs: HashMap::new(),
         crate_name: None,
@@ -317,15 +329,7 @@ pub fn basic_options() -> Options {
         libs: Vec::new(),
         unstable_features: UnstableFeatures::Disallow,
         debug_assertions: true,
-    }
-}
-
-impl Options {
-    /// True if there is a reason to build the dep graph.
-    pub fn build_dep_graph(&self) -> bool {
-        self.incremental.is_some() ||
-            self.debugging_opts.dump_dep_graph ||
-            self.debugging_opts.query_dep_graph
+        dep_graph: dep_graph.clone(),
     }
 }
 
@@ -379,6 +383,20 @@ impl PanicStrategy {
     }
 }
 
+macro_rules! option_getter {
+    (DepNode(None), $opt_name:ident, $t:ty) => (
+        pub fn $opt_name(&self) -> $t {
+            self.$opt_name.clone()
+        }
+    );
+    (DepNode($dep_node:ident), $opt_name:ident, $t:ty) => (
+        pub fn $opt_name(&self) -> $t {
+            self.dep_graph.as_ref().unwrap().read(::dep_graph::DepNode::$dep_node);
+            self.$opt_name.clone()
+        }
+    );
+}
+
 /// Declare a macro that will define all CodegenOptions/DebuggingOptions fields and parsers all
 /// at once. The goal of this macro is to define an interface that can be
 /// programmatically used by the option parser in order to initialize the struct
@@ -390,16 +408,29 @@ impl PanicStrategy {
 /// its respective field in the struct. There are a few hand-written parsers for
 /// parsing specific types of values in this module.
 macro_rules! options {
-    ($struct_name:ident, $setter_name:ident, $defaultfn:ident,
+    ($struct_name:ident, $enum_name:ident, $setter_name:ident, $defaultfn:ident,
      $buildfn:ident, $prefix:expr, $outputname:expr,
      $stat:ident, $mod_desc:ident, $mod_set:ident,
-     $($opt:ident : $t:ty = ($init:expr, $parse:ident, $desc:expr)),* ,) =>
+     $($opt:ident : $t:ty = ($init:expr, $parse:ident, DepNode($dep_node:ident), $desc:expr)),* ,) =>
 (
     #[derive(Clone)]
-    pub struct $struct_name { $(pub $opt: $t),* }
+    pub struct $struct_name {
+        dep_graph: Option< ::dep_graph::DepGraph >,
+        $($opt: $t),*
+    }
+
+    impl $struct_name {
+        $(option_getter!(DepNode($dep_node), $opt, $t);)*
+    }
+
+    #[allow(non_camel_case_types)]
+    pub enum $enum_name { $($opt),* }
 
     pub fn $defaultfn() -> $struct_name {
-        $struct_name { $($opt: $init),* }
+        $struct_name {
+            dep_graph: None,
+            $($opt: $init),*
+        }
     }
 
     pub fn $buildfn(matches: &getopts::Matches, error_format: ErrorOutputType) -> $struct_name
@@ -586,168 +617,168 @@ macro_rules! options {
     }
 ) }
 
-options! {CodegenOptions, CodegenSetter, basic_codegen_options,
-         build_codegen_options, "C", "codegen",
-         CG_OPTIONS, cg_type_desc, cgsetters,
-    ar: Option<String> = (None, parse_opt_string,
+options! {CodegenOptions, CodegenOptionNames, CodegenSetter,
+          basic_codegen_options, build_codegen_options, "C", "codegen",
+          CG_OPTIONS, cg_type_desc, cgsetters,
+    ar: Option<String> = (None, parse_opt_string, DepNode(None),
         "tool to assemble archives with"),
-    linker: Option<String> = (None, parse_opt_string,
+    linker: Option<String> = (None, parse_opt_string, DepNode(None),
         "system linker to link outputs with"),
-    link_args: Option<Vec<String>> = (None, parse_opt_list,
+    link_args: Option<Vec<String>> = (None, parse_opt_list, DepNode(None),
         "extra arguments to pass to the linker (space separated)"),
-    link_dead_code: bool = (false, parse_bool,
+    link_dead_code: bool = (false, parse_bool, DepNode(None),
         "don't let linker strip dead code (turning it on can be used for code coverage)"),
-    lto: bool = (false, parse_bool,
+    lto: bool = (false, parse_bool, DepNode(None),
         "perform LLVM link-time optimizations"),
-    target_cpu: Option<String> = (None, parse_opt_string,
+    target_cpu: Option<String> = (None, parse_opt_string, DepNode(None),
         "select target processor (llc -mcpu=help for details)"),
-    target_feature: String = ("".to_string(), parse_string,
+    target_feature: String = ("".to_string(), parse_string, DepNode(None),
         "target specific attributes (llc -mattr=help for details)"),
-    passes: Vec<String> = (Vec::new(), parse_list,
+    passes: Vec<String> = (Vec::new(), parse_list, DepNode(None),
         "a list of extra LLVM passes to run (space separated)"),
-    llvm_args: Vec<String> = (Vec::new(), parse_list,
+    llvm_args: Vec<String> = (Vec::new(), parse_list, DepNode(None),
         "a list of arguments to pass to llvm (space separated)"),
-    save_temps: bool = (false, parse_bool,
+    save_temps: bool = (false, parse_bool, DepNode(None),
         "save all temporary output files during compilation"),
-    rpath: bool = (false, parse_bool,
+    rpath: bool = (false, parse_bool, DepNode(None),
         "set rpath values in libs/exes"),
-    no_prepopulate_passes: bool = (false, parse_bool,
+    no_prepopulate_passes: bool = (false, parse_bool, DepNode(None),
         "don't pre-populate the pass manager with a list of passes"),
-    no_vectorize_loops: bool = (false, parse_bool,
+    no_vectorize_loops: bool = (false, parse_bool, DepNode(None),
         "don't run the loop vectorization optimization passes"),
-    no_vectorize_slp: bool = (false, parse_bool,
+    no_vectorize_slp: bool = (false, parse_bool, DepNode(None),
         "don't run LLVM's SLP vectorization pass"),
-    soft_float: bool = (false, parse_bool,
+    soft_float: bool = (false, parse_bool, DepNode(None),
         "generate software floating point library calls"),
-    prefer_dynamic: bool = (false, parse_bool,
+    prefer_dynamic: bool = (false, parse_bool, DepNode(None),
         "prefer dynamic linking to static linking"),
-    no_integrated_as: bool = (false, parse_bool,
+    no_integrated_as: bool = (false, parse_bool, DepNode(None),
         "use an external assembler rather than LLVM's integrated one"),
-    no_redzone: Option<bool> = (None, parse_opt_bool,
+    no_redzone: Option<bool> = (None, parse_opt_bool, DepNode(None),
         "disable the use of the redzone"),
-    relocation_model: Option<String> = (None, parse_opt_string,
+    relocation_model: Option<String> = (None, parse_opt_string, DepNode(None),
          "choose the relocation model to use (llc -relocation-model for details)"),
-    code_model: Option<String> = (None, parse_opt_string,
+    code_model: Option<String> = (None, parse_opt_string, DepNode(None),
          "choose the code model to use (llc -code-model for details)"),
-    metadata: Vec<String> = (Vec::new(), parse_list,
+    metadata: Vec<String> = (Vec::new(), parse_list, DepNode(None),
          "metadata to mangle symbol names with"),
-    extra_filename: String = ("".to_string(), parse_string,
+    extra_filename: String = ("".to_string(), parse_string, DepNode(None),
          "extra data to put in each output filename"),
-    codegen_units: usize = (1, parse_uint,
+    codegen_units: usize = (1, parse_uint, DepNode(None),
         "divide crate into N units to optimize in parallel"),
-    remark: Passes = (SomePasses(Vec::new()), parse_passes,
+    remark: Passes = (SomePasses(Vec::new()), parse_passes, DepNode(None),
         "print remarks for these optimization passes (space separated, or \"all\")"),
-    no_stack_check: bool = (false, parse_bool,
+    no_stack_check: bool = (false, parse_bool, DepNode(None),
         "disable checks for stack exhaustion (a memory-safety hazard!)"),
-    debuginfo: Option<usize> = (None, parse_opt_uint,
+    debuginfo: Option<usize> = (None, parse_opt_uint, DepNode(None),
         "debug info emission level, 0 = no debug info, 1 = line tables only, \
          2 = full debug info with variable and type information"),
-    opt_level: Option<String> = (None, parse_opt_string,
+    opt_level: Option<String> = (None, parse_opt_string, DepNode(CommandLineArgOptLevel),
         "optimize with possible levels 0-3, s, or z"),
-    debug_assertions: Option<bool> = (None, parse_opt_bool,
+    debug_assertions: Option<bool> = (None, parse_opt_bool, DepNode(None),
         "explicitly enable the cfg(debug_assertions) directive"),
-    inline_threshold: Option<usize> = (None, parse_opt_uint,
+    inline_threshold: Option<usize> = (None, parse_opt_uint, DepNode(None),
         "set the inlining threshold for"),
-    panic: PanicStrategy = (PanicStrategy::Unwind, parse_panic_strategy,
+    panic: PanicStrategy = (PanicStrategy::Unwind, parse_panic_strategy, DepNode(None),
         "panic strategy to compile crate with"),
 }
 
 
-options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
-         build_debugging_options, "Z", "debugging",
-         DB_OPTIONS, db_type_desc, dbsetters,
-    verbose: bool = (false, parse_bool,
+options! {DebuggingOptions, DebuggingOptionNames, DebuggingSetter,
+          basic_debugging_options, build_debugging_options, "Z", "debugging",
+          DB_OPTIONS, db_type_desc, dbsetters,
+    verbose: bool = (false, parse_bool, DepNode(None),
         "in general, enable more debug printouts"),
-    time_passes: bool = (false, parse_bool,
+    time_passes: bool = (false, parse_bool, DepNode(None),
         "measure time of each rustc pass"),
-    count_llvm_insns: bool = (false, parse_bool,
+    count_llvm_insns: bool = (false, parse_bool, DepNode(None),
         "count where LLVM instrs originate"),
-    time_llvm_passes: bool = (false, parse_bool,
+    time_llvm_passes: bool = (false, parse_bool, DepNode(None),
         "measure time of each LLVM pass"),
-    input_stats: bool = (false, parse_bool,
+    input_stats: bool = (false, parse_bool, DepNode(None),
         "gather statistics about the input"),
-    trans_stats: bool = (false, parse_bool,
+    trans_stats: bool = (false, parse_bool, DepNode(None),
         "gather trans statistics"),
-    asm_comments: bool = (false, parse_bool,
+    asm_comments: bool = (false, parse_bool, DepNode(None),
         "generate comments into the assembly (may change behavior)"),
-    no_verify: bool = (false, parse_bool,
+    no_verify: bool = (false, parse_bool, DepNode(None),
         "skip LLVM verification"),
-    borrowck_stats: bool = (false, parse_bool,
+    borrowck_stats: bool = (false, parse_bool, DepNode(None),
         "gather borrowck statistics"),
-    no_landing_pads: bool = (false, parse_bool,
+    no_landing_pads: bool = (false, parse_bool, DepNode(None),
         "omit landing pads for unwinding"),
-    debug_llvm: bool = (false, parse_bool,
+    debug_llvm: bool = (false, parse_bool, DepNode(None),
         "enable debug output from LLVM"),
-    meta_stats: bool = (false, parse_bool,
+    meta_stats: bool = (false, parse_bool, DepNode(None),
         "gather metadata statistics"),
-    print_link_args: bool = (false, parse_bool,
+    print_link_args: bool = (false, parse_bool, DepNode(None),
         "print the arguments passed to the linker"),
-    print_llvm_passes: bool = (false, parse_bool,
+    print_llvm_passes: bool = (false, parse_bool, DepNode(None),
         "prints the llvm optimization passes being run"),
-    ast_json: bool = (false, parse_bool,
+    ast_json: bool = (false, parse_bool, DepNode(None),
         "print the AST as JSON and halt"),
-    ast_json_noexpand: bool = (false, parse_bool,
+    ast_json_noexpand: bool = (false, parse_bool, DepNode(None),
         "print the pre-expansion AST as JSON and halt"),
-    ls: bool = (false, parse_bool,
+    ls: bool = (false, parse_bool, DepNode(None),
         "list the symbols defined by a library crate"),
-    save_analysis: bool = (false, parse_bool,
+    save_analysis: bool = (false, parse_bool, DepNode(None),
         "write syntax and type analysis (in JSON format) information in addition to normal output"),
-    save_analysis_csv: bool = (false, parse_bool,
+    save_analysis_csv: bool = (false, parse_bool, DepNode(None),
         "write syntax and type analysis (in CSV format) information in addition to normal output"),
-    print_move_fragments: bool = (false, parse_bool,
+    print_move_fragments: bool = (false, parse_bool, DepNode(None),
         "print out move-fragment data for every fn"),
-    flowgraph_print_loans: bool = (false, parse_bool,
+    flowgraph_print_loans: bool = (false, parse_bool, DepNode(None),
         "include loan analysis data in --unpretty flowgraph output"),
-    flowgraph_print_moves: bool = (false, parse_bool,
+    flowgraph_print_moves: bool = (false, parse_bool, DepNode(None),
         "include move analysis data in --unpretty flowgraph output"),
-    flowgraph_print_assigns: bool = (false, parse_bool,
+    flowgraph_print_assigns: bool = (false, parse_bool, DepNode(None),
         "include assignment analysis data in --unpretty flowgraph output"),
-    flowgraph_print_all: bool = (false, parse_bool,
+    flowgraph_print_all: bool = (false, parse_bool, DepNode(None),
         "include all dataflow analysis data in --unpretty flowgraph output"),
-    print_region_graph: bool = (false, parse_bool,
+    print_region_graph: bool = (false, parse_bool, DepNode(None),
          "prints region inference graph. \
           Use with RUST_REGION_GRAPH=help for more info"),
-    parse_only: bool = (false, parse_bool,
+    parse_only: bool = (false, parse_bool, DepNode(None),
           "parse only; do not compile, assemble, or link"),
-    no_trans: bool = (false, parse_bool,
+    no_trans: bool = (false, parse_bool, DepNode(None),
           "run all passes except translation; no output"),
-    treat_err_as_bug: bool = (false, parse_bool,
+    treat_err_as_bug: bool = (false, parse_bool, DepNode(None),
           "treat all errors that occur as bugs"),
-    continue_parse_after_error: bool = (false, parse_bool,
+    continue_parse_after_error: bool = (false, parse_bool, DepNode(None),
           "attempt to recover from parse errors (experimental)"),
-    incremental: Option<String> = (None, parse_opt_string,
+    incremental: Option<String> = (None, parse_opt_string, DepNode(None),
           "enable incremental compilation (experimental)"),
-    dump_dep_graph: bool = (false, parse_bool,
+    dump_dep_graph: bool = (false, parse_bool, DepNode(None),
           "dump the dependency graph to $RUST_DEP_GRAPH (default: /tmp/dep_graph.gv)"),
-    query_dep_graph: bool = (false, parse_bool,
+    query_dep_graph: bool = (false, parse_bool, DepNode(None),
           "enable queries of the dependency graph for regression testing"),
-    no_analysis: bool = (false, parse_bool,
+    no_analysis: bool = (false, parse_bool, DepNode(None),
           "parse and expand the source, but run no analysis"),
-    extra_plugins: Vec<String> = (Vec::new(), parse_list,
+    extra_plugins: Vec<String> = (Vec::new(), parse_list, DepNode(None),
         "load extra plugins"),
-    unstable_options: bool = (false, parse_bool,
+    unstable_options: bool = (false, parse_bool, DepNode(None),
           "adds unstable command line options to rustc interface"),
-    force_overflow_checks: Option<bool> = (None, parse_opt_bool,
+    force_overflow_checks: Option<bool> = (None, parse_opt_bool, DepNode(None),
           "force overflow checks on or off"),
-    force_dropflag_checks: Option<bool> = (None, parse_opt_bool,
+    force_dropflag_checks: Option<bool> = (None, parse_opt_bool, DepNode(None),
           "force drop flag checks on or off"),
-    trace_macros: bool = (false, parse_bool,
+    trace_macros: bool = (false, parse_bool, DepNode(None),
           "for every macro invocation, print its name and arguments"),
-    enable_nonzeroing_move_hints: bool = (false, parse_bool,
+    enable_nonzeroing_move_hints: bool = (false, parse_bool, DepNode(None),
           "force nonzeroing move optimization on"),
-    keep_hygiene_data: bool = (false, parse_bool,
+    keep_hygiene_data: bool = (false, parse_bool, DepNode(None),
           "don't clear the hygiene data after analysis"),
-    keep_ast: bool = (false, parse_bool,
+    keep_ast: bool = (false, parse_bool, DepNode(None),
           "keep the AST after lowering it to HIR"),
-    show_span: Option<String> = (None, parse_opt_string,
+    show_span: Option<String> = (None, parse_opt_string, DepNode(None),
           "show spans for compiler debugging (expr|pat|ty)"),
-    print_trans_items: Option<String> = (None, parse_opt_string,
+    print_trans_items: Option<String> = (None, parse_opt_string, DepNode(None),
           "print the result of the translation item collection pass"),
-    mir_opt_level: Option<usize> = (None, parse_opt_uint,
+    mir_opt_level: Option<usize> = (None, parse_opt_uint, DepNode(None),
           "set the MIR optimization level (0-3)"),
-    dump_mir: Option<String> = (None, parse_opt_string,
+    dump_mir: Option<String> = (None, parse_opt_string, DepNode(None),
           "dump MIR state at various points in translation"),
-    orbit: bool = (false, parse_bool,
+    orbit: bool = (false, parse_bool, DepNode(None),
           "get MIR where it belongs - everywhere; most importantly, in orbit"),
 }
 
@@ -1309,6 +1340,22 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
 
     let incremental = debugging_opts.incremental.as_ref().map(|m| PathBuf::from(m));
 
+    let enable_dep_graph = incremental.is_some() ||
+                           debugging_opts.dump_dep_graph ||
+                           debugging_opts.query_dep_graph;
+
+    let dep_graph = DepGraph::new(enable_dep_graph);
+
+    let debugging_opts = DebuggingOptions {
+        dep_graph: Some(dep_graph.clone()),
+        .. debugging_opts
+    };
+
+    let cg = CodegenOptions {
+        dep_graph: Some(dep_graph.clone()),
+        .. cg
+    };
+
     Options {
         crate_types: crate_types,
         optimize: opt_level,
@@ -1339,6 +1386,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         libs: libs,
         unstable_features: get_unstable_features_setting(),
         debug_assertions: debug_assertions,
+        dep_graph: dep_graph
     }
 }
 

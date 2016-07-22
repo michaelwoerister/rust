@@ -59,7 +59,7 @@ pub fn maybe_print_constraints_for<'a, 'gcx, 'tcx>(
 {
     let tcx = region_vars.tcx;
 
-    if !region_vars.tcx.sess.opts.debugging_opts.print_region_graph {
+    if !region_vars.tcx.sess.opts.debugging_opts.print_region_graph() {
         return;
     }
 

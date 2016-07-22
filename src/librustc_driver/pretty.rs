@@ -512,10 +512,10 @@ impl<'a, 'tcx> pprust_hir::PpAnn for TypedAnnotation<'a, 'tcx> {
 }
 
 fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
-    let print_loans = sess.opts.debugging_opts.flowgraph_print_loans;
-    let print_moves = sess.opts.debugging_opts.flowgraph_print_moves;
-    let print_assigns = sess.opts.debugging_opts.flowgraph_print_assigns;
-    let print_all = sess.opts.debugging_opts.flowgraph_print_all;
+    let print_loans = sess.opts.debugging_opts.flowgraph_print_loans();
+    let print_moves = sess.opts.debugging_opts.flowgraph_print_moves();
+    let print_assigns = sess.opts.debugging_opts.flowgraph_print_assigns();
+    let print_all = sess.opts.debugging_opts.flowgraph_print_all();
     let mut variants = Vec::new();
     if print_all || print_loans {
         variants.push(borrowck_dot::Loans);

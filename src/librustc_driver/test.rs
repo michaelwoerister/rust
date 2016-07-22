@@ -96,15 +96,21 @@ fn test_env<F>(source_string: &str,
                body: F)
     where F: FnOnce(Env)
 {
-    let mut options = config::basic_options();
-    options.debugging_opts.verbose = true;
-    options.unstable_features = UnstableFeatures::Allow;
+    let mut options = config::Options {
+        debugging_opts: config::DebuggingOptions {
+            verbose: true,
+            .. config::basic_debugging_options()
+        },
+        unstable_features: UnstableFeatures::Allow,
+        .. config::basic_options()
+    };
+    // options.debugging_opts.verbose = true;
+    // options.unstable_features = UnstableFeatures::Allow;
     let diagnostic_handler = errors::Handler::with_emitter(true, false, emitter);
 
-    let dep_graph = DepGraph::new(false);
-    let _ignore = dep_graph.in_ignore();
-    let cstore = Rc::new(CStore::new(&dep_graph));
-    let sess = session::build_session_(options, &dep_graph, None, diagnostic_handler,
+    let _ignore = options.dep_graph.in_ignore();
+    let cstore = Rc::new(CStore::new(&options.dep_graph));
+    let sess = session::build_session_(options, None, diagnostic_handler,
                                        Rc::new(CodeMap::new()), cstore.clone());
     rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
     let krate_config = Vec::new();
@@ -118,7 +124,6 @@ fn test_env<F>(source_string: &str,
             &sess, &cstore, krate, "test", None, MakeGlobMap::No, |_| Ok(()),
         ).expect("phase 2 aborted")
     };
-    let _ignore = dep_graph.in_ignore();
 
     let arenas = ty::CtxtArenas::new();
     let ast_map = hir_map::map_crate(&mut hir_forest, defs);

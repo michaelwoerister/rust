@@ -1430,7 +1430,7 @@ impl<'blk, 'tcx> FunctionContext<'blk, 'tcx> {
         };
 
         let check_attrs = |attrs: &[ast::Attribute]| {
-            let default_to_mir = ccx.sess().opts.debugging_opts.orbit;
+            let default_to_mir = ccx.sess().opts.debugging_opts.orbit();
             let invert = if default_to_mir { "rustc_no_mir" } else { "rustc_mir" };
             (default_to_mir ^ attrs.iter().any(|item| item.check_name(invert)),
              attrs.iter().any(|item| item.check_name("no_debug")))
@@ -2448,13 +2448,13 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let ty::CrateAnalysis { export_map, reachable, name, .. } = analysis;
     let reachable = filter_reachable_ids(tcx, reachable);
 
-    let check_overflow = if let Some(v) = tcx.sess.opts.debugging_opts.force_overflow_checks {
+    let check_overflow = if let Some(v) = tcx.sess.opts.debugging_opts.force_overflow_checks() {
         v
     } else {
         tcx.sess.opts.debug_assertions
     };
 
-    let check_dropflag = if let Some(v) = tcx.sess.opts.debugging_opts.force_dropflag_checks {
+    let check_dropflag = if let Some(v) = tcx.sess.opts.debugging_opts.force_dropflag_checks() {
         v
     } else {
         tcx.sess.opts.debug_assertions
@@ -2641,7 +2641,7 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
                                                      -> (Vec<CodegenUnit<'tcx>>, SymbolMap<'tcx>) {
     let time_passes = scx.sess().time_passes();
 
-    let collection_mode = match scx.sess().opts.debugging_opts.print_trans_items {
+    let collection_mode = match scx.sess().opts.debugging_opts.print_trans_items() {
         Some(ref s) => {
             let mode_string = s.to_lowercase();
             let mode_string = mode_string.trim();
@@ -2668,10 +2668,10 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
 
     let symbol_map = SymbolMap::build(scx, items.iter().cloned());
 
-    let strategy = if scx.sess().opts.debugging_opts.incremental.is_some() {
+    let strategy = if scx.sess().opts.debugging_opts.incremental().is_some() {
         PartitioningStrategy::PerModule
     } else {
-        PartitioningStrategy::FixedUnitCount(scx.sess().opts.cg.codegen_units)
+        PartitioningStrategy::FixedUnitCount(scx.sess().opts.cg.codegen_units())
     };
 
     let codegen_units = time(time_passes, "codegen unit partitioning", || {
@@ -2682,8 +2682,8 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
                                 scx.reachable())
     });
 
-    assert!(scx.tcx().sess.opts.cg.codegen_units == codegen_units.len() ||
-            scx.tcx().sess.opts.debugging_opts.incremental.is_some());
+    assert!(scx.tcx().sess.opts.cg.codegen_units() == codegen_units.len() ||
+            scx.tcx().sess.opts.debugging_opts.incremental().is_some());
 
     {
         let mut ccx_map = scx.translation_items().borrow_mut();
@@ -2693,7 +2693,7 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
         }
     }
 
-    if scx.sess().opts.debugging_opts.print_trans_items.is_some() {
+    if scx.sess().opts.debugging_opts.print_trans_items().is_some() {
         let mut item_to_cgus = HashMap::new();
 
         for cgu in &codegen_units {

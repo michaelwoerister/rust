@@ -63,12 +63,12 @@ fn declare_raw_fn(ccx: &CrateContext, name: &str, callconv: llvm::CallConv, ty: 
     // be merged.
     llvm::SetUnnamedAddr(llfn, true);
 
-    if ccx.tcx().sess.opts.cg.no_redzone
+    if ccx.tcx().sess.opts.cg.no_redzone()
         .unwrap_or(ccx.tcx().sess.target.target.options.disable_redzone) {
         llvm::SetFunctionAttribute(llfn, llvm::Attribute::NoRedZone)
     }
 
-    match ccx.tcx().sess.opts.cg.opt_level.as_ref().map(String::as_ref) {
+    match ccx.tcx().sess.opts.cg.opt_level().as_ref().map(String::as_ref) {
         Some("s") => {
             llvm::SetFunctionAttribute(llfn, llvm::Attribute::OptimizeForSize);
         },

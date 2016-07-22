@@ -69,7 +69,6 @@ use pretty::{PpMode, UserIdentifiedItem};
 use rustc_resolve as resolve;
 use rustc_save_analysis as save;
 use rustc_trans::back::link;
-use rustc::dep_graph::DepGraph;
 use rustc::session::{self, config, Session, build_session, CompileResult};
 use rustc::session::config::{Input, PrintRequest, OutputType, ErrorOutputType};
 use rustc::session::config::{get_unstable_features_setting, nightly_options};
@@ -185,7 +184,7 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
 
     let sopts = config::build_session_options(&matches);
 
-    if sopts.debugging_opts.debug_llvm {
+    if sopts.debugging_opts.debug_llvm() {
         unsafe { llvm::LLVMSetDebug(1); }
     }
 
@@ -206,11 +205,9 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
         },
     };
 
-    let dep_graph = DepGraph::new(sopts.build_dep_graph());
-    let cstore = Rc::new(CStore::new(&dep_graph));
+    let cstore = Rc::new(CStore::new(&sopts.dep_graph));
     let codemap = Rc::new(CodeMap::with_file_loader(loader));
     let sess = session::build_session_with_codemap(sopts,
-                                                   &dep_graph,
                                                    input_file_path,
                                                    descriptions,
                                                    cstore.clone(),
@@ -221,7 +218,7 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
 
     do_or_return!(callbacks.late_callback(&matches, &sess, &input, &odir, &ofile), Some(sess));
 
-    let plugins = sess.opts.debugging_opts.extra_plugins.clone();
+    let plugins = sess.opts.debugging_opts.extra_plugins();
     let control = callbacks.build_controller(&sess, &matches);
     (driver::compile_input(&sess, &cstore, cfg, &input, &odir, &ofile,
                            Some(plugins), &control),
@@ -256,7 +253,7 @@ fn make_input(free_matches: &[String]) -> Option<(Input, Option<PathBuf>)> {
 fn parse_pretty(sess: &Session,
                 matches: &getopts::Matches)
                 -> Option<(PpMode, Option<UserIdentifiedItem>)> {
-    let pretty = if sess.opts.debugging_opts.unstable_options {
+    let pretty = if sess.opts.debugging_opts.unstable_options() {
         matches.opt_default("pretty", "normal").map(|a| {
             // stable pretty-print variants only
             pretty::parse_pretty(sess, &a, false)
@@ -440,13 +437,11 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                     describe_lints(&ls, false);
                     return None;
                 }
-                let dep_graph = DepGraph::new(sopts.build_dep_graph());
-                let cstore = Rc::new(CStore::new(&dep_graph));
+                let cstore = Rc::new(CStore::new(&sopts.dep_graph));
                 let sess = build_session(sopts.clone(),
-                    &dep_graph,
                     None,
                     descriptions.clone(),
-                    cstore.clone());
+                    cstore);
                 rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
                 let should_stop = RustcDefaultCalls::print_crate_info(&sess, None, odir, ofile);
                 if should_stop == Compilation::Stop {
@@ -514,12 +509,12 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
             return control;
         }
 
-        if sess.opts.parse_only || sess.opts.debugging_opts.show_span.is_some() ||
-           sess.opts.debugging_opts.ast_json_noexpand {
+        if sess.opts.parse_only || sess.opts.debugging_opts.show_span().is_some() ||
+           sess.opts.debugging_opts.ast_json_noexpand() {
             control.after_parse.stop = Compilation::Stop;
         }
 
-        if sess.opts.no_analysis || sess.opts.debugging_opts.ast_json {
+        if sess.opts.no_analysis || sess.opts.debugging_opts.ast_json() {
             control.after_hir_lowering.stop = Compilation::Stop;
         }
 
@@ -547,14 +542,14 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
 }
 
 fn save_analysis(sess: &Session) -> bool {
-    sess.opts.debugging_opts.save_analysis ||
-    sess.opts.debugging_opts.save_analysis_csv
+    sess.opts.debugging_opts.save_analysis() ||
+    sess.opts.debugging_opts.save_analysis_csv()
 }
 
 fn save_analysis_format(sess: &Session) -> save::Format {
-    if sess.opts.debugging_opts.save_analysis {
+    if sess.opts.debugging_opts.save_analysis() {
         save::Format::Json
-    } else if sess.opts.debugging_opts.save_analysis_csv {
+    } else if sess.opts.debugging_opts.save_analysis_csv() {
         save::Format::Csv
     } else {
         unreachable!();

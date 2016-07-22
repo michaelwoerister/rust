@@ -139,7 +139,7 @@ pub fn build_link_meta<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 // The third parameter is for an extra path to add to PATH for MSVC
 // cross linkers for host toolchain DLL dependencies
 pub fn get_linker(sess: &Session) -> (String, Command, Option<PathBuf>) {
-    if let Some(ref linker) = sess.opts.cg.linker {
+    if let Some(linker) = sess.opts.cg.linker() {
         (linker.clone(), Command::new(linker), None)
     } else if sess.target.target.options.is_like_msvc {
         let (cmd, host) = msvc::link_exe_cmd(sess);
@@ -151,7 +151,7 @@ pub fn get_linker(sess: &Session) -> (String, Command, Option<PathBuf>) {
 }
 
 pub fn get_ar_prog(sess: &Session) -> String {
-    sess.opts.cg.ar.clone().unwrap_or_else(|| {
+    sess.opts.cg.ar().unwrap_or_else(|| {
         sess.target.target.options.ar.clone()
     })
 }
@@ -204,7 +204,7 @@ pub fn link_binary(sess: &Session,
     }
 
     // Remove the temporary object file and metadata if we aren't saving temps
-    if !sess.opts.cg.save_temps {
+    if !sess.opts.cg.save_temps() {
         for obj in object_filenames(trans, outputs) {
             remove(sess, &obj);
         }
@@ -255,7 +255,7 @@ pub fn filename_for_input(sess: &Session,
                           crate_type: config::CrateType,
                           crate_name: &str,
                           outputs: &OutputFilenames) -> PathBuf {
-    let libname = format!("{}{}", crate_name, sess.opts.cg.extra_filename);
+    let libname = format!("{}{}", crate_name, sess.opts.cg.extra_filename());
     match crate_type {
         config::CrateTypeRlib => {
             outputs.out_directory.join(&format!("lib{}.rlib", libname))
@@ -501,8 +501,8 @@ fn link_rlib<'a>(sess: &'a Session,
                 // of when we do and don't keep .#module-name#.bc files around.
                 let user_wants_numbered_bitcode =
                         sess.opts.output_types.contains_key(&OutputType::Bitcode) &&
-                        sess.opts.cg.codegen_units > 1;
-                if !sess.opts.cg.save_temps && !user_wants_numbered_bitcode {
+                        sess.opts.cg.codegen_units() > 1;
+                if !sess.opts.cg.save_temps() && !user_wants_numbered_bitcode {
                     remove(sess, &bc_filename);
                 }
             }
@@ -647,7 +647,7 @@ fn link_natively(sess: &Session,
     }
     cmd.args(&sess.target.target.options.post_link_args);
 
-    if sess.opts.debugging_opts.print_link_args {
+    if sess.opts.debugging_opts.print_link_args() {
         println!("{:?}", &cmd);
     }
 
@@ -744,7 +744,7 @@ fn link_args(cmd: &mut Linker,
 
     // Try to strip as much out of the generated object by removing unused
     // sections if possible. See more comments in linker.rs
-    if !sess.opts.cg.link_dead_code {
+    if !sess.opts.cg.link_dead_code() {
         let keep_metadata = crate_type == config::CrateTypeDylib;
         cmd.gc_sections(keep_metadata);
     }
@@ -753,13 +753,10 @@ fn link_args(cmd: &mut Linker,
 
     if crate_type == config::CrateTypeExecutable &&
        t.options.position_independent_executables {
-        let empty_vec = Vec::new();
-        let empty_str = String::new();
-        let args = sess.opts.cg.link_args.as_ref().unwrap_or(&empty_vec);
+        let args = sess.opts.cg.link_args().unwrap_or(Vec::new());
         let mut args = args.iter().chain(used_link_args.iter());
-        let relocation_model = sess.opts.cg.relocation_model.as_ref()
-                                   .unwrap_or(&empty_str);
-        if (t.options.relocation_model == "pic" || *relocation_model == "pic")
+        let relocation_model = sess.opts.cg.relocation_model().unwrap_or(String::new());
+        if (t.options.relocation_model == "pic" || relocation_model == "pic")
             && !args.any(|x| *x == "-static") {
             cmd.position_independent_executable();
         }
@@ -819,7 +816,7 @@ fn link_args(cmd: &mut Linker,
     // FIXME (#2397): At some point we want to rpath our guesses as to
     // where extern libraries might live, based on the
     // addl_lib_search_paths
-    if sess.opts.cg.rpath {
+    if sess.opts.cg.rpath() {
         let sysroot = sess.sysroot();
         let target_triple = &sess.opts.target_triple;
         let mut get_install_prefix_lib_path = || {
@@ -843,7 +840,7 @@ fn link_args(cmd: &mut Linker,
 
     // Finally add all the linker arguments provided on the command line along
     // with any #[link_args] attributes found inside the crate
-    if let Some(ref args) = sess.opts.cg.link_args {
+    if let Some(ref args) = sess.opts.cg.link_args() {
         cmd.args(args);
     }
     cmd.args(&used_link_args);
