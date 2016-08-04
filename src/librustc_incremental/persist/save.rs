@@ -98,6 +98,10 @@ pub fn encode_dep_graph<'a, 'tcx>(hcx: &mut HashContext<'a, 'tcx>,
                                   -> io::Result<()>
 {
     let tcx = hcx.tcx;
+
+    // First encode the commandline arguments hash
+    try!(tcx.sess.opts.dep_tracking_hash().encode(encoder));
+
     let query = tcx.dep_graph.query();
 
     let mut builder = DefIdDirectoryBuilder::new(tcx);
