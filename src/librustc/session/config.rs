@@ -267,15 +267,6 @@ top_level_options!(
 
         target_triple: String [TRACKED],
 
-        // User-specified cfg meta items. The compiler itself will add additional
-        // items to the crate config, and during parsing the entire crate config
-        // will be added to the crate AST node.  This should not be used for
-        // anything except building the full crate config prior to parsing.
-        // FIXME(mw): If we could be entirely sure that the `cfg` only ever
-        //            influenced which HIR nodes get filtered out, we wouldn't
-        //            need to track this separately. However, we can't rely on
-        //            this (see `debug_assertions` above).
-        cfg: ast::CrateConfig [TRACKED],
         test: bool [TRACKED],
         error_format: ErrorOutputType [UNTRACKED],
         mir_opt_level: usize [TRACKED],
@@ -432,7 +423,6 @@ pub fn basic_options() -> Options {
         search_paths: SearchPaths::new(),
         maybe_sysroot: None,
         target_triple: host_triple().to_string(),
-        cfg: Vec::new(),
         test: false,
         mir_opt_level: 1,
         incremental: None,
@@ -974,11 +964,12 @@ pub fn append_configuration(cfg: &mut ast::CrateConfig,
     }
 }
 
-pub fn build_configuration(sess: &Session) -> ast::CrateConfig {
+pub fn build_configuration(sess: &Session,
+                           mut user_cfg: ast::CrateConfig)
+                           -> ast::CrateConfig {
     // Combine the configuration requested by the session (command line) with
     // some default and generated configuration items
     let default_cfg = default_configuration(sess);
-    let mut user_cfg = sess.opts.cfg.clone();
     // If the user wants a test runner, then add the test cfg
     if sess.opts.test {
         append_configuration(&mut user_cfg, InternedString::new("test"))
@@ -1239,7 +1230,8 @@ pub fn parse_cfgspecs(cfgspecs: Vec<String> ) -> ast::CrateConfig {
     }).collect::<ast::CrateConfig>()
 }
 
-pub fn build_session_options(matches: &getopts::Matches) -> Options {
+pub fn build_session_options_and_crate_config(matches: &getopts::Matches)
+                                              -> (Options, ast::CrateConfig) {
     let color = match matches.opt_str("color").as_ref().map(|s| &s[..]) {
         Some("auto")   => ColorConfig::Auto,
         Some("always") => ColorConfig::Always,
@@ -1470,7 +1462,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
 
     let incremental = debugging_opts.incremental.as_ref().map(|m| PathBuf::from(m));
 
-    Options {
+    (Options {
         crate_types: crate_types,
         optimize: opt_level,
         debuginfo: debuginfo,
@@ -1481,7 +1473,6 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         search_paths: search_paths,
         maybe_sysroot: sysroot_opt,
         target_triple: target,
-        cfg: cfg,
         test: test,
         mir_opt_level: mir_opt_level,
         incremental: incremental,
@@ -1495,7 +1486,8 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
         libs: libs,
         unstable_features: get_unstable_features_setting(),
         debug_assertions: debug_assertions,
-    }
+    },
+    cfg)
 }
 
 pub fn get_unstable_features_setting() -> UnstableFeatures {
@@ -1643,10 +1635,7 @@ mod dep_tracking {
     use std::path::PathBuf;
     use super::{Passes, PanicStrategy, CrateType, OptLevel, DebugInfoLevel,
                 OutputTypes, Externs, ErrorOutputType};
-    use syntax::ast;
     use syntax::feature_gate::UnstableFeatures;
-    use syntax::parse::token::InternedString;
-    use syntax::ptr::P;
 
     pub trait DepTrackingHash {
         fn hash(&self, &mut SipHasher, ErrorOutputType);
@@ -1711,64 +1700,6 @@ mod dep_tracking {
         }
     }
 
-    fn sorted_meta_items(items: &[P<ast::MetaItem>]) -> Vec<&ast::MetaItem> {
-        // Sort subitems so the hash does not depend on their order
-        let mut items: Vec<&ast::MetaItem> = items.iter()
-                                             .map(|r| &**r)
-                                             .collect();
-        items.sort_by_key(meta_item_sort_key);
-        return items;
-
-        fn meta_item_sort_key(item: &&ast::MetaItem) -> InternedString {
-            match item.node {
-                ast::MetaItemKind::Word(ref s) |
-                ast::MetaItemKind::NameValue(ref s, _) |
-                ast::MetaItemKind::List(ref s, _) => s.clone()
-            }
-        }
-    }
-
-    impl DepTrackingHash for ast::MetaItem {
-        fn hash(&self, hasher: &mut SipHasher, error_format: ErrorOutputType) {
-            // ignoring span information, it doesn't matter here
-            match self.node {
-                ast::MetaItemKind::Word(ref s) => {
-                    Hash::hash("Word", hasher);
-                    Hash::hash(&s.len(), hasher);
-                    Hash::hash(s, hasher);
-                }
-                ast::MetaItemKind::NameValue(ref s, ref lit) => {
-                    Hash::hash("NameValue", hasher);
-                    Hash::hash(&s.len(), hasher);
-                    Hash::hash(s, hasher);
-                    Hash::hash(&lit.node, hasher);
-                }
-                ast::MetaItemKind::List(ref s, ref items) => {
-                    Hash::hash("List", hasher);
-                    Hash::hash(&s.len(), hasher);
-                    Hash::hash(s, hasher);
-                    // Sort subitems so the hash does not depend on their order
-                    let sorted = sorted_meta_items(&items[..]);
-                    for (index, item) in sorted.iter().enumerate() {
-                        Hash::hash(&index, hasher);
-                        DepTrackingHash::hash(*item, hasher, error_format);
-                    }
-                }
-            }
-        }
-    }
-
-    impl DepTrackingHash for ast::CrateConfig {
-        fn hash(&self, hasher: &mut SipHasher, error_format: ErrorOutputType) {
-            // Sort subitems so the hash does not depend on their order
-            let sorted = sorted_meta_items(&self[..]);
-            for (index, item) in sorted.iter().enumerate() {
-                Hash::hash(&index, hasher);
-                DepTrackingHash::hash(*item, hasher, error_format);
-            }
-        }
-    }
-
     impl<T1, T2> DepTrackingHash for (T1, T2)
         where T1: DepTrackingHash,
               T2: DepTrackingHash
@@ -1802,19 +1733,15 @@ mod tests {
     use getopts::{getopts, OptGroup};
     use lint;
     use middle::cstore::{self, DummyCrateStore};
-    use session::config::{build_configuration, build_session_options};
+    use session::config::{build_configuration, build_session_options_and_crate_config};
     use session::build_session;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter::FromIterator;
     use std::path::PathBuf;
     use std::rc::Rc;
     use super::{OutputType, OutputTypes, Externs, PanicStrategy};
-    use syntax::ast::{self, MetaItemKind};
     use syntax::attr;
     use syntax::attr::AttrMetaMethods;
-    use syntax::codemap::dummy_spanned;
-    use syntax::parse::token::InternedString;
-    use syntax::ptr::P;
 
     fn optgroups() -> Vec<OptGroup> {
         super::rustc_optgroups().into_iter()
@@ -1840,9 +1767,9 @@ mod tests {
               Err(f) => panic!("test_switch_implies_cfg_test: {}", f)
             };
         let registry = errors::registry::Registry::new(&[]);
-        let sessopts = build_session_options(matches);
+        let (sessopts, cfg) = build_session_options_and_crate_config(matches);
         let sess = build_session(sessopts, &dep_graph, None, registry, Rc::new(DummyCrateStore));
-        let cfg = build_configuration(&sess);
+        let cfg = build_configuration(&sess, cfg);
         assert!((attr::contains_name(&cfg[..], "test")));
     }
 
@@ -1860,10 +1787,10 @@ mod tests {
               }
             };
         let registry = errors::registry::Registry::new(&[]);
-        let sessopts = build_session_options(matches);
+        let (sessopts, cfg) = build_session_options_and_crate_config(matches);
         let sess = build_session(sessopts, &dep_graph, None, registry,
                                  Rc::new(DummyCrateStore));
-        let cfg = build_configuration(&sess);
+        let cfg = build_configuration(&sess, cfg);
         let mut test_items = cfg.iter().filter(|m| m.name() == "test");
         assert!(test_items.next().is_some());
         assert!(test_items.next().is_none());
@@ -1877,7 +1804,7 @@ mod tests {
                 "-Awarnings".to_string()
             ], &optgroups()).unwrap();
             let registry = errors::registry::Registry::new(&[]);
-            let sessopts = build_session_options(&matches);
+            let (sessopts, _) = build_session_options_and_crate_config(&matches);
             let sess = build_session(sessopts, &dep_graph, None, registry,
                                      Rc::new(DummyCrateStore));
             assert!(!sess.diagnostic().can_emit_warnings);
@@ -1889,7 +1816,7 @@ mod tests {
                 "-Dwarnings".to_string()
             ], &optgroups()).unwrap();
             let registry = errors::registry::Registry::new(&[]);
-            let sessopts = build_session_options(&matches);
+            let (sessopts, _) = build_session_options_and_crate_config(&matches);
             let sess = build_session(sessopts, &dep_graph, None, registry,
                                      Rc::new(DummyCrateStore));
             assert!(sess.diagnostic().can_emit_warnings);
@@ -1900,7 +1827,7 @@ mod tests {
                 "-Adead_code".to_string()
             ], &optgroups()).unwrap();
             let registry = errors::registry::Registry::new(&[]);
-            let sessopts = build_session_options(&matches);
+            let (sessopts, _) = build_session_options_and_crate_config(&matches);
             let sess = build_session(sessopts, &dep_graph, None, registry,
                                      Rc::new(DummyCrateStore));
             assert!(sess.diagnostic().can_emit_warnings);
@@ -2075,127 +2002,6 @@ mod tests {
         // Check clone
         assert_eq!(v1.dep_tracking_hash(), v1.clone().dep_tracking_hash());
         assert_eq!(v2.dep_tracking_hash(), v2.clone().dep_tracking_hash());
-    }
-
-    #[test]
-    fn test_crate_config_tracking_hash_different_values() {
-        let mut v1 = super::basic_options();
-        let mut v2 = super::basic_options();
-        let mut v3 = super::basic_options();
-        let mut v4 = super::basic_options();
-
-        // Reference value
-        v1.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("b"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(1))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        // Change a label
-        v2.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("X"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(1))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        // Change a literal
-        v3.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("X"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(99))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        // Remove something
-        v4.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("X"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(99))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        assert!(v1.dep_tracking_hash() != v2.dep_tracking_hash());
-        assert!(v1.dep_tracking_hash() != v3.dep_tracking_hash());
-        assert!(v1.dep_tracking_hash() != v4.dep_tracking_hash());
-
-        // Check clone
-        assert_eq!(v1.dep_tracking_hash(), v1.clone().dep_tracking_hash());
-        assert_eq!(v2.dep_tracking_hash(), v2.clone().dep_tracking_hash());
-        assert_eq!(v3.dep_tracking_hash(), v3.clone().dep_tracking_hash());
-        assert_eq!(v4.dep_tracking_hash(), v4.clone().dep_tracking_hash());
-    }
-
-    #[test]
-    fn test_crate_config_tracking_hash_different_order() {
-        let mut v1 = super::basic_options();
-        let mut v2 = super::basic_options();
-        let mut v3 = super::basic_options();
-
-        // Reference value
-        v1.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("b"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(1))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        v2.cfg = vec![
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("b"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(1))))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-        ];
-
-        v3.cfg = vec![
-            P(dummy_spanned(MetaItemKind::Word(InternedString::new("a")))),
-            P(dummy_spanned(MetaItemKind::List(InternedString::new("b"),
-                    vec![
-                        P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("d"),
-                                                    dummy_spanned(ast::LitKind::Byte(1))))),
-                        P(dummy_spanned(MetaItemKind::Word(InternedString::new("c")))),
-                    ]))),
-            P(dummy_spanned(MetaItemKind::NameValue(InternedString::new("e"),
-                                                    dummy_spanned(ast::LitKind::Byte(2))))),
-        ];
-
-        assert!(v1.dep_tracking_hash() == v2.dep_tracking_hash());
-        assert!(v1.dep_tracking_hash() == v3.dep_tracking_hash());
-
-        // Check clone
-        assert_eq!(v1.dep_tracking_hash(), v1.clone().dep_tracking_hash());
-        assert_eq!(v2.dep_tracking_hash(), v2.clone().dep_tracking_hash());
-        assert_eq!(v3.dep_tracking_hash(), v3.clone().dep_tracking_hash());
     }
 
     #[test]

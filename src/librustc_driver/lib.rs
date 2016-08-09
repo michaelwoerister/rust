@@ -184,7 +184,7 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
         None => return (Ok(()), None),
     };
 
-    let sopts = config::build_session_options(&matches);
+    let (sopts, cfg) = config::build_session_options_and_crate_config(&matches);
 
     if sopts.debugging_opts.debug_llvm {
         unsafe { llvm::LLVMSetDebug(1); }
@@ -194,6 +194,7 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
 
     do_or_return!(callbacks.early_callback(&matches,
                                            &sopts,
+                                           &cfg,
                                            &descriptions,
                                            sopts.error_format),
                                            None);
@@ -201,7 +202,7 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
     let (odir, ofile) = make_output(&matches);
     let (input, input_file_path) = match make_input(&matches.free) {
         Some((input, input_file_path)) => callbacks.some_input(input, input_file_path),
-        None => match callbacks.no_input(&matches, &sopts, &odir, &ofile, &descriptions) {
+        None => match callbacks.no_input(&matches, &sopts, &cfg, &odir, &ofile, &descriptions) {
             Some((input, input_file_path)) => (input, input_file_path),
             None => return (Ok(()), None),
         },
@@ -217,10 +218,11 @@ pub fn run_compiler_with_file_loader<'a, L>(args: &[String],
                                                    cstore.clone(),
                                                    codemap);
     rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
-    let mut cfg = config::build_configuration(&sess);
+    let mut cfg = config::build_configuration(&sess, cfg);
     target_features::add_configuration(&mut cfg, &sess);
 
-    do_or_return!(callbacks.late_callback(&matches, &sess, &input, &odir, &ofile), Some(sess));
+    do_or_return!(callbacks.late_callback(&matches, &sess, &cfg, &input, &odir, &ofile),
+                  Some(sess));
 
     let plugins = sess.opts.debugging_opts.extra_plugins.clone();
     let control = callbacks.build_controller(&sess, &matches);
@@ -300,6 +302,7 @@ pub trait CompilerCalls<'a> {
     fn early_callback(&mut self,
                       _: &getopts::Matches,
                       _: &config::Options,
+                      _: &ast::CrateConfig,
                       _: &errors::registry::Registry,
                       _: ErrorOutputType)
                       -> Compilation {
@@ -312,6 +315,7 @@ pub trait CompilerCalls<'a> {
     fn late_callback(&mut self,
                      _: &getopts::Matches,
                      _: &Session,
+                     _: &ast::CrateConfig,
                      _: &Input,
                      _: &Option<PathBuf>,
                      _: &Option<PathBuf>)
@@ -337,6 +341,7 @@ pub trait CompilerCalls<'a> {
     fn no_input(&mut self,
                 _: &getopts::Matches,
                 _: &config::Options,
+                _: &ast::CrateConfig,
                 _: &Option<PathBuf>,
                 _: &Option<PathBuf>,
                 _: &errors::registry::Registry)
@@ -378,7 +383,7 @@ fn handle_explain(code: &str,
     }
 }
 
-fn check_cfg(sopts: &config::Options,
+fn check_cfg(cfg: &ast::CrateConfig,
              output: ErrorOutputType) {
     let emitter: Box<Emitter> = match output {
         config::ErrorOutputType::HumanReadable(color_config) => {
@@ -392,7 +397,7 @@ fn check_cfg(sopts: &config::Options,
     let handler = errors::Handler::with_emitter(true, false, emitter);
 
     let mut saw_invalid_predicate = false;
-    for item in sopts.cfg.iter() {
+    for item in cfg.iter() {
         if item.is_meta_item_list() {
             saw_invalid_predicate = true;
             handler.emit(&MultiSpan::new(),
@@ -410,7 +415,8 @@ fn check_cfg(sopts: &config::Options,
 impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
     fn early_callback(&mut self,
                       matches: &getopts::Matches,
-                      sopts: &config::Options,
+                      _: &config::Options,
+                      cfg: &ast::CrateConfig,
                       descriptions: &errors::registry::Registry,
                       output: ErrorOutputType)
                       -> Compilation {
@@ -419,13 +425,14 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
             return Compilation::Stop;
         }
 
-        check_cfg(sopts, output);
+        check_cfg(cfg, output);
         Compilation::Continue
     }
 
     fn no_input(&mut self,
                 matches: &getopts::Matches,
                 sopts: &config::Options,
+                cfg: &ast::CrateConfig,
                 odir: &Option<PathBuf>,
                 ofile: &Option<PathBuf>,
                 descriptions: &errors::registry::Registry)
@@ -446,7 +453,13 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                     descriptions.clone(),
                     cstore.clone());
                 rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
-                let should_stop = RustcDefaultCalls::print_crate_info(&sess, None, odir, ofile);
+                let mut cfg = config::build_configuration(&sess, cfg.clone());
+                target_features::add_configuration(&mut cfg, &sess);
+                let should_stop = RustcDefaultCalls::print_crate_info(&sess,
+                                                                      &cfg,
+                                                                      None,
+                                                                      odir,
+                                                                      ofile);
                 if should_stop == Compilation::Stop {
                     return None;
                 }
@@ -462,11 +475,12 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
     fn late_callback(&mut self,
                      matches: &getopts::Matches,
                      sess: &Session,
+                     cfg: &ast::CrateConfig,
                      input: &Input,
                      odir: &Option<PathBuf>,
                      ofile: &Option<PathBuf>)
                      -> Compilation {
-        RustcDefaultCalls::print_crate_info(sess, Some(input), odir, ofile)
+        RustcDefaultCalls::print_crate_info(sess, cfg, Some(input), odir, ofile)
             .and_then(|| RustcDefaultCalls::list_metadata(sess, matches, input))
     }
 
@@ -585,6 +599,7 @@ impl RustcDefaultCalls {
 
 
     fn print_crate_info(sess: &Session,
+                        cfg: &ast::CrateConfig,
                         input: Option<&Input>,
                         odir: &Option<PathBuf>,
                         ofile: &Option<PathBuf>)
@@ -637,9 +652,6 @@ impl RustcDefaultCalls {
                     }
                 }
                 PrintRequest::Cfg => {
-                    let mut cfg = config::build_configuration(&sess);
-                    target_features::add_configuration(&mut cfg, &sess);
-
                     let allow_unstable_cfg = match get_unstable_features_setting() {
                         UnstableFeatures::Disallow => false,
                         _ => true,

@@ -234,7 +234,7 @@ fn compile_program(input: &str, sysroot: PathBuf)
                                  cstore.clone());
         rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
 
-        let cfg = build_configuration(&sess);
+        let cfg = build_configuration(&sess, vec![]);
 
         let id = "input".to_string();
 
