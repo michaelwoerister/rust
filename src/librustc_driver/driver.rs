@@ -229,6 +229,10 @@ pub fn compile_input(sess: &Session,
 
     phase_6_link_output(sess, &trans, &outputs);
 
+    if sess.opts.debugging_opts.perf_stats {
+        sess.print_perf_stats();
+    }
+
     controller_entry_point!(compilation_done,
                             sess,
                             CompileState::state_when_compilation_done(input, sess, outdir, output),

@@ -18,6 +18,7 @@ use session::search_paths::PathKind;
 use session::config::{DebugInfoLevel, PanicStrategy};
 use ty::tls;
 use util::nodemap::{NodeMap, FnvHashMap};
+use util::common::duration_to_secs_str;
 use mir::transform as mir_pass;
 
 use syntax::ast::{NodeId, Name};
@@ -42,6 +43,7 @@ use std::env;
 use std::ffi::CString;
 use std::rc::Rc;
 use std::fmt;
+use std::time::Duration;
 use libc::c_int;
 
 pub mod config;
@@ -101,7 +103,21 @@ pub struct Session {
     /// macro name and defintion span in the source crate.
     pub imported_macro_spans: RefCell<HashMap<Span, (String, Span)>>,
 
+    /// Some measurements that are being gathered during compilation.
+    pub perf_stats: PerfStats,
+
     next_node_id: Cell<ast::NodeId>,
+}
+
+pub struct PerfStats {
+    // The accumulated time needed for computing the SVH of the crate
+    pub svh_time: Cell<Duration>,
+    // The accumulated time spent on computing incr. comp. hashes
+    pub incr_comp_hashes_time: Cell<Duration>,
+    // The number of incr. comp. hash computations performed
+    pub incr_comp_hashes_count: Cell<u64>,
+    // The accumulated time spent on computing symbol hashes
+    pub symbol_hash_time: Cell<Duration>,
 }
 
 impl Session {
@@ -331,6 +347,17 @@ impl Session {
             &self.opts.search_paths,
             kind)
     }
+
+    pub fn print_perf_stats(&self) {
+        println!("Total time spent computing SVHs:               {}",
+                 duration_to_secs_str(self.perf_stats.svh_time.get()));
+        println!("Total time spent computing incr. comp. hashes: {}",
+                 duration_to_secs_str(self.perf_stats.incr_comp_hashes_time.get()));
+        println!("Total number of incr. comp. hashes computed:   {}",
+                 self.perf_stats.incr_comp_hashes_count.get());
+        println!("Total time spent computing symbol hashes:      {}",
+                 duration_to_secs_str(self.perf_stats.symbol_hash_time.get()));
+    }
 }
 
 pub fn build_session(sopts: config::Options,
@@ -446,6 +473,12 @@ pub fn build_session_(sopts: config::Options,
         injected_panic_runtime: Cell::new(None),
         available_macros: RefCell::new(HashSet::new()),
         imported_macro_spans: RefCell::new(HashMap::new()),
+        perf_stats: PerfStats {
+            svh_time: Cell::new(Duration::from_secs(0)),
+            incr_comp_hashes_time: Cell::new(Duration::from_secs(0)),
+            incr_comp_hashes_count: Cell::new(0),
+            symbol_hash_time: Cell::new(Duration::from_secs(0)),
+        }
     };
 
     init_llvm(&sess);
