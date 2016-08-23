@@ -22,6 +22,7 @@
 #![feature(question_mark)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
+#![feature(core_intrinsics)]
 
 extern crate graphviz;
 extern crate rbml;
