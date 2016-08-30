@@ -30,16 +30,20 @@ use rustc::dep_graph::{DepGraphQuery, DepNode};
 use rustc::hir;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::Visitor;
-use rustc_data_structures::fnv::FnvHashSet;
+use rustc_data_structures::fnv::{FnvHashSet, FnvHashMap};
 use syntax::ast::{self, Attribute, MetaItem};
 use syntax::attr::AttrMetaMethods;
 use syntax::parse::token::InternedString;
+use syntax_pos::Span;
 use rustc::ty::TyCtxt;
 
 const DIRTY: &'static str = "rustc_dirty";
 const CLEAN: &'static str = "rustc_clean";
 const LABEL: &'static str = "label";
 const CFG: &'static str = "cfg";
+const DIRTY_METADATA: &'static str = "rustc_metadata_dirty";
+const CLEAN_METADATA: &'static str = "rustc_metadata_clean";
+
 
 pub fn check_dirty_clean_annotations<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                                dirty_inputs: &DirtyNodes,
@@ -71,46 +75,36 @@ pub struct DirtyCleanVisitor<'a, 'tcx:'a> {
 }
 
 impl<'a, 'tcx> DirtyCleanVisitor<'a, 'tcx> {
-    fn expect_associated_value(&self, item: &MetaItem) -> InternedString {
-        if let Some(value) = item.value_str() {
-            value
-        } else {
-            self.tcx.sess.span_fatal(
-                item.span,
-                &format!("associated value expected for `{}`", item.name()));
-        }
-    }
+    // /// Given a `#[rustc_dirty]` or `#[rustc_clean]` attribute, scan
+    // /// for a `cfg="foo"` attribute and check whether we have a cfg
+    // /// flag called `foo`.
+    // fn check_config(&self, attr: &ast::Attribute) -> bool {
+    //     debug!("check_config(attr={:?})", attr);
+    //     let config = &self.tcx.map.krate().config;
+    //     debug!("check_config: config={:?}", config);
+    //     for item in attr.meta_item_list().unwrap_or(&[]) {
+    //         if item.check_name(CFG) {
+    //             let value = expect_associated_value(tcx, item);
+    //             debug!("check_config: searching for cfg {:?}", value);
+    //             for cfg in &config[..] {
+    //                 if cfg.check_name(&value[..]) {
+    //                     debug!("check_config: matched {:?}", cfg);
+    //                     return true;
+    //                 }
+    //             }
+    //             return false;
+    //         }
+    //     }
 
-    /// Given a `#[rustc_dirty]` or `#[rustc_clean]` attribute, scan
-    /// for a `cfg="foo"` attribute and check whether we have a cfg
-    /// flag called `foo`.
-    fn check_config(&self, attr: &ast::Attribute) -> bool {
-        debug!("check_config(attr={:?})", attr);
-        let config = &self.tcx.map.krate().config;
-        debug!("check_config: config={:?}", config);
-        for item in attr.meta_item_list().unwrap_or(&[]) {
-            if item.check_name(CFG) {
-                let value = self.expect_associated_value(item);
-                debug!("check_config: searching for cfg {:?}", value);
-                for cfg in &config[..] {
-                    if cfg.check_name(&value[..]) {
-                        debug!("check_config: matched {:?}", cfg);
-                        return true;
-                    }
-                }
-                return false;
-            }
-        }
-
-        self.tcx.sess.span_fatal(
-            attr.span,
-            &format!("no cfg attribute"));
-    }
+    //     self.tcx.sess.span_fatal(
+    //         attr.span,
+    //         &format!("no cfg attribute"));
+    // }
 
     fn dep_node(&self, attr: &Attribute, def_id: DefId) -> DepNode<DefId> {
         for item in attr.meta_item_list().unwrap_or(&[]) {
             if item.check_name(LABEL) {
-                let value = self.expect_associated_value(item);
+                let value = expect_associated_value(self.tcx, item);
                 match DepNode::from_label_string(&value[..], def_id) {
                     Ok(def_id) => return def_id,
                     Err(()) => {
@@ -192,11 +186,11 @@ impl<'a, 'tcx> Visitor<'tcx> for DirtyCleanVisitor<'a, 'tcx> {
         let def_id = self.tcx.map.local_def_id(item.id);
         for attr in self.tcx.get_attrs(def_id).iter() {
             if attr.check_name(DIRTY) {
-                if self.check_config(attr) {
+                if check_config(self.tcx, attr) {
                     self.assert_dirty(item, self.dep_node(attr, def_id));
                 }
             } else if attr.check_name(CLEAN) {
-                if self.check_config(attr) {
+                if check_config(self.tcx, attr) {
                     self.assert_clean(item, self.dep_node(attr, def_id));
                 }
             }
@@ -204,3 +198,114 @@ impl<'a, 'tcx> Visitor<'tcx> for DirtyCleanVisitor<'a, 'tcx> {
     }
 }
 
+pub fn check_dirty_clean_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                  prev_metadata_hashes: &FnvHashMap<DefId, u64>,
+                                  current_metadata_hashes: &FnvHashMap<DefId, u64>) {
+    if !tcx.sess.opts.debugging_opts.query_dep_graph {
+        return;
+    }
+
+    tcx.dep_graph.with_ignore(||{
+        let krate = tcx.map.krate();
+        krate.visit_all_items(&mut DirtyCleanMetadataVisitor {
+            tcx: tcx,
+            prev_metadata_hashes: prev_metadata_hashes,
+            current_metadata_hashes: current_metadata_hashes,
+        });
+    });
+}
+
+
+pub struct DirtyCleanMetadataVisitor<'a, 'tcx:'a, 'm> {
+    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    prev_metadata_hashes: &'m FnvHashMap<DefId, u64>,
+    current_metadata_hashes: &'m FnvHashMap<DefId, u64>,
+}
+
+
+impl<'a, 'tcx, 'm> Visitor<'tcx> for DirtyCleanMetadataVisitor<'a, 'tcx, 'm> {
+    fn visit_item(&mut self, item: &'tcx hir::Item) {
+        let def_id = self.tcx.map.local_def_id(item.id);
+
+        for attr in self.tcx.get_attrs(def_id).iter() {
+            if attr.check_name(DIRTY_METADATA) {
+                if check_config(self.tcx, attr) {
+                    self.assert_state(false, def_id, item.span);
+                }
+            } else if attr.check_name(CLEAN_METADATA) {
+                if check_config(self.tcx, attr) {
+                    self.assert_state(true, def_id, item.span);
+                }
+            }
+        }
+    }
+}
+
+impl<'a, 'tcx, 'm> DirtyCleanMetadataVisitor<'a, 'tcx, 'm> {
+
+    fn assert_state(&self, should_be_clean: bool, def_id: DefId, span: Span) {
+        let item_path = self.tcx.item_path_str(def_id);
+        debug!("assert_state({})", item_path);
+
+        if let Some(&prev_hash) = self.prev_metadata_hashes.get(&def_id) {
+            let hashes_are_equal = prev_hash == self.current_metadata_hashes[&def_id];
+
+            if should_be_clean && !hashes_are_equal {
+                self.tcx.sess.span_err(
+                        span,
+                        &format!("Metadata hash of `{}` is dirty, but should be clean",
+                                 item_path));
+            }
+
+            let should_be_dirty = !should_be_clean;
+            if should_be_dirty && hashes_are_equal {
+                self.tcx.sess.span_err(
+                        span,
+                        &format!("Metadata hash of `{}` is clean, but should be dirty",
+                                 item_path));
+            }
+        } else {
+            self.tcx.sess.span_err(
+                        span,
+                        &format!("Could not find previous metadata hash of `{}`",
+                                 item_path));
+        }
+    }
+}
+
+
+/// Given a `#[rustc_dirty]` or `#[rustc_clean]` attribute, scan
+/// for a `cfg="foo"` attribute and check whether we have a cfg
+/// flag called `foo`.
+fn check_config(tcx: TyCtxt, attr: &ast::Attribute) -> bool {
+    debug!("check_config(attr={:?})", attr);
+    let config = &tcx.map.krate().config;
+    debug!("check_config: config={:?}", config);
+    for item in attr.meta_item_list().unwrap_or(&[]) {
+        if item.check_name(CFG) {
+            let value = expect_associated_value(tcx, item);
+            debug!("check_config: searching for cfg {:?}", value);
+            for cfg in &config[..] {
+                if cfg.check_name(&value[..]) {
+                    debug!("check_config: matched {:?}", cfg);
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    tcx.sess.span_fatal(
+        attr.span,
+        &format!("no cfg attribute"));
+}
+
+fn expect_associated_value(tcx: TyCtxt, item: &MetaItem) -> InternedString {
+    if let Some(value) = item.value_str() {
+        value
+    } else {
+        tcx.sess.span_fatal(
+            item.span,
+            &format!("associated value expected for `{}`", item.name()));
+    }
+}

@@ -27,6 +27,7 @@ use super::directory::*;
 use super::hash::*;
 use super::preds::*;
 use super::util::*;
+use super::dirty_clean;
 
 pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                 incremental_hashes_map: &IncrementalHashesMap) {
@@ -36,16 +37,28 @@ pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     if sess.opts.incremental.is_none() {
         return;
     }
-    let mut hcx = HashContext::new(tcx, incremental_hashes_map);
+
     let mut builder = DefIdDirectoryBuilder::new(tcx);
     let query = tcx.dep_graph.query();
+    let mut hcx = HashContext::new(tcx, incremental_hashes_map);
     let preds = Predecessors::new(&query, &mut hcx);
+    let mut current_metadata_hashes = FnvHashMap();
+
+    save_in(sess,
+            metadata_hash_path(tcx, LOCAL_CRATE),
+            |e| encode_metadata_hashes(tcx,
+                                       &preds,
+                                       &mut builder,
+                                       &mut current_metadata_hashes,
+                                       e));
     save_in(sess,
             dep_graph_path(tcx),
             |e| encode_dep_graph(&preds, &mut builder, e));
-    save_in(sess,
-            metadata_hash_path(tcx, LOCAL_CRATE),
-            |e| encode_metadata_hashes(tcx, &preds, &mut builder, e));
+
+    let prev_metadata_hashes = incremental_hashes_map.prev_metadata_hashes.borrow();
+    dirty_clean::check_dirty_clean_metadata(tcx,
+                                            &*prev_metadata_hashes,
+                                            &current_metadata_hashes);
 }
 
 pub fn save_work_products(sess: &Session, local_crate_name: &str) {
@@ -157,18 +170,9 @@ pub fn encode_dep_graph(preds: &Predecessors,
 pub fn encode_metadata_hashes(tcx: TyCtxt,
                               preds: &Predecessors,
                               builder: &mut DefIdDirectoryBuilder,
+                              current_metadata_hashes: &mut FnvHashMap<DefId, u64>,
                               encoder: &mut Encoder)
                               -> io::Result<()> {
-    let mut def_id_hashes = FnvHashMap();
-    let mut def_id_hash = |def_id: DefId| -> u64 {
-        *def_id_hashes.entry(def_id)
-            .or_insert_with(|| {
-                let index = builder.add(def_id);
-                let path = builder.lookup_def_path(index);
-                path.deterministic_hash(tcx)
-            })
-    };
-
     // For each `MetaData(X)` node where `X` is local, accumulate a
     // hash.  These are the metadata items we export. Downstream
     // crates will want to see a hash that tells them whether we might
@@ -176,7 +180,13 @@ pub fn encode_metadata_hashes(tcx: TyCtxt,
     // compiled.
     //
     // (I initially wrote this with an iterator, but it seemed harder to read.)
-    let mut serialized_hashes = SerializedMetadataHashes { hashes: vec![] };
+    let mut serialized_hashes = SerializedMetadataHashes {
+        hashes: vec![],
+        index_map: FnvHashMap()
+    };
+
+    let mut def_id_hashes = FnvHashMap();
+
     for (&target, sources) in &preds.inputs {
         let def_id = match *target {
             DepNode::MetaData(def_id) => {
@@ -184,6 +194,15 @@ pub fn encode_metadata_hashes(tcx: TyCtxt,
                 def_id
             }
             _ => continue,
+        };
+
+        let mut def_id_hash = |def_id: DefId| -> u64 {
+            *def_id_hashes.entry(def_id)
+                .or_insert_with(|| {
+                    let index = builder.add(def_id);
+                    let path = builder.lookup_def_path(index);
+                    path.deterministic_hash(tcx)
+                })
         };
 
         // To create the hash for each item `X`, we don't hash the raw
@@ -217,6 +236,20 @@ pub fn encode_metadata_hashes(tcx: TyCtxt,
             def_index: def_id.index,
             hash: hash,
         });
+
+        if tcx.sess.opts.debugging_opts.query_dep_graph {
+            current_metadata_hashes.insert(def_id, hash);
+        }
+    }
+
+    if tcx.sess.opts.debugging_opts.query_dep_graph {
+        let index_map = serialized_hashes.hashes.iter().map(|h| {
+            let def_id = DefId::local(h.def_index);
+            let def_path_index = builder.add(def_id);
+            (def_id.index, def_path_index)
+        }).collect();
+
+        serialized_hashes.index_map = index_map;
     }
 
     // Encode everything.

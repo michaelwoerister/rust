@@ -13,6 +13,7 @@
 use rustc::dep_graph::{DepNode, WorkProduct, WorkProductId};
 use rustc::hir::def_id::DefIndex;
 use std::sync::Arc;
+use rustc_data_structures::fnv::FnvHashMap;
 
 use super::directory::DefPathIndex;
 
@@ -93,6 +94,9 @@ pub struct SerializedMetadataHashes {
     /// a `DefPathIndex` that gets retracted to the current `DefId`
     /// (matching the one found in this structure).
     pub hashes: Vec<SerializedMetadataHash>,
+
+
+    pub index_map: FnvHashMap<DefIndex, DefPathIndex>
 }
 
 /// The hash for some metadata that (when saving) will be exported
