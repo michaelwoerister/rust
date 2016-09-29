@@ -5,8 +5,9 @@
 # instantiated in different crates.
 
 dump-symbols = nm "$(TMPDIR)/lib$(1).rlib" \
-             |  grep "some_test_function" \
-             | sed "s/^[0-9a-f]\{8,16\}/00000000/" \
+             | grep -E "some_test_function|Bar|bar" \
+             | sed "s/^[0-9a-f]\{8,16\}\s[a-zA-Z]\{1\}\s//" \
+             | sed "s/^\s\{8,16\}\s[a-zA-Z]\{1\}\s//" \
              | sort \
              > "$(TMPDIR)/$(1).nm"
 
