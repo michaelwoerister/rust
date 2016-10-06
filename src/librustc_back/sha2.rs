@@ -647,33 +647,62 @@ mod bench {
     use self::test::Bencher;
     use super::{Sha256, Digest};
 
+    fn selftest_seq(out: &mut [u8], seed: u32)
+    {
+       let mut a: u32 = 0xDEAD4BADu32.wrapping_mul(seed);              // prime
+       let mut b: u32 = 1;
+
+       for i in 0 .. out.len() {         // fill the buf
+           let t: u32 = a.wrapping_add(b);
+           a = b;
+           b = t;
+           out[i] = ((t >> 24) & 0xFF) as u8;
+       }
+    }
+
     #[bench]
-    pub fn sha256_10(b: &mut Bencher) {
-        let mut sh = Sha256::new();
-        let bytes = [1; 10];
+    pub fn sha256_16(b: &mut Bencher) {
+        let mut bytes = [1; 16];
+        selftest_seq(&mut bytes, 16);
+
         b.iter(|| {
+            let mut output = [0; 32];
+            let mut sh = Sha256::new();
             sh.input(&bytes);
+            sh.result(&mut output);
+            test::black_box(&output);
         });
         b.bytes = bytes.len() as u64;
     }
 
     #[bench]
-    pub fn sha256_1k(b: &mut Bencher) {
-        let mut sh = Sha256::new();
-        let bytes = [1; 1024];
+    pub fn sha256_256(b: &mut Bencher) {
+        let mut bytes = [1; 256];
+        selftest_seq(&mut bytes, 256);
+
         b.iter(|| {
+            let mut sh = Sha256::new();
+            let mut output = [0; 32];
             sh.input(&bytes);
+            sh.result(&mut output);
+            test::black_box(&output);
         });
         b.bytes = bytes.len() as u64;
     }
 
     #[bench]
     pub fn sha256_64k(b: &mut Bencher) {
-        let mut sh = Sha256::new();
-        let bytes = [1; 65536];
+        let mut bytes = [1; 65536];
+        selftest_seq(&mut bytes, 65536);
+
         b.iter(|| {
+            let mut sh = Sha256::new();
+            let mut output = [0; 32];
             sh.input(&bytes);
+            sh.result(&mut output);
+            test::black_box(&output);
         });
+
         b.bytes = bytes.len() as u64;
     }
 }
