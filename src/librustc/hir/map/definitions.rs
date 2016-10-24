@@ -82,34 +82,94 @@ impl DefPath {
                     mut get_key: FN) -> DefPath
         where FN: FnMut(DefIndex) -> DefKey
     {
-        let mut krate = start_krate;
+        // let mut krate = start_krate;
+        // let mut data = vec![];
+        // let mut index = Some(start_index);
+        // loop {
+        //     debug!("DefPath::make: krate={:?} index={:?}", krate, index);
+        //     let p = index.unwrap();
+        //     let key = get_key(p);
+        //     debug!("DefPath::make: key={:?}", key);
+        //     match key.disambiguated_data.data {
+        //         DefPathData::CrateRoot => {
+        //             assert!(key.parent.is_none());
+        //             break;
+        //         }
+        //         DefPathData::InlinedRoot(ref p) => {
+        //             assert!(key.parent.is_none());
+        //             assert!(!p.def_id.is_local());
+        //             data.extend(p.data.iter().cloned().rev());
+        //             krate = p.def_id.krate;
+        //             break;
+        //         }
+        //         _ => {
+        //             data.push(key.disambiguated_data);
+        //             index = key.parent;
+        //         }
+        //     }
+        // }
+        // data.reverse();
+
+        // let mut reference_data = vec![];
+        // let mut reference_krate = LOCAL_CRATE;
+
+        // DefPath::walk(start_krate, start_index, get_key, &mut |data| {
+        //     reference_data.push(data.clone());
+        // },
+        // |root| {
+        //     reference_krate = root;
+        // });
+
+        // assert_eq!(data, reference_data);
+        // assert_eq!(krate, reference_krate);
+
         let mut data = vec![];
-        let mut index = Some(start_index);
-        loop {
-            debug!("DefPath::make: krate={:?} index={:?}", krate, index);
-            let p = index.unwrap();
-            let key = get_key(p);
-            debug!("DefPath::make: key={:?}", key);
-            match key.disambiguated_data.data {
-                DefPathData::CrateRoot => {
-                    assert!(key.parent.is_none());
-                    break;
-                }
-                DefPathData::InlinedRoot(ref p) => {
-                    assert!(key.parent.is_none());
-                    assert!(!p.def_id.is_local());
-                    data.extend(p.data.iter().cloned().rev());
-                    krate = p.def_id.krate;
-                    break;
-                }
-                _ => {
-                    data.push(key.disambiguated_data);
-                    index = key.parent;
+        let mut krate = LOCAL_CRATE;
+
+        DefPath::walk(start_krate, start_index, get_key, &mut |x| {
+            data.push(x.clone());
+        },
+        |root| {
+            krate = root;
+        });
+
+        DefPath { data: data, krate: krate }
+    }
+
+    pub fn walk<KeyCallback, DataCallback, RootCallback>(
+            krate: CrateNum,
+            def_index: DefIndex,
+            mut get_key: KeyCallback,
+            data_callback: &mut DataCallback,
+            root_callback: RootCallback)
+        where KeyCallback: FnMut(DefIndex) -> DefKey,
+              DataCallback: FnMut(&DisambiguatedDefPathData),
+              RootCallback: FnOnce(CrateNum),
+    {
+        let key = get_key(def_index);
+        match key.disambiguated_data.data {
+            DefPathData::CrateRoot => {
+                assert!(key.parent.is_none());
+                root_callback(krate);
+            }
+            DefPathData::InlinedRoot(ref p) => {
+                assert!(key.parent.is_none());
+                assert!(!p.def_id.is_local());
+                root_callback(p.def_id.krate);
+
+                for data in p.data.iter() {
+                    data_callback(data)
                 }
             }
+            _ => {
+                DefPath::walk(krate,
+                              key.parent.unwrap(),
+                              get_key,
+                              data_callback,
+                              root_callback);
+                data_callback(&key.disambiguated_data);
+            }
         }
-        data.reverse();
-        DefPath { data: data, krate: krate }
     }
 
     pub fn to_string(&self, tcx: TyCtxt) -> String {
