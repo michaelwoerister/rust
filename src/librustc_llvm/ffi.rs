@@ -63,6 +63,15 @@ pub enum Linkage {
     CommonLinkage = 10,
 }
 
+// LLVMRustVisibility
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[repr(C)]
+pub enum Visibility {
+    Default = 0,
+    Hidden = 1,
+    Protected = 2,
+}
+
 /// LLVMDiagnosticSeverity
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -746,8 +755,8 @@ extern "C" {
     pub fn LLVMRustSetLinkage(Global: ValueRef, RustLinkage: Linkage);
     pub fn LLVMGetSection(Global: ValueRef) -> *const c_char;
     pub fn LLVMSetSection(Global: ValueRef, Section: *const c_char);
-    pub fn LLVMGetVisibility(Global: ValueRef) -> c_uint;
-    pub fn LLVMSetVisibility(Global: ValueRef, Viz: c_uint);
+    pub fn LLVMRustGetVisibility(Global: ValueRef) -> Visibility;
+    pub fn LLVMRustSetVisibility(Global: ValueRef, Viz: Visibility);
     pub fn LLVMGetAlignment(Global: ValueRef) -> c_uint;
     pub fn LLVMSetAlignment(Global: ValueRef, Bytes: c_uint);
     pub fn LLVMSetDLLStorageClass(V: ValueRef, C: DLLStorageClass);

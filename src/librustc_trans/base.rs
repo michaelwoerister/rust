@@ -1387,8 +1387,13 @@ fn internalize_symbols<'a, 'tcx>(sess: &Session,
                     let is_reachable = reachable.contains(&name_str);
                     let has_fixed_linkage = linkage_fixed_explicitly.contains(&name_cow);
 
-                    if !is_referenced_somewhere && !is_reachable && !has_fixed_linkage {
-                        llvm::LLVMRustSetLinkage(val, llvm::Linkage::InternalLinkage);
+                    if !has_fixed_linkage && !is_reachable {
+                        if is_referenced_somewhere {
+                            llvm::LLVMRustSetVisibility(val, llvm::Visibility::Hidden);
+                        } else {
+                            llvm::LLVMRustSetLinkage(val, llvm::Linkage::InternalLinkage);
+                        }
+
                         llvm::LLVMSetDLLStorageClass(val,
                                                      llvm::DLLStorageClass::Default);
                         llvm::UnsetComdat(val);
