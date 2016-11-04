@@ -74,7 +74,7 @@ use monomorphize::{self, Instance};
 use partitioning::{self, PartitioningStrategy, CodegenUnit};
 use symbol_map::SymbolMap;
 use symbol_names_test;
-use trans_item::TransItem;
+use trans_item::{TransItem, DefPathBasedNames};
 use type_::Type;
 use type_of;
 use value::Value;
@@ -1041,7 +1041,15 @@ pub fn trans_closure<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 }
 
 pub fn trans_instance<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, instance: Instance<'tcx>) {
-    let _s = StatRecorder::new(ccx, ccx.tcx().item_path_str(instance.def));
+    let _s = if ccx.sess().trans_stats() {
+        let mut instance_name = String::new();
+        DefPathBasedNames::new(ccx.tcx(), true, true)
+            .push_def_path(instance.def, &mut instance_name);
+        Some(StatRecorder::new(ccx, instance_name))
+    } else {
+        None
+    };
+
     debug!("trans_instance(instance={:?})", instance);
     let _icx = push_ctxt("trans_instance");
 
