@@ -84,7 +84,6 @@ use util::nodemap::{NodeSet, FnvHashMap, FnvHashSet};
 use arena::TypedArena;
 use libc::c_uint;
 use std::ffi::{CStr, CString};
-use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::ptr;
 use std::rc::Rc;
@@ -1249,7 +1248,7 @@ fn contains_null(s: &str) -> bool {
 }
 
 fn write_metadata(cx: &SharedCrateContext,
-                  reachable_ids: &NodeSet) -> Vec<u8> {
+                  exported_symbols: &NodeSet) -> Vec<u8> {
     use flate;
 
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -1280,7 +1279,7 @@ fn write_metadata(cx: &SharedCrateContext,
     let metadata = cstore.encode_metadata(cx.tcx(),
                                           cx.export_map(),
                                           cx.link_meta(),
-                                          reachable_ids);
+                                          exported_symbols);
     if kind == MetadataKind::Uncompressed {
         return metadata;
     }
@@ -1318,16 +1317,11 @@ fn write_metadata(cx: &SharedCrateContext,
 fn internalize_symbols<'a, 'tcx>(sess: &Session,
                                  ccxs: &CrateContextList<'a, 'tcx>,
                                  symbol_map: &SymbolMap<'tcx>,
-                                 reachable: &FnvHashSet<&str>) {
+                                 exported_symbols: &FnvHashSet<&str>) {
     let scx = ccxs.shared();
     let tcx = scx.tcx();
 
-    // In incr. comp. mode, we can't necessarily see all refs since we
-    // don't generate LLVM IR for reused modules, so skip this
-    // step. Later we should get smarter.
-    if sess.opts.debugging_opts.incremental.is_some() {
-        return;
-    }
+    let incr_comp = sess.opts.debugging_opts.incremental.is_some();
 
     // 'unsafe' because we are holding on to CStr's from the LLVM module within
     // this block.
@@ -1335,34 +1329,43 @@ fn internalize_symbols<'a, 'tcx>(sess: &Session,
         let mut referenced_somewhere = FnvHashSet();
 
         // Collect all symbols that need to stay externally visible because they
-        // are referenced via a declaration in some other codegen unit.
-        for ccx in ccxs.iter_need_trans() {
-            for val in iter_globals(ccx.llmod()).chain(iter_functions(ccx.llmod())) {
-                let linkage = llvm::LLVMRustGetLinkage(val);
-                // We only care about external declarations (not definitions)
-                // and available_externally definitions.
-                let is_available_externally = linkage == llvm::Linkage::AvailableExternallyLinkage;
-                let is_decl = llvm::LLVMIsDeclaration(val) != 0;
+        // are referenced via a declaration in some other codegen unit. In
+        // incremental compilation, we don't need to collect. See below for more
+        // information.
+        if !incr_comp {
+            for ccx in ccxs.iter_need_trans() {
+                for val in iter_globals(ccx.llmod()).chain(iter_functions(ccx.llmod())) {
+                    let linkage = llvm::LLVMRustGetLinkage(val);
+                    // We only care about external declarations (not definitions)
+                    // and available_externally definitions.
+                    let is_available_externally =
+                        linkage == llvm::Linkage::AvailableExternallyLinkage;
+                    let is_decl = llvm::LLVMIsDeclaration(val) == llvm::True;
 
-                if is_decl || is_available_externally {
-                    let symbol_name = CStr::from_ptr(llvm::LLVMGetValueName(val));
-                    referenced_somewhere.insert(symbol_name);
+                    if is_decl || is_available_externally {
+                        let symbol_name = CStr::from_ptr(llvm::LLVMGetValueName(val));
+                        referenced_somewhere.insert(symbol_name);
+                    }
                 }
             }
         }
 
         // Also collect all symbols for which we cannot adjust linkage, because
-        // it is fixed by some directive in the source code (e.g. #[no_mangle]).
-        let linkage_fixed_explicitly: FnvHashSet<_> = scx
-            .translation_items()
-            .borrow()
-            .iter()
-            .cloned()
-            .filter(|trans_item|{
-                trans_item.explicit_linkage(tcx).is_some()
-            })
-            .map(|trans_item| symbol_map.get_or_compute(scx, trans_item))
-            .collect();
+        // it is fixed by some directive in the source code.
+        let (locally_defined_symbols, linkage_fixed_explicitly) = {
+            let mut locally_defined_symbols = FnvHashSet();
+            let mut linkage_fixed_explicitly = FnvHashSet();
+
+            for trans_item in scx.translation_items().borrow().iter() {
+                let symbol_name = symbol_map.get_or_compute(scx, *trans_item);
+                if trans_item.explicit_linkage(tcx).is_some() {
+                    linkage_fixed_explicitly.insert(symbol_name.clone());
+                }
+                locally_defined_symbols.insert(symbol_name);
+            }
+
+            (locally_defined_symbols, linkage_fixed_explicitly)
+        };
 
         // Examine each external definition.  If the definition is not used in
         // any other compilation unit, and is not reachable from other crates,
@@ -1374,28 +1377,46 @@ fn internalize_symbols<'a, 'tcx>(sess: &Session,
                 let is_externally_visible = (linkage == llvm::Linkage::ExternalLinkage) ||
                                             (linkage == llvm::Linkage::LinkOnceODRLinkage) ||
                                             (linkage == llvm::Linkage::WeakODRLinkage);
-                let is_definition = llvm::LLVMIsDeclaration(val) == 0;
 
-                // If this is a definition (as opposed to just a declaration)
-                // and externally visible, check if we can internalize it
-                if is_definition && is_externally_visible {
-                    let name_cstr = CStr::from_ptr(llvm::LLVMGetValueName(val));
-                    let name_str = name_cstr.to_str().unwrap();
-                    let name_cow = Cow::Borrowed(name_str);
+                if !is_externally_visible {
+                    // This symbol is not visible outside of its codegen unit,
+                    // so there is nothing to do for it.
+                    continue;
+                }
 
-                    let is_referenced_somewhere = referenced_somewhere.contains(&name_cstr);
-                    let is_reachable = reachable.contains(&name_str);
-                    let has_fixed_linkage = linkage_fixed_explicitly.contains(&name_cow);
+                let name_cstr = CStr::from_ptr(llvm::LLVMGetValueName(val));
+                let name_str = name_cstr.to_str().unwrap();
 
-                    if !has_fixed_linkage && !is_reachable {
-                        if is_referenced_somewhere {
+                if exported_symbols.contains(&name_str) {
+                    // This symbol is explicitly exported, so we can't
+                    // mark it as internal or hidden.
+                    continue;
+                }
+
+                let is_declaration = llvm::LLVMIsDeclaration(val) == llvm::True;
+
+                if is_declaration {
+                    if locally_defined_symbols.contains(name_str) {
+                        // Only mark declarations from the current crate as hidden.
+                        // Otherwise we would mark things as hidden that are
+                        // imported from other crates or native libraries.
+                        llvm::LLVMRustSetVisibility(val, llvm::Visibility::Hidden);
+                    }
+                } else {
+                    let has_fixed_linkage = linkage_fixed_explicitly.contains(name_str);
+
+                    if !has_fixed_linkage {
+                        // In incremental compilation mode, we can't be sure that
+                        // we saw all references because we don't know what's in
+                        // cached compilation units, so we always assume that the
+                        // given item has been referenced.
+                        if incr_comp || referenced_somewhere.contains(&name_cstr) {
                             llvm::LLVMRustSetVisibility(val, llvm::Visibility::Hidden);
                         } else {
                             llvm::LLVMRustSetLinkage(val, llvm::Linkage::InternalLinkage);
                         }
 
-                        llvm::LLVMSetDLLStorageClass(val,
-                                                     llvm::DLLStorageClass::Default);
+                        llvm::LLVMSetDLLStorageClass(val, llvm::DLLStorageClass::Default);
                         llvm::UnsetComdat(val);
                     }
                 }
@@ -1491,7 +1512,7 @@ fn iter_functions(llmod: llvm::ModuleRef) -> ValueIter {
 ///
 /// This list is later used by linkers to determine the set of symbols needed to
 /// be exposed from a dynamic library and it's also encoded into the metadata.
-pub fn filter_reachable_ids(tcx: TyCtxt, reachable: NodeSet) -> NodeSet {
+pub fn find_exported_symbols(tcx: TyCtxt, reachable: NodeSet) -> NodeSet {
     reachable.into_iter().filter(|&id| {
         // Next, we want to ignore some FFI functions that are not exposed from
         // this crate. Reachable FFI functions can be lumped into two
@@ -1545,7 +1566,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let krate = tcx.map.krate();
 
     let ty::CrateAnalysis { export_map, reachable, name, .. } = analysis;
-    let reachable = filter_reachable_ids(tcx, reachable);
+    let exported_symbols = find_exported_symbols(tcx, reachable);
 
     let check_overflow = if let Some(v) = tcx.sess.opts.debugging_opts.force_overflow_checks {
         v
@@ -1558,11 +1579,11 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let shared_ccx = SharedCrateContext::new(tcx,
                                              export_map,
                                              link_meta.clone(),
-                                             reachable,
+                                             exported_symbols,
                                              check_overflow);
     // Translate the metadata.
     let metadata = time(tcx.sess.time_passes(), "write metadata", || {
-        write_metadata(&shared_ccx, shared_ccx.reachable())
+        write_metadata(&shared_ccx, shared_ccx.exported_symbols())
     });
 
     let metadata_module = ModuleTranslation {
@@ -1617,7 +1638,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             metadata_module: metadata_module,
             link: link_meta,
             metadata: metadata,
-            reachable: vec![],
+            exported_symbols: vec![],
             no_builtins: no_builtins,
             linker_info: linker_info,
             windows_subsystem: None,
@@ -1697,17 +1718,17 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let sess = shared_ccx.sess();
-    let mut reachable_symbols = shared_ccx.reachable().iter().map(|&id| {
+    let mut exported_symbols = shared_ccx.exported_symbols().iter().map(|&id| {
         let def_id = shared_ccx.tcx().map.local_def_id(id);
         symbol_for_def_id(def_id, &shared_ccx, &symbol_map)
     }).collect::<Vec<_>>();
 
     if sess.entry_fn.borrow().is_some() {
-        reachable_symbols.push("main".to_string());
+        exported_symbols.push("main".to_string());
     }
 
     if sess.crate_types.borrow().contains(&config::CrateTypeDylib) {
-        reachable_symbols.push(shared_ccx.metadata_symbol_name());
+        exported_symbols.push(shared_ccx.metadata_symbol_name());
     }
 
     // For the purposes of LTO or when creating a cdylib, we add to the
@@ -1717,10 +1738,10 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     //
     // Note that this happens even if LTO isn't requested or we're not creating
     // a cdylib. In those cases, though, we're not even reading the
-    // `reachable_symbols` list later on so it should be ok.
+    // `exported_symbols` list later on so it should be ok.
     for cnum in sess.cstore.crates() {
         let syms = sess.cstore.reachable_ids(cnum);
-        reachable_symbols.extend(syms.into_iter().filter(|&def_id| {
+        exported_symbols.extend(syms.into_iter().filter(|&def_id| {
             let applicable = match sess.cstore.describe_def(def_id) {
                 Some(Def::Static(..)) => true,
                 Some(Def::Fn(_)) => {
@@ -1744,9 +1765,9 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         internalize_symbols(sess,
                             &crate_context_list,
                             &symbol_map,
-                            &reachable_symbols.iter()
-                                              .map(|s| &s[..])
-                                              .collect())
+                            &exported_symbols.iter()
+                                             .map(|s| &s[..])
+                                             .collect())
     });
 
     if sess.target.target.options.is_like_msvc &&
@@ -1754,7 +1775,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         create_imps(&crate_context_list);
     }
 
-    let linker_info = LinkerInfo::new(&shared_ccx, &reachable_symbols);
+    let linker_info = LinkerInfo::new(&shared_ccx, &exported_symbols);
 
     let subsystem = attr::first_attr_value_str_by_name(&krate.attrs,
                                                        "windows_subsystem");
@@ -1772,7 +1793,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         metadata_module: metadata_module,
         link: link_meta,
         metadata: metadata,
-        reachable: reachable_symbols,
+        exported_symbols: exported_symbols,
         no_builtins: no_builtins,
         linker_info: linker_info,
         windows_subsystem: windows_subsystem,
