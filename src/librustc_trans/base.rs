@@ -35,7 +35,6 @@ use back::link;
 use back::linker::LinkerInfo;
 use llvm::{Linkage, ValueRef, Vector, get_param};
 use llvm;
-use rustc::hir::def::Def;
 use rustc::hir::def_id::DefId;
 use middle::lang_items::{LangItem, ExchangeMallocFnLangItem, StartFnLangItem};
 use rustc::ty::subst::Substs;
@@ -1731,6 +1730,17 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         exported_symbols.push(shared_ccx.metadata_symbol_name());
     }
 
+    // Now that we have all symbols that are exported from the CGUs of this
+    // crate, we can run the `internalize_symbols` pass.
+    time(shared_ccx.sess().time_passes(), "internalize symbols", || {
+        internalize_symbols(sess,
+                            &crate_context_list,
+                            &symbol_map,
+                            &exported_symbols.iter()
+                                             .map(|s| &s[..])
+                                             .collect())
+    });
+
     // For the purposes of LTO or when creating a cdylib, we add to the
     // reachable set all of the upstream reachable extern fns. These functions
     // are all part of the public ABI of the final product, so we need to
@@ -1741,34 +1751,10 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // `exported_symbols` list later on so it should be ok.
     for cnum in sess.cstore.crates() {
         let syms = sess.cstore.exported_symbols(cnum);
-        exported_symbols.extend(syms.into_iter().filter(|&def_id| {
-            let applicable = match sess.cstore.describe_def(def_id) {
-                Some(Def::Static(..)) => true,
-                Some(Def::Fn(_)) => {
-                    shared_ccx.tcx().lookup_generics(def_id).types.is_empty()
-                }
-                _ => false
-            };
-
-            if applicable {
-                let attrs = shared_ccx.tcx().get_attrs(def_id);
-                attr::contains_extern_indicator(sess.diagnostic(), &attrs)
-            } else {
-                false
-            }
-        }).map(|did| {
+        exported_symbols.extend(syms.into_iter().map(|did| {
             symbol_for_def_id(did, &shared_ccx, &symbol_map)
         }));
     }
-
-    time(shared_ccx.sess().time_passes(), "internalize symbols", || {
-        internalize_symbols(sess,
-                            &crate_context_list,
-                            &symbol_map,
-                            &exported_symbols.iter()
-                                             .map(|s| &s[..])
-                                             .collect())
-    });
 
     if sess.target.target.options.is_like_msvc &&
        sess.crate_types.borrow().iter().any(|ct| *ct == config::CrateTypeRlib) {
