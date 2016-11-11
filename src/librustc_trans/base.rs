@@ -33,9 +33,10 @@ use super::ModuleTranslation;
 use assert_module_sources;
 use back::link;
 use back::linker::LinkerInfo;
+use back::symbol_export::{self, ExportedSymbols};
 use llvm::{Linkage, ValueRef, Vector, get_param};
 use llvm;
-use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::{DefId, LOCAL_CRATE};
 use middle::lang_items::{LangItem, ExchangeMallocFnLangItem, StartFnLangItem};
 use rustc::ty::subst::Substs;
 use rustc::traits;
@@ -1316,7 +1317,21 @@ fn write_metadata(cx: &SharedCrateContext,
 fn internalize_symbols<'a, 'tcx>(sess: &Session,
                                  ccxs: &CrateContextList<'a, 'tcx>,
                                  symbol_map: &SymbolMap<'tcx>,
-                                 exported_symbols: &FnvHashSet<&str>) {
+                                 exported_symbols: &ExportedSymbols) {
+    // let symbol_export_level =
+    //     symbol_export::max_symbol_export_level(&sess.crate_types.borrow()[..]);
+    let export_threshold =
+        symbol_export::symbol_export_threshold(&sess.crate_types.borrow()[..]);
+
+    let exported_symbols = exported_symbols
+        .exported_symbols(LOCAL_CRATE)
+        .iter()
+        .filter(|&&(_, level)| {
+            level.less_or_equal(export_threshold)
+        })
+        .map(|&(ref name, _)| &name[..])
+        .collect::<FnvHashSet<&str>>();
+
     let scx = ccxs.shared();
     let tcx = scx.tcx();
 
@@ -1631,13 +1646,13 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     // Skip crate items and just output metadata in -Z no-trans mode.
     if tcx.sess.opts.debugging_opts.no_trans {
-        let linker_info = LinkerInfo::new(&shared_ccx, &[]);
+        let linker_info = LinkerInfo::new(&shared_ccx, &ExportedSymbols::empty());
         return CrateTranslation {
             modules: modules,
             metadata_module: metadata_module,
             link: link_meta,
             metadata: metadata,
-            exported_symbols: vec![],
+            exported_symbols: ExportedSymbols::empty(),
             no_builtins: no_builtins,
             linker_info: linker_info,
             windows_subsystem: None,
@@ -1717,18 +1732,21 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let sess = shared_ccx.sess();
-    let mut exported_symbols = shared_ccx.exported_symbols().iter().map(|&id| {
-        let def_id = shared_ccx.tcx().map.local_def_id(id);
-        symbol_for_def_id(def_id, &shared_ccx, &symbol_map)
-    }).collect::<Vec<_>>();
+    // let mut exported_symbols = shared_ccx.exported_symbols().iter().map(|&id| {
+    //     let def_id = shared_ccx.tcx().map.local_def_id(id);
+    //     symbol_for_def_id(def_id, &shared_ccx, &symbol_map)
+    // }).collect::<Vec<_>>();
 
-    if sess.entry_fn.borrow().is_some() {
-        exported_symbols.push("main".to_string());
-    }
+    // if sess.entry_fn.borrow().is_some() {
+    //     exported_symbols.push("main".to_string());
+    // }
 
-    if sess.crate_types.borrow().contains(&config::CrateTypeDylib) {
-        exported_symbols.push(shared_ccx.metadata_symbol_name());
-    }
+    // if sess.crate_types.borrow().contains(&config::CrateTypeDylib) {
+    //     exported_symbols.push(shared_ccx.metadata_symbol_name());
+    // }
+
+    let exported_symbols = ExportedSymbols::compute_from(&shared_ccx,
+                                                         &symbol_map);
 
     // Now that we have all symbols that are exported from the CGUs of this
     // crate, we can run the `internalize_symbols` pass.
@@ -1736,25 +1754,23 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         internalize_symbols(sess,
                             &crate_context_list,
                             &symbol_map,
-                            &exported_symbols.iter()
-                                             .map(|s| &s[..])
-                                             .collect())
+                            &exported_symbols);
     });
 
-    // For the purposes of LTO or when creating a cdylib, we add to the
-    // reachable set all of the upstream reachable extern fns. These functions
-    // are all part of the public ABI of the final product, so we need to
-    // preserve them.
-    //
-    // Note that this happens even if LTO isn't requested or we're not creating
-    // a cdylib. In those cases, though, we're not even reading the
-    // `exported_symbols` list later on so it should be ok.
-    for cnum in sess.cstore.crates() {
-        let syms = sess.cstore.exported_symbols(cnum);
-        exported_symbols.extend(syms.into_iter().map(|did| {
-            symbol_for_def_id(did, &shared_ccx, &symbol_map)
-        }));
-    }
+    // // For the purposes of LTO or when creating a cdylib, we add to the
+    // // reachable set all of the upstream reachable extern fns. These functions
+    // // are all part of the public ABI of the final product, so we need to
+    // // preserve them.
+    // //
+    // // Note that this happens even if LTO isn't requested or we're not creating
+    // // a cdylib. In those cases, though, we're not even reading the
+    // // `exported_symbols` list later on so it should be ok.
+    // for cnum in sess.cstore.crates() {
+    //     let syms = sess.cstore.exported_symbols(cnum);
+    //     exported_symbols.extend(syms.into_iter().map(|did| {
+    //         symbol_for_def_id(did, &shared_ccx, &symbol_map)
+    //     }));
+    // }
 
     if sess.target.target.options.is_like_msvc &&
        sess.crate_types.borrow().iter().any(|ct| *ct == config::CrateTypeRlib) {
@@ -1927,23 +1943,4 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
     }
 
     (codegen_units, symbol_map)
-}
-
-fn symbol_for_def_id<'a, 'tcx>(def_id: DefId,
-                               scx: &SharedCrateContext<'a, 'tcx>,
-                               symbol_map: &SymbolMap<'tcx>)
-                               -> String {
-    // Just try to look things up in the symbol map. If nothing's there, we
-    // recompute.
-    if let Some(node_id) = scx.tcx().map.as_local_node_id(def_id) {
-        if let Some(sym) = symbol_map.get(TransItem::Static(node_id)) {
-            return sym.to_owned();
-        }
-    }
-
-    let instance = Instance::mono(scx, def_id);
-
-    symbol_map.get(TransItem::Fn(instance))
-              .map(str::to_owned)
-              .unwrap_or_else(|| instance.symbol_name(scx))
 }

@@ -8,14 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::link;
-use super::write;
+use back::link;
+use back::write;
+use back::symbol_export::{self, ExportedSymbols};
 use rustc::session::{self, config};
 use llvm;
 use llvm::archive_ro::ArchiveRO;
 use llvm::{ModuleRef, TargetMachineRef, True, False};
 use rustc::util::common::time;
 use rustc::util::common::path2cstr;
+use rustc::hir::def_id::LOCAL_CRATE;
 use back::write::{ModuleConfig, with_llvm_pmb};
 
 use libc;
@@ -24,10 +26,22 @@ use flate;
 use std::ffi::CString;
 use std::path::Path;
 
+pub fn crate_type_allows_lto(crate_type: config::CrateType) -> bool {
+    match crate_type {
+        config::CrateTypeExecutable |
+        config::CrateTypeStaticlib  |
+        config::CrateTypeCdylib     => true,
+
+        config::CrateTypeDylib     |
+        config::CrateTypeRlib      |
+        config::CrateTypeProcMacro => false,
+    }
+}
+
 pub fn run(sess: &session::Session,
            llmod: ModuleRef,
            tm: TargetMachineRef,
-           exported_symbols: &[String],
+           exported_symbols: &ExportedSymbols,
            config: &ModuleConfig,
            temp_no_opt_bc_filename: &Path) {
     if sess.opts.cg.prefer_dynamic {
@@ -40,16 +54,23 @@ pub fn run(sess: &session::Session,
 
     // Make sure we actually can run LTO
     for crate_type in sess.crate_types.borrow().iter() {
-        match *crate_type {
-            config::CrateTypeExecutable |
-            config::CrateTypeCdylib |
-            config::CrateTypeStaticlib => {}
-            _ => {
-                sess.fatal("lto can only be run for executables and \
+        if !crate_type_allows_lto(*crate_type) {
+            sess.fatal("lto can only be run for executables and \
                             static library outputs");
-            }
         }
     }
+
+    let mut symbol_white_list: Vec<String> = exported_symbols
+        .exported_symbols(LOCAL_CRATE)
+        .iter()
+        .filter_map(|&(ref name, level)| {
+            if level == symbol_export::SymbolExportLevel::AnyLib {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     // For each of our upstream dependencies, find the corresponding rlib and
     // load the bitcode from the archive. Then merge it into the current LLVM
@@ -59,6 +80,17 @@ pub fn run(sess: &session::Session,
         if sess.cstore.is_no_builtins(cnum) {
             return;
         }
+
+        symbol_white_list.extend(
+            exported_symbols.exported_symbols(cnum)
+                            .iter()
+                            .filter_map(|&(ref name, level)| {
+                                if level == symbol_export::SymbolExportLevel::AnyLib {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
+                            }));
 
         let archive = ArchiveRO::open(&path).expect("wanted an rlib");
         let bytecodes = archive.iter().filter_map(|child| {
@@ -121,7 +153,7 @@ pub fn run(sess: &session::Session,
     });
 
     // Internalize everything but the exported symbols of the current module
-    let cstrs: Vec<CString> = exported_symbols.iter().map(|s| {
+    let cstrs: Vec<CString> = symbol_white_list.iter().map(|s| {
         CString::new(s.clone()).unwrap()
     }).collect();
     let arr: Vec<*const libc::c_char> = cstrs.iter().map(|c| c.as_ptr()).collect();
