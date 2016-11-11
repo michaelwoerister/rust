@@ -507,7 +507,7 @@ fn exported_symbols(scx: &SharedCrateContext,
             None
         }
     }).flat_map(|cnum| {
-        cstore.reachable_ids(cnum)
+        cstore.exported_symbols(cnum)
     }).map(|did| -> String {
         Instance::mono(scx, did).symbol_name(scx)
     }));

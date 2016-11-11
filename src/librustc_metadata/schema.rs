@@ -179,7 +179,7 @@ pub struct CrateRoot {
     pub codemap: LazySeq<syntax_pos::FileMap>,
     pub macro_defs: LazySeq<MacroDef>,
     pub impls: LazySeq<TraitImpls>,
-    pub reachable_ids: LazySeq<DefIndex>,
+    pub exported_symbols: LazySeq<DefIndex>,
     pub index: LazySeq<index::Index>,
 }
 

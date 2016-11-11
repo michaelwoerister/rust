@@ -1740,7 +1740,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // a cdylib. In those cases, though, we're not even reading the
     // `exported_symbols` list later on so it should be ok.
     for cnum in sess.cstore.crates() {
-        let syms = sess.cstore.reachable_ids(cnum);
+        let syms = sess.cstore.exported_symbols(cnum);
         exported_symbols.extend(syms.into_iter().filter(|&def_id| {
             let applicable = match sess.cstore.describe_def(def_id) {
                 Some(Def::Static(..)) => true,
