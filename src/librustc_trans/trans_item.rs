@@ -241,7 +241,10 @@ impl<'a, 'tcx> TransItem<'tcx> {
         match *self {
             TransItem::Fn(ref instance) => {
                 !instance.def.is_local() ||
-                instance.substs.types().next().is_some() ||
+                // (
+                //     instance.substs.types().next().is_some()
+                //  // && tcx.item_mir(instance.def).
+                //  ) ||
                 common::is_closure(tcx, instance.def) ||
                 attr::requests_inline(&tcx.get_attrs(instance.def)[..])
             }

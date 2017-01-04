@@ -366,7 +366,8 @@ fn place_root_translation_items<'a, 'tcx, I>(scx: &SharedCrateContext<'a, 'tcx>,
                             } else {
                                 // In the current setup, generic functions cannot
                                 // be roots.
-                                unreachable!()
+                                // unreachable!()
+                                llvm::ExternalLinkage
                             }
                         }
                     }
@@ -455,8 +456,8 @@ fn place_inlined_translation_items<'tcx>(initial_partitioning: PreInliningPartit
                 //            available_externally here could potentially lead
                 //            to the same problem with exception handling tables
                 //            as in the case below.
-                new_codegen_unit.items.insert(trans_item,
-                                              llvm::AvailableExternallyLinkage);
+                // new_codegen_unit.items.insert(trans_item,
+                //                               llvm::AvailableExternallyLinkage);
             } else if trans_item.is_from_extern_crate() && !trans_item.is_generic_fn() {
                 // FIXME(mw): It would be nice if we could mark these as
                 // `AvailableExternallyLinkage`, since they should have

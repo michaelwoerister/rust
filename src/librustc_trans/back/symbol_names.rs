@@ -149,9 +149,19 @@ fn get_symbol_hash<'a, 'tcx>(scx: &SharedCrateContext<'a, 'tcx>,
 
         // also include any type parameters (for generic items)
         if let Some(substs) = substs {
+            // if substs.len() > 0 {
+            //     println!("{:?}", substs);
+            // }
             assert!(!substs.has_erasable_regions());
             assert!(!substs.needs_subst());
             substs.visit_with(&mut hasher);
+
+            // Also hash the instantiating crate id to avoid cross-crate symbol
+            // conflicts.
+            if substs.types().next().is_some() {
+                hasher.hash(scx.tcx().crate_name.as_str());
+                hasher.hash(scx.sess().local_crate_disambiguator().as_str());
+            }
         }
     });
 
