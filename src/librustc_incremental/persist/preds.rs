@@ -10,10 +10,9 @@
 
 use rustc::dep_graph::{DepGraphQuery, DepNode};
 use rustc::hir::def_id::DefId;
-use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_data_structures::graph::{
-    // DepthFirstTraversal, INCOMING,
-     NodeIndex, Graph};
+use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::bitvec::BitVector;
+use rustc_data_structures::graph::{NodeIndex, Graph};
 
 use super::hash::*;
 use ich::Fingerprint;
@@ -32,297 +31,24 @@ pub struct Predecessors<'query> {
     pub hashes: FxHashMap<&'query DepNode<DefId>, Fingerprint>,
 }
 
-
-// fn find_roots<'a>(tcx: ::rustc::ty::TyCtxt,
-//                   graph: &Graph<DepNode<DefId>, ()>,
-//                   visit_counts: &mut [u32],
-//                   node: u32,
-//                   cache: &mut [Option<Box<[u32]>>],
-//                   visited: &mut FxHashSet<u32>,
-//                   roots: &mut FxHashSet<u32>,
-//                   write_to_cache: bool,
-//                   caching_threshold: u32)
-// {
-//     if !visited.insert(node) {
-//         return;
-//     }
-
-//     if HashContext::is_hashable(graph.node_data(NodeIndex(node as usize))) {
-//         roots.insert(node);
-//     } else {
-//         if let Some(ref cached) = cache[node as usize] {
-//             // ::rustc::util::common::record_time(&tcx.sess.perf_stats.read_dep_graph_cache, || {
-//                 roots.extend(cached.iter());
-//             // });
-//             return
-//         }
-
-//         visit_counts[node as usize] += 1;
-
-//         if write_to_cache {
-//             if visit_counts[node as usize] > caching_threshold {
-//                 // ::rustc::util::common::record_time(&tcx.sess.perf_stats.build_dep_graph_caches, move || {
-//                     let mut sub_roots = FxHashSet();
-//                     let mut sub_visited = FxHashSet();
-//                     find_roots(tcx, graph, visit_counts, node, cache, &mut sub_visited, &mut sub_roots, false, caching_threshold);
-
-//                     // let cached_roots: Vec<NodeIndex> = DepthFirstTraversal::with_start_node(&graph, node, INCOMING)
-//                     //     .filter(|&n| HashContext::is_hashable(graph.node_data(n)))
-//                     //     .collect();
-
-//                     roots.extend(sub_roots.iter());
-//                     cache[node as usize] = Some(sub_roots.into_iter().collect::<Vec<_>>().into_boxed_slice());
-//                 // });
-//                 // roots.extend(cached_roots.iter().cloned());
-//                 // cache[index] = Some(cached_roots.into_boxed_slice());
-//                 return;
-//             }
-//         }
-
-//         for pred in graph.predecessor_nodes(NodeIndex(node as usize)) {
-//             find_roots(tcx, graph, visit_counts, pred.node_id() as u32, cache, visited, roots, write_to_cache, caching_threshold);
-//         }
-//     }
-// }
-
-fn dedup(data: &mut Vec<u32>, set: &mut FxHashSet<u32>) {
-    if data.len() <= 64 {
-        data.sort();
-        data.dedup();
-    } else {
-        set.clear();
-
-        let mut i = 0;
-        let mut c = data.len();
-
-        while i < c {
-            let x = data[i];
-            if set.insert(x) {
-                i += 1;
-            } else {
-                c -= 1;
-                data[i] = data[c];
-            }
-        }
-
-        data.truncate(c);
-    }
-}
-
-// fn find_roots<'a>(_tcx: ::rustc::ty::TyCtxt,
-//                   graph: &Graph<DepNode<DefId>, ()>,
-//                   visit_counts: &mut [u32],
-//                   node: u32,
-//                   cache: &mut [Option<Box<[u32]>>],
-//                   visited: &mut FxHashSet<u32>,
-//                   roots: &mut FxHashSet<u32>,
-//                   write_to_cache: bool,
-//                   caching_threshold: u32)
-// {
-//     let mut stack = vec![node];
-//     let mut sub_visited = FxHashSet();
-//     let mut sub_roots = FxHashSet();
-
-//     while stack.len() > 0 {
-//         let node = stack.pop().unwrap();
-
-//         if !visited.insert(node) {
-//             continue
-//         }
-
-//         if HashContext::is_hashable(graph.node_data(NodeIndex(node as usize))) {
-//             roots.insert(node);
-//         } else {
-//             if let Some(ref cached) = cache[node as usize] {
-//                 roots.extend(cached.iter());
-//                 continue
-//             }
-
-//             visit_counts[node as usize] += 1;
-
-//             if write_to_cache {
-//                 if visit_counts[node as usize] > caching_threshold {
-//                     sub_roots.clear();
-//                     sub_visited.clear();
-//                     find_roots(_tcx, graph, visit_counts, node, cache, &mut sub_visited, &mut sub_roots, false, caching_threshold);
-//                     let sub_roots: Vec<u32> = sub_roots.iter().cloned().collect();
-//                     roots.extend(sub_roots.iter());
-//                     cache[node as usize] = Some(sub_roots.into_boxed_slice());
-//                     continue
-//                 }
-//             }
-
-//             for pred in graph.predecessor_nodes(NodeIndex(node as usize)) {
-//                 stack.push(pred.node_id() as u32);
-//             }
-//         }
-//     }
-// }
-
-
-fn find_roots<'a>(_tcx: ::rustc::ty::TyCtxt,
-                  graph: &Graph<DepNode<DefId>, ()>,
-                  visit_counts: &mut [u32],
-                  node: u32,
-                  cache: &mut [Option<Box<[u32]>>],
-                  visited: &mut FxHashSet<u32>,
-                  roots: &mut Vec<u32>,
-                  write_to_cache: bool,
-                  caching_threshold: u32)
-{
-    let mut stack = vec![node];
-    let mut sub_visited = FxHashSet();
-    let mut sub_roots = Vec::new();
-
-    while stack.len() > 0 {
-        let node = stack.pop().unwrap();
-
-        if !visited.insert(node) {
-            continue
-        }
-
-        if HashContext::is_hashable(graph.node_data(NodeIndex(node as usize))) {
-            roots.push(node);
-        } else {
-            if let Some(ref cached) = cache[node as usize] {
-                roots.extend_from_slice(cached);
-                continue
-            }
-
-            visit_counts[node as usize] += 1;
-
-            if write_to_cache {
-                if visit_counts[node as usize] > caching_threshold {
-                    sub_roots.clear();
-                    sub_visited.clear();
-                    find_roots(_tcx, graph, visit_counts, node, cache, &mut sub_visited, &mut sub_roots, false, caching_threshold);
-                    // let sub_roots: Vec<u32> = sub_roots.iter().cloned().collect();
-                    dedup(&mut sub_roots, &mut sub_visited);
-
-                    roots.extend_from_slice(&sub_roots[..]);
-                    cache[node as usize] = Some(sub_roots.clone().into_boxed_slice());
-                    continue
-                }
-            }
-
-            for pred in graph.predecessor_nodes(NodeIndex(node as usize)) {
-                stack.push(pred.node_id() as u32);
-            }
-        }
-    }
-}
-
-
 impl<'q> Predecessors<'q> {
     pub fn new(query: &'q DepGraphQuery<DefId>, hcx: &mut HashContext) -> Self {
         // Find nodes for which we want to know the full set of preds
-        let all_nodes = query.graph.all_nodes();
         let tcx = hcx.tcx;
-        // let mut dfs = DepthFirstTraversal::new(&query.graph, INCOMING);
-
         let node_count = query.graph.len_nodes();
-        // let mut visit_counts: Vec<u32> = Vec::with_capacity(node_count);
-        // visit_counts.resize(node_count, 0);
 
-
-        let mut vc: Vec<u32> = Vec::new();
+        // Set up some data structures the cache predecessor search needs:
+        let mut visit_counts: Vec<u32> = Vec::new();
         let mut node_cache: Vec<Option<Box<[u32]>>> = Vec::new();
-
-        vc.resize(node_count, 0);
+        visit_counts.resize(node_count, 0);
         node_cache.resize(node_count, None);
+        let mut dfs_workspace1 = DfsWorkspace::new(node_count);
+        let mut dfs_workspace2 = DfsWorkspace::new(node_count);
 
-        let mut visited: FxHashSet<u32> = FxHashSet();
-        // let mut roots: FxHashSet<u32> = FxHashSet();
-        let mut roots: Vec<u32> = Vec::new();
-
-        let caching_threshold: u32 = ::std::env::var("CACHING_THRESHOLD")
-            .unwrap_or("10".to_owned()).parse().unwrap();
-
-        // {
-        //     use std::fmt::Write;
-        //     // let mut root_counts = Vec::new();
-
-        //     for (node_index, node) in all_nodes.iter().enumerate() {
-        //         let mut name = String::new();
-        //         write!(name, "{:?}", node.data).unwrap();
-        //         if !(name.contains("Tables(DefId") &&
-        //              name.contains("::util[0]::small_vector[0]::{{impl}}[3]::zero[0]")) {
-        //             continue;
-        //         }
-
-        //         // roots.clear();
-        //         // visited.clear();
-
-        //         // find_roots(tcx,
-        //         //            &query.graph,
-        //         //            &mut vc,
-        //         //            node_index as u32,
-        //         //            &mut node_cache[..],
-        //         //            &mut visited,
-        //                    // &mut roots,
-        //         //            true,
-        //         //            caching_threshold);
-        //         // println!("preds: {}", roots.len());
-
-        //         let tr = DepthFirstTraversal::with_start_node(&query.graph, NodeIndex(node_index), INCOMING);
-
-        //         let mut counter = 0;
-        //         for node in tr {
-        //             if HashContext::is_hashable(query.graph.node_data(node)) {
-        //                 counter += 1;
-        //             }
-        //         }
-
-        //         println!("preds: {}", counter);
-
-
-        //         //if name.contains("CollectItem(DefId { krate: CrateNum(0), node: DefIndex(12133) => syntex_syntax/b5fd21cdd1abe01581b0c0cf4442b59a::ext[0]::source_util[0]::expand_include_str[0] })") {
-        //         // if name.contains("CollectItem(DefId { krate: CrateNum(0), node: DefIndex(2455) => syntex_syntax/b5fd21cdd1abe01581b0c0cf4442b59a::feature_gate[0]::{{impl}}[4]::visit_vis[0] })") {
-        //         //     for &pred in &roots {
-        //         //         println!("{:?}", query.graph.node_data(NodeIndex(pred as usize)));
-        //         //     }
-        //         // }
-        //         // if name.contains("TypeckItemBody(DefId { krate: CrateNum(0), node: DefIndex(533) => syntex_syntax/b5fd21cdd1abe01581b0c0cf4442b59a::util[0]::small_vector[0]::{{impl}}[3] })") {
-        //         // }
-
-        //         // root_counts.push((roots.len(), &node.data));
-        //     }
-
-        //     // root_counts.sort_by_key(|&(c, _)| c);
-
-        //     // for &(c, node) in &root_counts {
-
-        //     // }
-
-        //     // for (c, node) in root_counts {
-        //     //     println!("{:?}: {}", node, c);
-        //     // }
-        // }
-
-        // ::rustc::util::common::record_time(&tcx.sess.perf_stats.work_products_only, || {
-
-        //     for (node_index, node) in all_nodes.iter().enumerate() {
-        //         match node.data {
-        //             DepNode::WorkProduct(_) => {}
-        //             _ => continue,
-        //         };
-
-        //         roots.clear();
-        //         visited.clear();
-
-        //         find_roots(tcx,
-        //                    &query.graph,
-        //                    &mut vc,
-        //                    node_index as u32,
-        //                    &mut node_cache[..],
-        //                    &mut visited,
-        //                    &mut roots,
-        //                    true,
-        //                    caching_threshold);
-        //     }
-        // });
-
-        let inputs: FxHashMap<_, _> = all_nodes.iter()
+        let inputs: FxHashMap<_, _> = query
+            .graph
+            .all_nodes()
+            .iter()
             .enumerate()
             .filter(|&(_, node)| match node.data {
                 DepNode::WorkProduct(_) => true,
@@ -336,87 +62,20 @@ impl<'q> Predecessors<'q> {
                 _ => false,
             })
             .map(|(node_index, node)| {
-                // dfs.reset(NodeIndex(node_index));
-                // let inputs: Vec<_> = dfs.by_ref()
-                //     .map(|i| &all_nodes[i.node_id()].data)
-                //     .filter(|d| HashContext::is_hashable(d))
-                //     .collect();
-                // let mut inputs: Vec<&DepNode<_>> = Vec::new();
-                // for node_index in dfs.by_ref() {
-                //     let index = node_index.node_id();
-
-                //     if HashContext::is_hashable(&all_nodes[index].data) {
-                //         inputs.push(&all_nodes[index].data)
-                //     } else {
-                //         visit_counts[index] += 1;
-
-                //         if visit_counts[index] > 100 {
-
-                //         }
-                //     }
-                // }
-                roots.clear();
-                visited.clear();
-                find_roots(tcx,
-                           &query.graph,
-                           &mut vc,
+                find_roots(&query.graph,
                            node_index as u32,
+                           &mut visit_counts,
                            &mut node_cache[..],
-                           &mut visited,
-                           &mut roots,
-                           true,
-                           caching_threshold);
+                           &mut dfs_workspace1,
+                           Some(&mut dfs_workspace2));
 
-                dedup(&mut roots, &mut visited);
-
-                // dfs.reset(NodeIndex(node_index));
-                // let mut inputs2: Vec<_> = dfs.by_ref()
-                //     .map(|i| (i, &all_nodes[i.node_id()].data))
-                //     .filter(|&(_, d)| HashContext::is_hashable(d))
-                //     .map(|(i, _)| i.node_id() as u32)
-                //     .collect();
-                // inputs2.sort();
-                // roots.sort();
-
-                // assert_eq!(inputs2, roots);
-
-                let inputs: Vec<&DepNode<DefId>> =
-                ::rustc::util::common::record_time(&tcx.sess.perf_stats.map_dep_graph_nodes, || {
-                     roots.iter().map(|&i| query.graph.node_data(NodeIndex(i as usize))).collect()
-                 });
-
-
-
-
-                // if inputs.len() > 10000 {
-                    // println!("inputs: {:?} = {}", node.data, inputs.len());
-                // }
+                let inputs: Vec<_> = dfs_workspace1.output.nodes.iter().map(|&i| {
+                    query.graph.node_data(NodeIndex(i as usize))
+                }).collect();
 
                 (&node.data, inputs)
-                // (&node.data, inputs)
             })
             .collect();
-
-        // for (index, count) in visit_counts.into_iter().enumerate() {
-        //     // if count >
-        //     // println!("{:?}", );
-        // }
-        // let mut count_map: FxHashMap<u32, u32> = FxHashMap();
-
-        // for (index, count) in visit_counts.into_iter().enumerate() {
-        //     if count > 6000 {
-        //         println!("{:?}", all_nodes[index].data);
-        //     }
-
-        //     let count2 = count_map.entry(10 * ((count+9) / 10)).or_insert(0);
-        //     *count2 += 1;
-        // }
-
-        // let mut count_map: Vec<(u32, u32)> = count_map.into_iter().collect();
-        // count_map.sort_by_key(|&(c, _)| c);
-        // for (k, v) in count_map.into_iter() {
-        //     println!("# of nodes visited at most {:2} times: {:6}", k, v);
-        // }
 
         let mut hashes = FxHashMap();
         for input in inputs.values().flat_map(|v| v.iter().cloned()) {
@@ -430,3 +89,139 @@ impl<'q> Predecessors<'q> {
         }
     }
 }
+
+// Starting at `start_node`, this function finds this node's "roots", that is,
+// anything that is hashable, in the dep-graph. It uses a simple depth-first
+// search to achieve that. However, since some sub-graphs are traversed over
+// and over again, the function also some caching built into it: Each time it
+// visits a node it increases a counter for that node. If a node has been
+// visited more often than CACHING_THRESHOLD, the function will allocate a
+// cache entry in the `cache` array. This cache entry contains a flat list of
+// all roots reachable from the given node. The next time the node is visited,
+// the search can just add the contents of this array to the output instead of
+// recursing further.
+//
+// The function takes two `DfsWorkspace` arguments. These contains some data
+// structures that would be expensive to re-allocate all the time, so they are
+// allocated once up-front. There are two of them because building a cache entry
+// requires a recursive invocation of this function. Two are enough though,
+// since function never recurses more than once.
+fn find_roots<'a>(graph: &Graph<DepNode<DefId>, ()>,
+                  start_node: u32,
+                  visit_counts: &mut [u32],
+                  cache: &mut [Option<Box<[u32]>>],
+                  workspace: &mut DfsWorkspace,
+                  mut sub_workspace: Option<&mut DfsWorkspace>)
+{
+    const CACHING_THRESHOLD: u32 = 60;
+
+    workspace.visited.clear();
+    workspace.output.clear();
+    workspace.stack.clear();
+    workspace.stack.push(start_node);
+
+    loop {
+        let node = match workspace.stack.pop() {
+            Some(node) => node,
+            None => return,
+        };
+
+        if !workspace.visited.insert(node as usize) {
+            continue
+        }
+
+        if HashContext::is_hashable(graph.node_data(NodeIndex(node as usize))) {
+            // If this is a root, just add it to the output.
+            workspace.output.insert(node);
+        } else {
+            if let Some(ref cached) = cache[node as usize] {
+                for &n in &cached[..] {
+                    workspace.output.insert(n);
+                }
+                // No need to recurse further from this node
+                continue
+            }
+
+            visit_counts[node as usize] += 1;
+
+            // If this node has been visited often enough to be cached ...
+            if visit_counts[node as usize] > CACHING_THRESHOLD {
+                // ... we are actually allowed to cache something, do so:
+                if let Some(ref mut sub_workspace) = sub_workspace {
+                    // Note that the following recursive invocation does never
+                    // write to the cache (since we pass None as sub_workspace).
+                    // This is intentional: The graph we are working with
+                    // contains cycles and this prevent us from simply building
+                    // our caches recursively on-demand.
+                    // However, we can just do a regular, non-caching DFS to
+                    // yield the set of roots and cache that.
+                    find_roots(graph,
+                               node,
+                               visit_counts,
+                               cache,
+                               sub_workspace,
+                               None);
+
+                    for &n in &sub_workspace.output.nodes {
+                        workspace.output.insert(n);
+                    }
+
+                    cache[node as usize] = Some(sub_workspace.output
+                                                             .nodes
+                                                             .clone()
+                                                             .into_boxed_slice());
+                    // No need to recurse further from this node
+                    continue
+                }
+            }
+
+            for pred in graph.predecessor_nodes(NodeIndex(node as usize)) {
+                workspace.stack.push(pred.node_id() as u32);
+            }
+        }
+    }
+}
+
+struct DfsWorkspace {
+    stack: Vec<u32>,
+    visited: BitVector,
+    output: NodeIndexSet,
+}
+
+impl DfsWorkspace {
+    fn new(total_node_count: usize) -> DfsWorkspace {
+        DfsWorkspace {
+            stack: Vec::new(),
+            visited: BitVector::new(total_node_count),
+            output: NodeIndexSet::new(total_node_count),
+        }
+    }
+}
+
+struct NodeIndexSet {
+    bitset: BitVector,
+    nodes: Vec<u32>,
+}
+
+impl NodeIndexSet {
+    fn new(total_node_count: usize) -> NodeIndexSet {
+        NodeIndexSet {
+            bitset: BitVector::new(total_node_count),
+            nodes: Vec::new(),
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.bitset.clear();
+        self.nodes.clear();
+    }
+
+    #[inline]
+    fn insert(&mut self, node: u32) {
+        if self.bitset.insert(node as usize) {
+            self.nodes.push(node)
+        }
+    }
+}
+

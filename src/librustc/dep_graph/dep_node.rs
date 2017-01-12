@@ -314,7 +314,7 @@ impl<D: Clone + Debug> DepNode<D> {
 impl ::std::fmt::Display for DepNode<DefId> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
 
-        ty::tls::with_opt(|opt_tcx| {
+        return ty::tls::with_opt(|opt_tcx| {
             if let Some(tcx) = opt_tcx {
                 let mut id = String::new();
                 match *self {
@@ -338,33 +338,33 @@ impl ::std::fmt::Display for DepNode<DefId> {
             } else {
                 write!(f, "{}(???)", self.label_string())
             }
-        })
-    }
+        });
 
-    fn push_def_path(tcx: TyCtxt,
+        fn push_def_path(tcx: TyCtxt,
                      def_id: DefId,
                      output: &mut String) {
-        use std::fmt::Write;
-        let def_path = tcx.def_path(def_id);
+            use std::fmt::Write;
+            let def_path = tcx.def_path(def_id);
 
-        // some_crate::
-        write!(output, "{}::", tcx.crate_name(def_path.krate).as_str()).unwrap();
+            // some_crate::
+            write!(output, "{}::", tcx.crate_name(def_path.krate).as_str()).unwrap();
 
-        // foo::bar::ItemName::
-        for part in def_path.data {
-            if part.disambiguator == 0 {
-                write!(output, "{}::", part.data.as_interned_str()).unwrap();
-            } else {
-                write!(output,
-                       "{}[{}]::",
-                       part.data.as_interned_str(),
-                       part.disambiguator).unwrap();
+            // foo::bar::ItemName::
+            for part in def_path.data {
+                if part.disambiguator == 0 {
+                    write!(output, "{}::", part.data.as_interned_str()).unwrap();
+                } else {
+                    write!(output,
+                           "{}[{}]::",
+                           part.data.as_interned_str(),
+                           part.disambiguator).unwrap();
+                }
             }
-        }
 
-        // remove final "::"
-        output.pop();
-        output.pop();
+            // remove final "::"
+            output.pop();
+            output.pop();
+        }
     }
 }
 
