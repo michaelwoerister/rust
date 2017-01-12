@@ -138,6 +138,17 @@ pub struct PerfStats {
     pub symbol_hash_time: Cell<Duration>,
     // The accumulated time spent decoding def path tables from metadata
     pub decode_def_path_tables_time: Cell<Duration>,
+
+
+    pub build_dep_graph_query: Cell<Duration>,
+    pub map_dep_graph_nodes: Cell<Duration>,
+    pub build_dep_graph_caches: Cell<Duration>,
+    pub read_dep_graph_cache: Cell<Duration>,
+    pub build_dep_graph_preds: Cell<Duration>,
+    pub save_dep_graph: Cell<Duration>,
+    pub export_dep_graph_hashes: Cell<Duration>,
+
+    pub work_products_only: Cell<Duration>,
 }
 
 impl Session {
@@ -505,6 +516,25 @@ impl Session {
                  duration_to_secs_str(self.perf_stats.symbol_hash_time.get()));
         println!("Total time spent decoding DefPath tables:      {}",
                  duration_to_secs_str(self.perf_stats.decode_def_path_tables_time.get()));
+
+
+        println!("build_dep_graph_query:      {}",
+                 duration_to_secs_str(self.perf_stats.build_dep_graph_query.get()));
+        println!("map_dep_graph_nodes:        {}",
+                 duration_to_secs_str(self.perf_stats.map_dep_graph_nodes.get()));
+        println!("build_dep_graph_caches:     {}",
+                 duration_to_secs_str(self.perf_stats.build_dep_graph_caches.get()));
+        println!("read_dep_graph_cache:       {}",
+                 duration_to_secs_str(self.perf_stats.read_dep_graph_cache.get()));
+        println!("build_dep_graph_preds:      {}",
+                 duration_to_secs_str(self.perf_stats.build_dep_graph_preds.get()));
+        println!("save_dep_graph:             {}",
+                 duration_to_secs_str(self.perf_stats.save_dep_graph.get()));
+        println!("export_dep_graph_hashes:    {}",
+                 duration_to_secs_str(self.perf_stats.export_dep_graph_hashes.get()));
+        println!("work_products_only:         {}",
+                 duration_to_secs_str(self.perf_stats.work_products_only.get()));
+
     }
 }
 
@@ -640,6 +670,18 @@ pub fn build_session_(sopts: config::Options,
             incr_comp_bytes_hashed: Cell::new(0),
             symbol_hash_time: Cell::new(Duration::from_secs(0)),
             decode_def_path_tables_time: Cell::new(Duration::from_secs(0)),
+
+            build_dep_graph_query: Cell::new(Duration::from_secs(0)),
+            map_dep_graph_nodes: Cell::new(Duration::from_secs(0)),
+            build_dep_graph_caches: Cell::new(Duration::from_secs(0)),
+            read_dep_graph_cache: Cell::new(Duration::from_secs(0)),
+            build_dep_graph_preds: Cell::new(Duration::from_secs(0)),
+
+            save_dep_graph: Cell::new(Duration::from_secs(0)),
+            export_dep_graph_hashes: Cell::new(Duration::from_secs(0)),
+
+            work_products_only: Cell::new(Duration::from_secs(0)),
+
         },
         code_stats: RefCell::new(CodeStats::new()),
     };

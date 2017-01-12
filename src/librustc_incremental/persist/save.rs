@@ -43,14 +43,26 @@ pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let mut builder = DefIdDirectoryBuilder::new(tcx);
-    let query = tcx.dep_graph.query();
+    let query = ::rustc::util::common::record_time(&tcx.sess.perf_stats.build_dep_graph_query, || {
+         tcx.dep_graph.query()
+    });
+
+    if tcx.sess.opts.debugging_opts.incremental_info {
+        println!("incremental: {} nodes in dep-graph", query.graph.len_nodes());
+        println!("incremental: {} edges in dep-graph", query.graph.len_edges());
+    }
+
     let mut hcx = HashContext::new(tcx, incremental_hashes_map);
-    let preds = Predecessors::new(&query, &mut hcx);
+
+    let preds = ::rustc::util::common::record_time(&tcx.sess.perf_stats.build_dep_graph_preds, || {
+        Predecessors::new(&query, &mut hcx)
+    });
     let mut current_metadata_hashes = FxHashMap();
 
     // IMPORTANT: We are saving the metadata hashes *before* the dep-graph,
     //            since metadata-encoding might add new entries to the
     //            DefIdDirectory (which is saved in the dep-graph file).
+    ::rustc::util::common::record_time(&tcx.sess.perf_stats.export_dep_graph_hashes, || {
     save_in(sess,
             metadata_hash_export_path(sess),
             |e| encode_metadata_hashes(tcx,
@@ -59,9 +71,13 @@ pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                        &mut builder,
                                        &mut current_metadata_hashes,
                                        e));
+    });
+
+    ::rustc::util::common::record_time(&tcx.sess.perf_stats.save_dep_graph, || {
     save_in(sess,
             dep_graph_path(sess),
             |e| encode_dep_graph(&preds, &mut builder, e));
+    });
 
     let prev_metadata_hashes = incremental_hashes_map.prev_metadata_hashes.borrow();
     dirty_clean::check_dirty_clean_metadata(tcx,
@@ -180,6 +196,11 @@ pub fn encode_dep_graph(preds: &Predecessors,
     };
 
     debug!("graph = {:#?}", graph);
+
+    if tcx.sess.opts.debugging_opts.incremental_info {
+        println!("incremental: {} edges in serialized dep-graph", graph.edges.len());
+        println!("incremental: {} hashes in serialized dep-graph", graph.hashes.len());
+    }
 
     // Encode the directory and then the graph data.
     builder.directory().encode(encoder)?;

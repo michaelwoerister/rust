@@ -10,6 +10,8 @@
 
 use std::fmt::Debug;
 use std::sync::Arc;
+use ty::{self, TyCtxt};
+use hir::def_id::DefId;
 
 macro_rules! try_opt {
     ($e:expr) => (
@@ -242,7 +244,130 @@ impl<D: Clone + Debug> DepNode<D> {
             }
         }
     }
+
+    pub fn label_string(&self) -> &'static str {
+        use self::DepNode::*;
+
+        match *self {
+            Krate => "Krate",
+            Hir(_) => "Hir",
+            HirBody(_) => "HirBody",
+            MetaData(_) => "MetaData",
+            WorkProduct(_) => "WorkProduct",
+            CollectLanguageItems => "CollectLanguageItems",
+            CheckStaticRecursion => "CheckStaticRecursion",
+            ResolveLifetimes => "ResolveLifetimes",
+            RegionResolveCrate => "RegionResolveCrate",
+            CheckLoops => "CheckLoops",
+            PluginRegistrar => "PluginRegistrar",
+            StabilityIndex => "StabilityIndex",
+            CollectItem(_) => "CollectItem",
+            CollectItemSig(_) => "CollectItemSig",
+            Coherence => "Coherence",
+            EffectCheck => "EffectCheck",
+            Liveness => "Liveness",
+            Resolve => "Resolve",
+            EntryPoint => "EntryPoint",
+            CheckEntryFn => "CheckEntryFn",
+            CoherenceCheckImpl(_) => "CoherenceCheckImpl",
+            CoherenceOverlapCheck(_) => "CoherenceOverlapCheck",
+            CoherenceOverlapCheckSpecial(_) => "CoherenceOverlapCheckSpecial",
+            CoherenceOverlapInherentCheck(_) => "CoherenceOverlapInherentCheck",
+            CoherenceOrphanCheck(_) => "CoherenceOrphanCheck",
+            Variance => "Variance",
+            WfCheck(_) => "WfCheck",
+            TypeckItemType(_) => "TypeckItemType",
+            TypeckItemBody(_) => "TypeckItemBody",
+            Dropck => "Dropck",
+            DropckImpl(_) => "DropckImpl",
+            UnusedTraitCheck => "UnusedTraitCheck",
+            CheckConst(_) => "CheckConst",
+            Privacy => "Privacy",
+            IntrinsicCheck(_) => "IntrinsicCheck",
+            MatchCheck(_) => "MatchCheck",
+            Mir(_) => "Mir",
+            BorrowCheck(_) => "BorrowCheck",
+            RvalueCheck(_) => "RvalueCheck",
+            Reachability => "Reachability",
+            DeadCheck => "DeadCheck",
+            StabilityCheck(_) => "StabilityCheck",
+            LateLintCheck => "LateLintCheck",
+            TransCrate => "TransCrate",
+            TransCrateItem(_) => "TransCrateItem",
+            TransInlinedItem(_) => "TransInlinedItem",
+            TransWriteMetadata => "TransWriteMetadata",
+            LinkBinary => "LinkBinary",
+            AssociatedItems(_) => "AssociatedItems",
+            ItemSignature(_) => "ItemSignature",
+            SizedConstraint(_) => "SizedConstraint",
+            AssociatedItemDefIds(_) => "AssociatedItemDefIds",
+            InherentImpls(_) => "InherentImpls",
+            Tables(_) => "Tables",
+            TraitImpls(_) => "TraitImpls",
+            TraitItems(_) => "TraitItems",
+            ReprHints(_) => "ReprHints",
+            TraitSelect(_) => "TraitSelect",
+        }
+    }
 }
+
+impl ::std::fmt::Display for DepNode<DefId> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+
+        ty::tls::with_opt(|opt_tcx| {
+            if let Some(tcx) = opt_tcx {
+                let mut id = String::new();
+                match *self {
+                    DepNode::WorkProduct(ref wp) => id.push_str(&wp.0[..]),
+                    DepNode::TraitSelect(ref ds) => {
+                        for &def_id in ds {
+                            push_def_path(tcx, def_id, &mut id);
+                            id.push_str(",");
+                        }
+                        id.pop();
+                    }
+                    _ => {
+                        self.map_def(|&def_id| {
+                            push_def_path(tcx, def_id, &mut id);
+                            Some(())
+                        });
+                    }
+                }
+
+                write!(f, "{}({})", self.label_string(), id)
+            } else {
+                write!(f, "{}(???)", self.label_string())
+            }
+        })
+    }
+
+    fn push_def_path(tcx: TyCtxt,
+                     def_id: DefId,
+                     output: &mut String) {
+        use std::fmt::Write;
+        let def_path = tcx.def_path(def_id);
+
+        // some_crate::
+        write!(output, "{}::", tcx.crate_name(def_path.krate).as_str()).unwrap();
+
+        // foo::bar::ItemName::
+        for part in def_path.data {
+            if part.disambiguator == 0 {
+                write!(output, "{}::", part.data.as_interned_str()).unwrap();
+            } else {
+                write!(output,
+                       "{}[{}]::",
+                       part.data.as_interned_str(),
+                       part.disambiguator).unwrap();
+            }
+        }
+
+        // remove final "::"
+        output.pop();
+        output.pop();
+    }
+}
+
 
 /// A "work product" corresponds to a `.o` (or other) file that we
 /// save in between runs. These ids do not have a DefId but rather

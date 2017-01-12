@@ -280,14 +280,14 @@ impl<'a, 'tcx, 'q> dot::Labeller<'a> for GraphvizDepGraph<'q> {
     }
     fn node_id(&self, n: &&'q DepNode<DefId>) -> dot::Id {
         let s: String =
-            format!("{:?}", n).chars()
-                              .map(|c| if c == '_' || c.is_alphanumeric() { c } else { '_' })
-                              .collect();
+            format!("{}", n).chars()
+                            .map(|c| if c == '_' || c.is_alphanumeric() { c } else { '_' })
+                            .collect();
         debug!("n={:?} s={:?}", n, s);
         dot::Id::new(s).unwrap()
     }
     fn node_label(&self, n: &&'q DepNode<DefId>) -> dot::LabelText {
-        dot::LabelText::label(format!("{:?}", n))
+        dot::LabelText::label(format!("{}", n))
     }
 }
 

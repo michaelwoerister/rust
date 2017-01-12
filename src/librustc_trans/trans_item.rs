@@ -352,21 +352,6 @@ impl<'a, 'tcx> TransItem<'tcx> {
     }
 }
 
-
-//=-----------------------------------------------------------------------------
-// TransItem String Keys
-//=-----------------------------------------------------------------------------
-
-// The code below allows for producing a unique string key for a trans item.
-// These keys are used by the handwritten auto-tests, so they need to be
-// predictable and human-readable.
-//
-// Note: A lot of this could looks very similar to what's already in the
-//       ppaux module. It would be good to refactor things so we only have one
-//       parameterizable implementation for printing types.
-
-/// Same as `unique_type_name()` but with the result pushed onto the given
-/// `output` parameter.
 pub struct DefPathBasedNames<'a, 'tcx: 'a> {
     tcx: TyCtxt<'a, 'tcx, 'tcx>,
     omit_disambiguators: bool,
