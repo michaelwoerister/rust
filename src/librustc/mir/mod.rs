@@ -1336,3 +1336,16 @@ impl Location {
         }
     }
 }
+
+impl_stable_hash_for!(struct Mir<'tcx> {
+    basic_blocks,
+    visibility_scopes,
+    promoted,
+    return_ty,
+    local_decls,
+    arg_count,
+    upvar_decls,
+    spread_arg,
+    span,
+    cache
+});

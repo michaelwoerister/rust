@@ -11,6 +11,8 @@ crate-type = ["dylib"]
 [dependencies]
 graphviz = { path = "../libgraphviz" }
 rustc = { path = "../librustc" }
+rustc_mir = { path = "../librustc_mir" }
+rustc_const_math = { path = "../librustc_const_math" }
 rustc_data_structures = { path = "../librustc_data_structures" }
 serialize = { path = "../libserialize" }
 log = { path = "../liblog" }

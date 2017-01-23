@@ -36,21 +36,18 @@ use rustc::hir::def_id::{CRATE_DEF_INDEX, DefId};
 use rustc::hir::intravisit as visit;
 use rustc::hir::intravisit::{Visitor, NestedVisitorMap};
 use rustc::ty::TyCtxt;
-use rustc_data_structures::stable_hasher::StableHasher;
-use ich::Fingerprint;
+use rustc::ich::Fingerprint;
 use rustc_data_structures::fx::FxHashMap;
 use rustc::util::common::record_time;
 use rustc::session::config::DebugInfoLevel::NoDebugInfo;
 
-use self::def_path_hash::DefPathHashes;
-use self::svh_visitor::StrictVersionHashVisitor;
-use self::caching_codemap_view::CachingCodemapView;
+use rustc::ich::DefPathHashes;
+use rustc::util::caching_codemap_view::CachingCodemapView;
+use rustc::ich::StrictVersionHashVisitor;
+use rustc::ich::IchHasher;
+// mod svh_visitor;
 
-mod def_path_hash;
-mod svh_visitor;
-mod caching_codemap_view;
-
-pub type IchHasher = StableHasher<Fingerprint>;
+// pub type IchHasher = StableHasher<Fingerprint>;
 
 pub struct IncrementalHashesMap {
     hashes: FxHashMap<DepNode<DefId>, Fingerprint>,
@@ -139,14 +136,14 @@ struct HashItemsVisitor<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> HashItemsVisitor<'a, 'tcx> {
     fn calculate_node_id<W>(&mut self, id: ast::NodeId, walk_op: W)
-        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx>)
+        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx, Fingerprint>)
     {
         let def_id = self.tcx.map.local_def_id(id);
         self.calculate_def_id(def_id, walk_op)
     }
 
     fn calculate_def_id<W>(&mut self, def_id: DefId, mut walk_op: W)
-        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx>)
+        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx, Fingerprint>)
     {
         assert!(def_id.is_local());
         debug!("HashItemsVisitor::calculate(def_id={:?})", def_id);
@@ -158,7 +155,7 @@ impl<'a, 'tcx> HashItemsVisitor<'a, 'tcx> {
                              dep_node: DepNode<DefId>,
                              hash_bodies: bool,
                              walk_op: &mut W)
-        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx>)
+        where W: for<'v> FnMut(&mut StrictVersionHashVisitor<'v, 'a, 'tcx, Fingerprint>)
     {
         let mut state = IchHasher::new();
         walk_op(&mut StrictVersionHashVisitor::new(&mut state,

@@ -10,13 +10,13 @@
 
 use rustc::hir::intravisit::{Visitor, NestedVisitorMap};
 
-use encoder::EncodeContext;
+// use encoder::EncodeContext;
 use schema::*;
 
 use rustc::hir;
 use rustc::ty;
 
-use rustc_serialize::Encodable;
+use rustc_serialize::{Encoder, Encodable};
 
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct Ast<'tcx> {
@@ -26,18 +26,26 @@ pub struct Ast<'tcx> {
     pub rvalue_promotable_to_static: bool,
 }
 
-impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
+impl<'tcx> ::std::fmt::Debug for Ast<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "astencode::Ast")
+    }
+}
+
+// impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
+impl<'a, 'b: 'a, 'tcx: 'b> ::index_builder::EntryBuilder<'a, 'b, 'tcx> {
     pub fn encode_body(&mut self, body_id: hir::BodyId) -> Lazy<Ast<'tcx>> {
         let body = self.tcx.map.body(body_id);
         let lazy_body = self.lazy(body);
 
         let tables = self.tcx.body_tables(body_id);
         let lazy_tables = self.lazy(tables);
-
-        let nested_pos = self.position();
+        let tcx = self.tcx;
+        let nested_pos = self.encoder().position();
         let nested_count = {
             let mut visitor = NestedBodyEncodingVisitor {
-                ecx: self,
+                encoder: self.encoder(),
+                tcx: tcx,
                 count: 0,
             };
             visitor.visit_body(body);
@@ -56,19 +64,26 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
     }
 }
 
-struct NestedBodyEncodingVisitor<'a, 'b: 'a, 'tcx: 'b> {
-    ecx: &'a mut EncodeContext<'b, 'tcx>,
+struct NestedBodyEncodingVisitor<'a, 'b, 'tcx: 'b, ERR, E>
+    where E: Encoder<Error = ERR> + 'a,
+          ERR: ::std::fmt::Debug,
+{
+    encoder: &'a mut E,
+    tcx: ty::TyCtxt<'b, 'tcx, 'tcx>,
     count: usize,
 }
 
-impl<'a, 'b, 'tcx> Visitor<'tcx> for NestedBodyEncodingVisitor<'a, 'b, 'tcx> {
+impl<'a, 'b, 'tcx, ERR, E> Visitor<'tcx> for NestedBodyEncodingVisitor<'a, 'b, 'tcx, ERR, E>
+    where E: Encoder<Error = ERR> + 'a,
+          ERR: ::std::fmt::Debug,
+{
     fn nested_visit_map<'this>(&'this mut self) -> NestedVisitorMap<'this, 'tcx> {
         NestedVisitorMap::None
     }
 
     fn visit_nested_body(&mut self, body: hir::BodyId) {
-        let body = self.ecx.tcx.map.body(body);
-        body.encode(self.ecx).unwrap();
+        let body = self.tcx.map.body(body);
+        body.encode(self.encoder).unwrap();
         self.count += 1;
 
         self.visit_body(body);

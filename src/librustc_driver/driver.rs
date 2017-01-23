@@ -24,7 +24,7 @@ use rustc::util::common::time;
 use rustc::util::nodemap::{NodeSet, NodeMap};
 use rustc_borrowck as borrowck;
 use rustc_incremental::{self, IncrementalHashesMap};
-use rustc_incremental::ich::Fingerprint;
+use rustc::ich::Fingerprint;
 use rustc_resolve::{MakeGlobMap, Resolver};
 use rustc_metadata::creader::CrateLoader;
 use rustc_metadata::cstore::CStore;
@@ -1058,6 +1058,7 @@ pub fn phase_4_translate_to_llvm<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
          "serialize dep graph",
          || rustc_incremental::save_dep_graph(tcx,
                                               &incremental_hashes_map,
+                                              &translation.metadata_hashes,
                                               translation.link.crate_hash));
     translation
 }

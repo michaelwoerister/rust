@@ -49,6 +49,10 @@ use syntax_pos::{DUMMY_SP, Span};
 use rustc_const_math::ConstInt;
 use rustc_data_structures::accumulate_vec::IntoIter as AccIntoIter;
 
+use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
+                                           StableHasherResult};
+use ich::StableHashingContext;
+
 use hir;
 use hir::itemlikevisit::ItemLikeVisitor;
 
@@ -1375,6 +1379,24 @@ impl<'tcx> serialize::UseSpecializedEncodable for &'tcx AdtDef {
 
 impl<'tcx> serialize::UseSpecializedDecodable for &'tcx AdtDef {}
 
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for AdtDef {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ty::AdtDef {
+            did,
+            ref variants,
+            ref destructor,
+            ref flags
+        } = *self;
+
+        did.hash_stable(hcx, hasher);
+        variants.hash_stable(hcx, hasher);
+        destructor.get().hash_stable(hcx, hasher);
+        flags.get().hash_stable(hcx, hasher);
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AdtKind { Struct, Union, Enum }
 
@@ -1728,6 +1750,7 @@ impl<'a, 'gcx, 'tcx> AdtDef {
         result
     }
 }
+
 
 impl<'a, 'gcx, 'tcx> VariantDef {
     #[inline]

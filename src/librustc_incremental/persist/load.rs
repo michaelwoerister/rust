@@ -13,6 +13,7 @@
 use rustc::dep_graph::DepNode;
 use rustc::hir::def_id::DefId;
 use rustc::hir::svh::Svh;
+use rustc::ich::Fingerprint;
 use rustc::session::Session;
 use rustc::ty::TyCtxt;
 use rustc_data_structures::fx::{FxHashSet, FxHashMap};
@@ -21,7 +22,6 @@ use rustc_serialize::opaque::Decoder;
 use std::path::{Path};
 
 use IncrementalHashesMap;
-use ich::Fingerprint;
 use super::data::*;
 use super::directory::*;
 use super::dirty_clean;

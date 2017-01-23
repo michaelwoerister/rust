@@ -347,8 +347,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     /// Creates a hash of the type `Ty` which will be the same no matter what crate
     /// context it's calculated within. This is used by the `type_id` intrinsic.
     pub fn type_id_hash(self, ty: Ty<'tcx>) -> u64 {
+        debug!("type_id_hash: begin {:?}", ty);
         let mut hasher = TypeIdHasher::new(self);
         hasher.visit_ty(ty);
+        debug!("type_id_hash: end {:?}", ty);
         hasher.finish()
     }
 
@@ -393,7 +395,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     }
 }
 
-pub struct TypeIdHasher<'a, 'gcx: 'a+'tcx, 'tcx: 'a, W> {
+pub struct TypeIdHasher<'a, 'gcx, 'tcx, W>
+    where 'gcx: 'a+'tcx,
+          'tcx: 'a,
+          W: StableHasherResult {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     state: StableHasher<W>,
 }
@@ -409,8 +414,10 @@ impl<'a, 'gcx, 'tcx, W> TypeIdHasher<'a, 'gcx, 'tcx, W>
         self.state.finish()
     }
 
-    pub fn hash<T: Hash>(&mut self, x: T) {
+    pub fn hash<T: Hash + ::std::fmt::Debug>(&mut self, x: T) {
+        debug!("TypeIdHasher: hashing {:?}", x);
         x.hash(&mut self.state);
+        debug!("TypeIdHasher: state = {:?}", self.state);
     }
 
     fn hash_discriminant_u8<T>(&mut self, x: &T) {
@@ -418,6 +425,7 @@ impl<'a, 'gcx, 'tcx, W> TypeIdHasher<'a, 'gcx, 'tcx, W>
             intrinsics::discriminant_value(x)
         };
         let b = v as u8;
+        debug!("TypeIdHasher: disr");
         assert_eq!(v, b as u64);
         self.hash(b)
     }
@@ -430,7 +438,9 @@ impl<'a, 'gcx, 'tcx, W> TypeIdHasher<'a, 'gcx, 'tcx, W>
     }
 
     pub fn def_path(&mut self, def_path: &ast_map::DefPath) {
+        debug!("TypeIdHasher: def_path = {:?}", def_path);
         def_path.deterministic_hash_to(self.tcx, &mut self.state);
+        debug!("TypeIdHasher: state = {:?}", self.state);
     }
 }
 
@@ -438,6 +448,7 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
     where W: StableHasherResult
 {
     fn visit_ty(&mut self, ty: Ty<'tcx>) -> bool {
+        debug!("TypeIdHasher: visit_ty = {:?}", ty);
         // Distinguish between the Ty variants uniformly.
         self.hash_discriminant_u8(&ty.sty);
 
@@ -488,34 +499,70 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
             TyInfer(_) => bug!("TypeIdHasher: unexpected type {}", ty)
         }
 
+        debug!("TypeIdHasher: state = {:?}", self.state);
+
         ty.super_visit_with(self)
     }
 
     fn visit_region(&mut self, r: &'tcx ty::Region) -> bool {
+        debug!("TypeIdHasher: visit_region = {:?}", r);
+        self.hash_discriminant_u8(r);
         match *r {
-            ty::ReErased => {
-                self.hash::<u32>(0);
-            }
+            ty::ReEmpty |
+            ty::ReStatic |
+            ty::ReErased => {}
             ty::ReLateBound(db, ty::BrAnon(i)) => {
                 assert!(db.depth > 0);
-                self.hash::<u32>(db.depth);
+                // db.depth.hash_stable(hcx, hasher);
+                self.hash(db.depth);
                 self.hash(i);
+                // i.hash_stable(hcx, hasher);
             }
-            ty::ReStatic |
-            ty::ReEmpty |
-            ty::ReEarlyBound(..) |
+            ty::ReEarlyBound(ty::EarlyBoundRegion { index, name }) => {
+                // index.hash_stable(hcx, hasher);
+                self.hash(index);
+                self.hash(name.as_str());
+            }
+            ty::ReScope(..) => {
+                // FIXME: Verify that this is true.
+                // We don't do anything here, the contents should not matter.
+            }
             ty::ReLateBound(..) |
             ty::ReFree(..) |
-            ty::ReScope(..) |
             ty::ReVar(..) |
             ty::ReSkolemized(..) => {
                 bug!("TypeIdHasher: unexpected region {:?}", r)
+                // bug!("HashStable::hash_stable: unexpected region {:?}", self)
             }
         }
+
+
+        debug!("TypeIdHasher: state = {:?}", self.state);
+        // match *r {
+        //     ty::ReErased => {
+        //         self.hash::<u32>(0);
+        //     }
+        //     ty::ReLateBound(db, ty::BrAnon(i)) => {
+        //         assert!(db.depth > 0);
+        //         self.hash::<u32>(db.depth);
+        //         self.hash(i);
+        //     }
+        //     ty::ReStatic |
+        //     ty::ReEmpty |
+        //     ty::ReEarlyBound(..) |
+        //     ty::ReLateBound(..) |
+        //     ty::ReFree(..) |
+        //     ty::ReScope(..) |
+        //     ty::ReVar(..) |
+        //     ty::ReSkolemized(..) => {
+        //         bug!("TypeIdHasher: unexpected region {:?}", r)
+        //     }
+        // }
         false
     }
 
     fn visit_binder<T: TypeFoldable<'tcx>>(&mut self, x: &ty::Binder<T>) -> bool {
+        debug!("TypeIdHasher: visit_binder = {:?}", x);
         // Anonymize late-bound regions so that, for example:
         // `for<'a, b> fn(&'a &'b T)` and `for<'a, b> fn(&'b &'a T)`
         // result in the same TypeId (the two types are equivalent).

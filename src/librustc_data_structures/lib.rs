@@ -36,6 +36,7 @@
 #![feature(untagged_unions)]
 #![feature(associated_consts)]
 #![feature(unsize)]
+#![feature(discriminant_value)]
 
 #![cfg_attr(unix, feature(libc))]
 #![cfg_attr(test, feature(test))]

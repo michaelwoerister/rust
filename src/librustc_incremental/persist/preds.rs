@@ -10,12 +10,12 @@
 
 use rustc::dep_graph::{DepGraphQuery, DepNode};
 use rustc::hir::def_id::DefId;
+use rustc::ich::Fingerprint;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::bitvec::BitVector;
 use rustc_data_structures::graph::{NodeIndex, Graph};
 
 use super::hash::*;
-use ich::Fingerprint;
 
 /// A data-structure that makes it easy to enumerate the hashable
 /// predecessors of any given dep-node.

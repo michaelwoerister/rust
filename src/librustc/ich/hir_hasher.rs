@@ -21,22 +21,24 @@ use syntax::parse::token;
 use syntax::symbol::{Symbol, InternedString};
 use syntax_pos::{Span, NO_EXPANSION, COMMAND_LINE_EXPN, BytePos};
 use syntax::tokenstream;
-use rustc::hir;
-use rustc::hir::*;
-use rustc::hir::def::Def;
-use rustc::hir::def_id::DefId;
-use rustc::hir::intravisit as visit;
-use rustc::ty::TyCtxt;
+use hir;
+use hir::*;
+use hir::def::Def;
+use hir::def_id::DefId;
+use hir::intravisit as visit;
+use ty::TyCtxt;
 use rustc_data_structures::fnv;
 use std::hash::{Hash, Hasher};
-use rustc::ich::DefPathHashes;
+use ich::DefPathHashes;
 
-use rustc::util::caching_codemap_view::CachingCodemapView;
-use super::IchHasher;
+use rustc_data_structures::stable_hasher::{StableHasher, StableHasherResult};
 
-pub struct StrictVersionHashVisitor<'a, 'hash: 'a, 'tcx: 'hash> {
+use util::caching_codemap_view::CachingCodemapView;
+// use super::IchHasher;
+
+pub struct StrictVersionHashVisitor<'a, 'hash: 'a, 'tcx: 'hash, W: StableHasherResult> {
     pub tcx: TyCtxt<'hash, 'tcx, 'tcx>,
-    pub st: &'a mut IchHasher,
+    pub st: &'a mut StableHasher<W>,
     // collect a deterministic hash of def-ids that we have seen
     def_path_hashes: &'a mut DefPathHashes<'hash, 'tcx>,
     hash_spans: bool,
@@ -45,8 +47,8 @@ pub struct StrictVersionHashVisitor<'a, 'hash: 'a, 'tcx: 'hash> {
     hash_bodies: bool,
 }
 
-impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
-    pub fn new(st: &'a mut IchHasher,
+impl<'a, 'hash, 'tcx, W: StableHasherResult> StrictVersionHashVisitor<'a, 'hash, 'tcx, W> {
+    pub fn new(st: &'a mut StableHasher<W>,
                tcx: TyCtxt<'hash, 'tcx, 'tcx>,
                def_path_hashes: &'a mut DefPathHashes<'hash, 'tcx>,
                codemap: &'a mut CachingCodemapView<'tcx>,
@@ -81,7 +83,7 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
     // Also, hashing filenames is expensive so we avoid doing it twice when the
     // span starts and ends in the same file, which is almost always the case.
     fn hash_span(&mut self, span: Span) {
-        debug!("hash_span: st={:?}", self.st);
+        // debug!("hash_span: st={:?}", self.st);
 
         // If this is not an empty or invalid span, we want to hash the last
         // position that belongs to it, as opposed to hashing the first
@@ -132,7 +134,7 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
     fn hash_discriminant<T>(&mut self, v: &T) {
         unsafe {
             let disr = ::std::intrinsics::discriminant_value(v);
-            debug!("hash_discriminant: disr={}, st={:?}", disr, self.st);
+            // debug!("hash_discriminant: disr={}, st={:?}", disr, self.st);
             disr.hash(self.st);
         }
     }
@@ -548,7 +550,7 @@ macro_rules! hash_span {
     });
 }
 
-impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'hash, 'tcx> {
+impl<'a, 'hash, 'tcx, W: StableHasherResult> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'hash, 'tcx, W> {
     fn nested_visit_map<'this>(&'this mut self) -> visit::NestedVisitorMap<'this, 'tcx> {
         if self.hash_bodies {
             visit::NestedVisitorMap::OnlyBodies(&self.tcx.map)
@@ -563,7 +565,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
                           _: &'tcx Generics,
                           _: NodeId,
                           span: Span) {
-        debug!("visit_variant_data: st={:?}", self.st);
+        //debug!("visit_variant_data: st={:?}", self.st);
         SawStructDef(name.as_str()).hash(self.st);
         hash_span!(self, span);
         visit::walk_struct_def(self, s);
@@ -573,32 +575,32 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
                      v: &'tcx Variant,
                      g: &'tcx Generics,
                      item_id: NodeId) {
-        debug!("visit_variant: st={:?}", self.st);
+        //debug!("visit_variant: st={:?}", self.st);
         SawVariant(v.node.disr_expr.is_some()).hash(self.st);
         hash_attrs!(self, &v.node.attrs);
         visit::walk_variant(self, v, g, item_id)
     }
 
     fn visit_name(&mut self, span: Span, name: Name) {
-        debug!("visit_name: st={:?}", self.st);
+        //debug!("visit_name: st={:?}", self.st);
         SawIdent(name.as_str()).hash(self.st);
         hash_span!(self, span);
     }
 
     fn visit_lifetime(&mut self, l: &'tcx Lifetime) {
-        debug!("visit_lifetime: st={:?}", self.st);
+        //debug!("visit_lifetime: st={:?}", self.st);
         SawLifetime.hash(self.st);
         visit::walk_lifetime(self, l);
     }
 
     fn visit_lifetime_def(&mut self, l: &'tcx LifetimeDef) {
-        debug!("visit_lifetime_def: st={:?}", self.st);
+        //debug!("visit_lifetime_def: st={:?}", self.st);
         SawLifetimeDef(l.bounds.len()).hash(self.st);
         visit::walk_lifetime_def(self, l);
     }
 
     fn visit_expr(&mut self, ex: &'tcx Expr) {
-        debug!("visit_expr: st={:?}", self.st);
+        //debug!("visit_expr: st={:?}", self.st);
         let (saw_expr, force_span) = saw_expr(&ex.node,
                                               self.overflow_checks_enabled);
         SawExpr(saw_expr).hash(self.st);
@@ -615,7 +617,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_stmt(&mut self, s: &'tcx Stmt) {
-        debug!("visit_stmt: st={:?}", self.st);
+        //debug!("visit_stmt: st={:?}", self.st);
 
         // We don't want to modify the hash for decls, because
         // they might be item decls (if they are local decls,
@@ -641,7 +643,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_foreign_item(&mut self, i: &'tcx ForeignItem) {
-        debug!("visit_foreign_item: st={:?}", self.st);
+        //debug!("visit_foreign_item: st={:?}", self.st);
 
         match i.node {
             ForeignItemFn(..) => {
@@ -660,7 +662,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_item(&mut self, i: &'tcx Item) {
-        debug!("visit_item: {:?} st={:?}", i, self.st);
+        //debug!("visit_item: {:?} st={:?}", i, self.st);
 
         self.maybe_enable_overflow_checks(&i.attrs);
 
@@ -671,14 +673,14 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_mod(&mut self, m: &'tcx Mod, span: Span, n: NodeId) {
-        debug!("visit_mod: st={:?}", self.st);
+        //debug!("visit_mod: st={:?}", self.st);
         SawMod.hash(self.st);
         hash_span!(self, span);
         visit::walk_mod(self, m, n)
     }
 
     fn visit_ty(&mut self, t: &'tcx Ty) {
-        debug!("visit_ty: st={:?}", self.st);
+        //debug!("visit_ty: st={:?}", self.st);
         SawTy(saw_ty(&t.node)).hash(self.st);
         hash_span!(self, t.span);
 
@@ -690,19 +692,19 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_generics(&mut self, g: &'tcx Generics) {
-        debug!("visit_generics: st={:?}", self.st);
+        //debug!("visit_generics: st={:?}", self.st);
         SawGenerics.hash(self.st);
         visit::walk_generics(self, g)
     }
 
     fn visit_fn_decl(&mut self, fd: &'tcx FnDecl) {
-        debug!("visit_fn_decl: st={:?}", self.st);
+        //debug!("visit_fn_decl: st={:?}", self.st);
         SawFnDecl(fd.variadic).hash(self.st);
         visit::walk_fn_decl(self, fd)
     }
 
     fn visit_trait_item(&mut self, ti: &'tcx TraitItem) {
-        debug!("visit_trait_item: st={:?}", self.st);
+        //debug!("visit_trait_item: st={:?}", self.st);
 
         self.maybe_enable_overflow_checks(&ti.attrs);
 
@@ -713,7 +715,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_impl_item(&mut self, ii: &'tcx ImplItem) {
-        debug!("visit_impl_item: st={:?}", self.st);
+        //debug!("visit_impl_item: st={:?}", self.st);
 
         self.maybe_enable_overflow_checks(&ii.attrs);
 
@@ -724,7 +726,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_struct_field(&mut self, s: &'tcx StructField) {
-        debug!("visit_struct_field: st={:?}", self.st);
+        //debug!("visit_struct_field: st={:?}", self.st);
         SawStructField.hash(self.st);
         hash_span!(self, s.span);
         hash_attrs!(self, &s.attrs);
@@ -732,14 +734,14 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_qpath(&mut self, qpath: &'tcx QPath, id: NodeId, span: Span) {
-        debug!("visit_qpath: st={:?}", self.st);
+        //debug!("visit_qpath: st={:?}", self.st);
         SawQPath.hash(self.st);
         self.hash_discriminant(qpath);
         visit::walk_qpath(self, qpath, id, span)
     }
 
     fn visit_path(&mut self, path: &'tcx Path, _: ast::NodeId) {
-        debug!("visit_path: st={:?}", self.st);
+        //debug!("visit_path: st={:?}", self.st);
         hash_span!(self, path.span);
         visit::walk_path(self, path)
     }
@@ -749,21 +751,21 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_block(&mut self, b: &'tcx Block) {
-        debug!("visit_block: st={:?}", self.st);
+        //debug!("visit_block: st={:?}", self.st);
         SawBlock.hash(self.st);
         hash_span!(self, b.span);
         visit::walk_block(self, b)
     }
 
     fn visit_pat(&mut self, p: &'tcx Pat) {
-        debug!("visit_pat: st={:?}", self.st);
+        //debug!("visit_pat: st={:?}", self.st);
         SawPat(saw_pat(&p.node)).hash(self.st);
         hash_span!(self, p.span);
         visit::walk_pat(self, p)
     }
 
     fn visit_local(&mut self, l: &'tcx Local) {
-        debug!("visit_local: st={:?}", self.st);
+        //debug!("visit_local: st={:?}", self.st);
         SawLocal.hash(self.st);
         hash_attrs!(self, &l.attrs);
         visit::walk_local(self, l)
@@ -771,38 +773,38 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_arm(&mut self, a: &'tcx Arm) {
-        debug!("visit_arm: st={:?}", self.st);
+        //debug!("visit_arm: st={:?}", self.st);
         SawArm.hash(self.st);
         hash_attrs!(self, &a.attrs);
         visit::walk_arm(self, a)
     }
 
     fn visit_id(&mut self, id: NodeId) {
-        debug!("visit_id: id={} st={:?}", id, self.st);
+        //debug!("visit_id: id={} st={:?}", id, self.st);
         self.hash_resolve(id)
     }
 
     fn visit_vis(&mut self, v: &'tcx Visibility) {
-        debug!("visit_vis: st={:?}", self.st);
+        //debug!("visit_vis: st={:?}", self.st);
         SawVis.hash(self.st);
         self.hash_discriminant(v);
         visit::walk_vis(self, v)
     }
 
     fn visit_associated_item_kind(&mut self, kind: &'tcx AssociatedItemKind) {
-        debug!("visit_associated_item_kind: st={:?}", self.st);
+        //debug!("visit_associated_item_kind: st={:?}", self.st);
         SawAssociatedItemKind(*kind).hash(self.st);
         visit::walk_associated_item_kind(self, kind);
     }
 
     fn visit_defaultness(&mut self, defaultness: &'tcx Defaultness) {
-        debug!("visit_associated_item_kind: st={:?}", self.st);
+        //debug!("visit_associated_item_kind: st={:?}", self.st);
         SawDefaultness(*defaultness).hash(self.st);
         visit::walk_defaultness(self, defaultness);
     }
 
     fn visit_where_predicate(&mut self, predicate: &'tcx WherePredicate) {
-        debug!("visit_where_predicate: st={:?}", self.st);
+        //debug!("visit_where_predicate: st={:?}", self.st);
         SawWherePredicate.hash(self.st);
         self.hash_discriminant(predicate);
         // Ignoring span. Any important nested components should be visited.
@@ -810,7 +812,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_ty_param_bound(&mut self, bounds: &'tcx TyParamBound) {
-        debug!("visit_ty_param_bound: st={:?}", self.st);
+        //debug!("visit_ty_param_bound: st={:?}", self.st);
         SawTyParamBound.hash(self.st);
         self.hash_discriminant(bounds);
         // The TraitBoundModifier in TraitTyParamBound will be hash in
@@ -819,27 +821,27 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_poly_trait_ref(&mut self, t: &'tcx PolyTraitRef, m: &'tcx TraitBoundModifier) {
-        debug!("visit_poly_trait_ref: st={:?}", self.st);
+        //debug!("visit_poly_trait_ref: st={:?}", self.st);
         SawPolyTraitRef.hash(self.st);
         m.hash(self.st);
         visit::walk_poly_trait_ref(self, t, m)
     }
 
     fn visit_path_segment(&mut self, path_span: Span, path_segment: &'tcx PathSegment) {
-        debug!("visit_path_segment: st={:?}", self.st);
+        //debug!("visit_path_segment: st={:?}", self.st);
         SawPathSegment.hash(self.st);
         visit::walk_path_segment(self, path_span, path_segment)
     }
 
     fn visit_path_parameters(&mut self, path_span: Span, path_parameters: &'tcx PathParameters) {
-        debug!("visit_path_parameters: st={:?}", self.st);
+        //debug!("visit_path_parameters: st={:?}", self.st);
         SawPathParameters.hash(self.st);
         self.hash_discriminant(path_parameters);
         visit::walk_path_parameters(self, path_span, path_parameters)
     }
 
     fn visit_assoc_type_binding(&mut self, type_binding: &'tcx TypeBinding) {
-        debug!("visit_assoc_type_binding: st={:?}", self.st);
+        //debug!("visit_assoc_type_binding: st={:?}", self.st);
         SawAssocTypeBinding.hash(self.st);
         hash_span!(self, type_binding.span);
         visit::walk_assoc_type_binding(self, type_binding)
@@ -852,7 +854,7 @@ impl<'a, 'hash, 'tcx> visit::Visitor<'tcx> for StrictVersionHashVisitor<'a, 'has
     }
 
     fn visit_macro_def(&mut self, macro_def: &'tcx MacroDef) {
-        debug!("visit_macro_def: st={:?}", self.st);
+        //debug!("visit_macro_def: st={:?}", self.st);
         SawMacroDef.hash(self.st);
         hash_attrs!(self, &macro_def.attrs);
         for tt in &macro_def.body {
@@ -871,7 +873,7 @@ pub enum DefHash {
     SawErr,
 }
 
-impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
+impl<'a, 'hash, 'tcx, W: StableHasherResult> StrictVersionHashVisitor<'a, 'hash, 'tcx, W> {
     fn hash_resolve(&mut self, id: ast::NodeId) {
         // Because whether or not a given id has an entry is dependent
         // solely on expr variant etc, we don't need to hash whether
@@ -879,7 +881,7 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
         // variant it is above when we visit the HIR).
 
         if let Some(traits) = self.tcx.trait_map.get(&id) {
-            debug!("hash_resolve: id={:?} traits={:?} st={:?}", id, traits, self.st);
+            // debug!("hash_resolve: id={:?} traits={:?} st={:?}", id, traits, self.st);
             traits.len().hash(self.st);
 
             // The ordering of the candidates is not fixed. So we hash
@@ -950,7 +952,7 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
     }
 
     fn hash_meta_item(&mut self, meta_item: &ast::MetaItem) {
-        debug!("hash_meta_item: st={:?}", self.st);
+        // debug!("hash_meta_item: st={:?}", self.st);
 
         // ignoring span information, it doesn't matter here
         self.hash_discriminant(&meta_item.node);
@@ -984,13 +986,13 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
     }
 
     pub fn hash_attributes(&mut self, attributes: &[ast::Attribute]) {
-        debug!("hash_attributes: st={:?}", self.st);
+        // debug!("hash_attributes: st={:?}", self.st);
         let indices = self.indices_sorted_by(attributes, |attr| attr.name());
 
         for i in indices {
             let attr = &attributes[i];
             if !attr.is_sugared_doc &&
-               !::rustc::ich::IGNORED_ATTRIBUTES.contains(&&*attr.value.name().as_str()) {
+               !super::IGNORED_ATTRIBUTES.contains(&&*attr.value.name().as_str()) {
                 SawAttribute(attr.style).hash(self.st);
                 self.hash_meta_item(&attr.value);
             }
