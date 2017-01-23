@@ -45,6 +45,7 @@ extern crate rustc_const_math;
 extern crate rustc_data_structures;
 extern crate rustc_llvm;
 extern crate rustc_i128;
+extern crate rustc_incremental;
 
 mod diagnostics;
 

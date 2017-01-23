@@ -393,7 +393,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     }
 }
 
-pub struct TypeIdHasher<'a, 'gcx: 'a+'tcx, 'tcx: 'a, W> {
+pub struct TypeIdHasher<'a, 'gcx, 'tcx, W>
+    where 'gcx: 'a+'tcx,
+          'tcx: 'a,
+          W: StableHasherResult {
     tcx: TyCtxt<'a, 'gcx, 'tcx>,
     state: StableHasher<W>,
 }

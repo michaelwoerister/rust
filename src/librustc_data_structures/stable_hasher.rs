@@ -42,7 +42,7 @@ fn write_signed_leb128_to_buf(buf: &mut [u8; 16], value: i64) -> usize {
 /// and allows for variable output lengths through its type
 /// parameter.
 #[derive(Debug)]
-pub struct StableHasher<W> {
+pub struct StableHasher<W: StableHasherResult> {
     state: Blake2bHasher,
     bytes_hashed: u64,
     width: PhantomData<W>,
@@ -81,7 +81,7 @@ impl StableHasherResult for u64 {
     }
 }
 
-impl<W> StableHasher<W> {
+impl<W: StableHasherResult> StableHasher<W> {
     #[inline]
     pub fn finalize(&mut self) -> &[u8] {
         self.state.finalize()
@@ -112,7 +112,7 @@ impl<W> StableHasher<W> {
 // For the non-u8 integer cases we leb128 encode them first. Because small
 // integers dominate, this significantly and cheaply reduces the number of
 // bytes hashed, which is good because blake2b is expensive.
-impl<W> Hasher for StableHasher<W> {
+impl<W: StableHasherResult> Hasher for StableHasher<W> {
     fn finish(&self) -> u64 {
         panic!("use StableHasher::finish instead");
     }
@@ -174,4 +174,10 @@ impl<W> Hasher for StableHasher<W> {
     fn write_isize(&mut self, i: isize) {
         self.write_ileb128(i as i64);
     }
+}
+
+pub trait HashStable<CTX> {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: CTX,
+                                          hasher: &mut StableHasher<W>);
 }
