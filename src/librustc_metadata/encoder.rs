@@ -50,7 +50,7 @@ use super::index_builder::{FromId, IndexBuilder, Untracked, EntryBuilder};
 pub struct EncodeContext<'a, 'tcx: 'a> {
     opaque: opaque::Encoder<'a>,
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
-    reexports: &'a def::ExportMap,
+    pub reexports: &'a def::ExportMap,
     link_meta: &'a LinkMeta,
     cstore: &'a cstore::CStore,
     exported_symbols: &'a NodeSet,
@@ -307,7 +307,7 @@ impl<'a, 'b, 'tcx> EntryBuilder<'a, 'b, 'tcx> {
         let def_id = tcx.map.local_def_id(id);
 
         let data = ModData {
-            reexports: match self.reexports.get(&id) {
+            reexports: match self.reexports().get(&id) {
                 Some(exports) if *vis == hir::Public => self.lazy_seq_ref(exports),
                 _ => LazySeq::empty(),
             },

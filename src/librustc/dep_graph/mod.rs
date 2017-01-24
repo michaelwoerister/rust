@@ -11,11 +11,13 @@
 pub mod debug;
 mod dep_node;
 mod dep_tracking_map;
+mod def_path_hash;
 mod edges;
 mod graph;
 mod query;
 mod raii;
 mod shadow;
+mod stable_hash_impls;
 mod thread;
 mod visit;
 
@@ -27,3 +29,5 @@ pub use self::graph::WorkProduct;
 pub use self::query::DepGraphQuery;
 pub use self::visit::visit_all_item_likes_in_krate;
 pub use self::raii::DepTask;
+pub use self::stable_hash_impls::StableHashingContext;
+pub use self::def_path_hash::DefPathHashes;

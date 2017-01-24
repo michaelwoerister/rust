@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
 use blake2b::Blake2bHasher;
@@ -178,6 +178,163 @@ impl<W: StableHasherResult> Hasher for StableHasher<W> {
 
 pub trait HashStable<CTX> {
     fn hash_stable<W: StableHasherResult>(&self,
-                                          ctx: CTX,
+                                          ctx: &mut CTX,
                                           hasher: &mut StableHasher<W>);
 }
+
+
+macro_rules! impl_stable_hash_via_hash {
+    ($t:ty) => (
+        impl<CTX> HashStable<CTX> for $t {
+            #[inline]
+            fn hash_stable<W: StableHasherResult>(&self,
+                                                  _: &mut CTX,
+                                                  hasher: &mut StableHasher<W>) {
+                ::std::hash::Hash::hash(self, hasher);
+            }
+        }
+    );
+
+    (T, $t:ty) => (
+        impl<T: ::std::hash::Hash, CTX> HashStable<CTX> for $t {
+            #[inline]
+            fn hash_stable<W: StableHasherResult>(&self,
+                                                  _: &mut CTX,
+                                                  hasher: &mut StableHasher<W>) {
+                ::std::hash::Hash::hash(self, hasher);
+            }
+        }
+    );
+}
+
+impl_stable_hash_via_hash!(i8);
+impl_stable_hash_via_hash!(i16);
+impl_stable_hash_via_hash!(i32);
+impl_stable_hash_via_hash!(i64);
+impl_stable_hash_via_hash!(isize);
+
+impl_stable_hash_via_hash!(u8);
+impl_stable_hash_via_hash!(u16);
+impl_stable_hash_via_hash!(u32);
+impl_stable_hash_via_hash!(u64);
+impl_stable_hash_via_hash!(usize);
+
+impl_stable_hash_via_hash!(char);
+impl_stable_hash_via_hash!(());
+
+impl_stable_hash_via_hash!(T, (T,));
+impl_stable_hash_via_hash!(T, (T,T));
+impl_stable_hash_via_hash!(T, (T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T,T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T,T,T,T,T));
+impl_stable_hash_via_hash!(T, (T,T,T,T,T,T,T,T,T));
+
+impl<T: HashStable<CTX>, CTX> HashStable<CTX> for [T] {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        self.len().hash_stable(ctx, hasher);
+        for item in self {
+            item.hash_stable(ctx, hasher);
+        }
+    }
+}
+
+impl<T: HashStable<CTX>, CTX> HashStable<CTX> for Vec<T> {
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        (&self[..]).hash_stable(ctx, hasher);
+    }
+}
+
+impl<CTX> HashStable<CTX> for str {
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          _: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        self.len().hash(hasher);
+        self.as_bytes().hash(hasher);
+    }
+}
+
+impl<CTX> HashStable<CTX> for bool {
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        (if *self { 1u8 } else { 0u8 }).hash_stable(ctx, hasher);
+    }
+}
+
+
+impl<T, CTX> HashStable<CTX> for Option<T>
+    where T: HashStable<CTX>
+{
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        if let Some(ref value) = *self {
+            1u8.hash_stable(ctx, hasher);
+            value.hash_stable(ctx, hasher);
+        } else {
+            0u8.hash_stable(ctx, hasher);
+        }
+    }
+}
+
+// #[macro_export]
+// macro_rules! impl_stable_hash {
+//     (<$CTX:path> for $struct_name:path { $(field:$ident),* } $(ignoring { $(ignored_field:$ident),* })*) => (
+//         impl HashStable<$CTX> for $struct_name {
+//             #[inline]
+//             fn hash_stable<W: StableHasherResult>(&self,
+//                                                   __ctx: &mut CTX,
+//                                                   __hasher: &mut StableHasher<W>) {
+//                 let $struct_name {
+//                     $(ref $field),*
+//                     $($ignored_field: _),*
+//                 } = *self;
+
+//                 $($field.hash_stable(__ctx, __hasher);)*
+//             }
+//         }
+//     )
+// }
+
+// #[macro_export]
+// macro_rules! enum_stable_hash {
+//     (impl<$p:lifetime> HashStable<$CTX:ty> for $enum_name:ty { $($variant:ident($($name:ident),*)),* }) => {
+//         impl<$p> HashStable<$CTX> for $enum_name {
+//             fn hash_stable<W: StableHasherResult>(&self,
+//                                                   __ctx: &mut CTX,
+//                                                   __hasher: &mut StableHasher<W>) {
+//                 ::std::hash::Hash::hash(&::std::mem::discriminant(self), __hasher);
+//                 match *self {
+//                     $(
+//                         $enum_name::$variant( $(ref $name),* ) => {
+//                             $($name.hash_stable(__ctx, __hasher);)*
+//                         }
+//                     )*
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// enum Abc {
+//     XXX(u32),
+//     YYY(u64),
+// }
+
+// enum_stable_hash! {
+//     impl<'a> HashStable<&'a u32> for Abc {
+//         XXX(x),
+//         YYY(y),
+//     }
+// }

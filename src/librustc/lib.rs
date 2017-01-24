@@ -38,6 +38,7 @@
 #![feature(slice_patterns)]
 #![feature(staged_api)]
 #![feature(unboxed_closures)]
+#![feature(discriminant_value)]
 
 extern crate arena;
 extern crate core;
@@ -47,7 +48,7 @@ extern crate graphviz;
 extern crate libc;
 extern crate rustc_llvm as llvm;
 extern crate rustc_back;
-extern crate rustc_data_structures;
+#[macro_use] extern crate rustc_data_structures;
 extern crate serialize;
 extern crate rustc_const_math;
 extern crate rustc_errors as errors;
