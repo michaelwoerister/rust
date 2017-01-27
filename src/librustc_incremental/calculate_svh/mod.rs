@@ -42,13 +42,11 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc::util::common::record_time;
 use rustc::session::config::DebugInfoLevel::NoDebugInfo;
 
-use self::def_path_hash::DefPathHashes;
+use rustc::ich::DefPathHashes;
+use rustc::util::caching_codemap_view::CachingCodemapView;
 use self::svh_visitor::StrictVersionHashVisitor;
-use self::caching_codemap_view::CachingCodemapView;
 
-mod def_path_hash;
 mod svh_visitor;
-mod caching_codemap_view;
 
 pub type IchHasher = StableHasher<Fingerprint>;
 

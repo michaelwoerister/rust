@@ -69,9 +69,11 @@ use syntax::ast;
 use std::ops::{Deref, DerefMut};
 
 use rustc_incremental::IchHasher;
-use rustc_data_structures::stable_hasher::HashStable;
+use rustc_data_structures::stable_hasher::{StableHasher, HashStable, StableHasherResult};
 use rustc_incremental::ich::Fingerprint;
 use rustc_serialize::Encodable;
+
+use rustc::ich::StableHashingContext;
 
 /// Builder that can encode new items, adding them into the index.
 /// Item encoding cannot be nested.
@@ -132,6 +134,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IndexBuilder<'a, 'b, 'tcx> {
                 tcx: tcx,
                 ecx: ecx,
                 hasher: IchHasher::new(),
+                hcx: StableHashingContext::new(tcx),
             };
 
             let entry = op(&mut entry_builder, data);
@@ -247,6 +250,7 @@ pub struct EntryBuilder<'a, 'b: 'a, 'tcx: 'b> {
     ecx: &'a mut EncodeContext<'b, 'tcx>,
     hasher: IchHasher,
     pub tcx: TyCtxt<'b, 'tcx, 'tcx>,
+    hcx: StableHashingContext<'b, 'tcx>,
 }
 
 impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
@@ -256,32 +260,32 @@ impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
     }
 
     pub fn lazy<T>(&mut self, value: &T) -> Lazy<T>
-        where T: Encodable+HashStable<TyCtxt<'b, 'tcx, 'tcx>>
+        where T: Encodable+HashStable<StableHashingContext<'b, 'tcx>>
     {
-        value.hash_stable(self.tcx, &mut self.hasher);
+        value.hash_stable(&mut self.hcx, &mut self.hasher);
         self.ecx.lazy(value)
     }
 
     pub fn lazy_seq<I, T>(&mut self, iter: I) -> LazySeq<T>
         where I: IntoIterator<Item = T>,
-              T: Encodable+HashStable<TyCtxt<'b, 'tcx, 'tcx>>
+              T: Encodable+HashStable<StableHashingContext<'b, 'tcx>>
     {
         let items: Vec<_> = iter.into_iter().collect();
-        items.len().hash_stable(self.tcx, &mut self.hasher);
+        items.len().hash_stable(&mut self.hcx, &mut self.hasher);
         for item in items {
-            item.hash_stable(self.tcx, &mut self.hasher);
+            item.hash_stable(&mut self.hcx, &mut self.hasher);
         }
         self.ecx.lazy_seq(items)
     }
 
     pub fn lazy_seq_ref<'x, I, T>(&mut self, iter: I) -> LazySeq<T>
         where I: IntoIterator<Item = &'x T>,
-              T: 'x + Encodable + HashStable<TyCtxt<'b, 'tcx, 'tcx>>
+              T: 'x + Encodable + HashStable<StableHashingContext<'b, 'tcx>>
     {
         let items: Vec<_> = iter.into_iter().collect();
-        items.len().hash_stable(self.tcx, &mut self.hasher);
+        items.len().hash_stable(&mut self.hcx, &mut self.hasher);
         for item in items {
-            item.hash_stable(self.tcx, &mut self.hasher);
+            item.hash_stable(&mut self.hcx, &mut self.hasher);
         }
         self.ecx.lazy_seq_ref(items)
     }
@@ -293,4 +297,50 @@ impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
     pub fn reexports(&self) -> &def::ExportMap {
         &self.ecx.reexports
     }
+}
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ClosureData<'tcx> {
+
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ClosureData {
+            ref kind,
+            ty: _ // lazy
+        } = *self;
+
+        kind.hash_stable(hcx, hasher);
+    }
+}
+
+impl_stable_hash_for!(enum ::schema::AssociatedContainer {
+    TraitRequired,
+    TraitWithDefault,
+    ImplDefault,
+    ImplFinal
+});
+
+impl_stable_hash_for!(struct ::schema::MethodData { fn_data, container, has_self });
+
+impl<'a, 'tcx, T> HashStable<StableHashingContext<'a, 'tcx>> for Lazy<T> {
+
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          _: &mut StableHashingContext<'a, 'tcx>,
+                                          _: &mut StableHasher<W>) {
+        // Do nothing!
+    }
+}
+
+impl<'a, 'tcx, T> HashStable<StableHashingContext<'a, 'tcx>> for LazySeq<T> {
+
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          _: &mut StableHashingContext<'a, 'tcx>,
+                                          _: &mut StableHasher<W>) {
+        // Do nothing!
+    }
+}
+
+pub struct FnData {
+    pub constness: hir::Constness,
+    pub arg_names: LazySeq<ast::Name>,
 }

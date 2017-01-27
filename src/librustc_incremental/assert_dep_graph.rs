@@ -58,7 +58,7 @@ use std::fs::File;
 use std::io::Write;
 use syntax::ast;
 use syntax_pos::Span;
-use {ATTR_IF_THIS_CHANGED, ATTR_THEN_THIS_WOULD_NEED};
+use rustc::ich::{ATTR_IF_THIS_CHANGED, ATTR_THEN_THIS_WOULD_NEED};
 
 pub fn assert_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     let _ignore = tcx.dep_graph.in_ignore();

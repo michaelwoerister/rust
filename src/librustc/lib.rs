@@ -72,6 +72,7 @@ pub mod diagnostics;
 pub mod cfg;
 pub mod dep_graph;
 pub mod hir;
+pub mod ich;
 pub mod infer;
 pub mod lint;
 
@@ -105,6 +106,7 @@ pub mod traits;
 pub mod ty;
 
 pub mod util {
+    pub mod caching_codemap_view;
     pub mod common;
     pub mod ppaux;
     pub mod nodemap;

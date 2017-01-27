@@ -29,20 +29,10 @@ use rustc::hir::intravisit as visit;
 use rustc::ty::TyCtxt;
 use rustc_data_structures::fnv;
 use std::hash::{Hash, Hasher};
+use rustc::ich::DefPathHashes;
 
-use super::def_path_hash::DefPathHashes;
-use super::caching_codemap_view::CachingCodemapView;
+use rustc::util::caching_codemap_view::CachingCodemapView;
 use super::IchHasher;
-
-const IGNORED_ATTRIBUTES: &'static [&'static str] = &[
-    "cfg",
-    ::ATTR_IF_THIS_CHANGED,
-    ::ATTR_THEN_THIS_WOULD_NEED,
-    ::ATTR_DIRTY,
-    ::ATTR_CLEAN,
-    ::ATTR_DIRTY_METADATA,
-    ::ATTR_CLEAN_METADATA
-];
 
 pub struct StrictVersionHashVisitor<'a, 'hash: 'a, 'tcx: 'hash> {
     pub tcx: TyCtxt<'hash, 'tcx, 'tcx>,
@@ -1000,7 +990,7 @@ impl<'a, 'hash, 'tcx> StrictVersionHashVisitor<'a, 'hash, 'tcx> {
         for i in indices {
             let attr = &attributes[i];
             if !attr.is_sugared_doc &&
-               !IGNORED_ATTRIBUTES.contains(&&*attr.value.name().as_str()) {
+               !::rustc::ich::IGNORED_ATTRIBUTES.contains(&&*attr.value.name().as_str()) {
                 SawAttribute(attr.style).hash(self.st);
                 self.hash_meta_item(&attr.value);
             }

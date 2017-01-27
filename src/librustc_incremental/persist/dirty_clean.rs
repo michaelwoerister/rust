@@ -52,7 +52,7 @@ use syntax_pos::Span;
 use rustc::ty::TyCtxt;
 use ich::Fingerprint;
 
-use {ATTR_DIRTY, ATTR_CLEAN, ATTR_DIRTY_METADATA, ATTR_CLEAN_METADATA};
+use rustc::ich::{ATTR_DIRTY, ATTR_CLEAN, ATTR_DIRTY_METADATA, ATTR_CLEAN_METADATA};
 
 const LABEL: &'static str = "label";
 const CFG: &'static str = "cfg";
