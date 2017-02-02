@@ -16,6 +16,7 @@ use rustc::middle::cstore::{LinkMeta, LinkagePreference, NativeLibrary};
 use rustc::hir::def;
 use rustc::hir::def_id::{CrateNum, CRATE_DEF_INDEX, DefIndex, DefId};
 use rustc::hir::map::definitions::DefPathTable;
+use rustc::ich;
 use rustc::middle::dependency_format::Linkage;
 use rustc::middle::lang_items;
 use rustc::mir;
@@ -47,6 +48,7 @@ use rustc_i128::{u128, i128};
 
 use super::index_builder::{FromId, IndexBuilder, Untracked, EntryBuilder};
 
+
 pub struct EncodeContext<'a, 'tcx: 'a> {
     opaque: opaque::Encoder<'a>,
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
@@ -58,6 +60,8 @@ pub struct EncodeContext<'a, 'tcx: 'a> {
     lazy_state: LazyState,
     type_shorthands: FxHashMap<Ty<'tcx>, usize>,
     predicate_shorthands: FxHashMap<ty::Predicate<'tcx>, usize>,
+
+    pub metadata_hashes: Vec<(DefIndex, ich::Fingerprint)>,
 }
 
 macro_rules! encoder_methods {
@@ -306,9 +310,11 @@ impl<'a, 'b, 'tcx> EntryBuilder<'a, 'b, 'tcx> {
         let tcx = self.tcx;
         let def_id = tcx.map.local_def_id(id);
 
+        let reexports: Option<Vec<def::Export>> = self.reexports().get(&id).map(|m| m.clone());
+
         let data = ModData {
-            reexports: match self.reexports().get(&id) {
-                Some(exports) if *vis == hir::Public => self.lazy_seq_ref(exports),
+            reexports: match reexports {
+                Some(ref exports) if *vis == hir::Public => self.lazy_seq_ref(exports),
                 _ => LazySeq::empty(),
             },
         };
@@ -1045,9 +1051,11 @@ impl<'a, 'b, 'tcx> EntryBuilder<'a, 'b, 'tcx> {
     fn encode_info_for_closure(&mut self, def_id: DefId) -> Entry<'tcx> {
         let tcx = self.tcx;
 
+        let closure_ty = tcx.erase_regions(&tcx.closure_tys.borrow()[&def_id]);
+
         let data = ClosureData {
             kind: tcx.closure_kind(def_id),
-            ty: self.lazy(&tcx.closure_tys.borrow()[&def_id]),
+            ty: self.lazy(&closure_ty),
         };
 
         Entry {
@@ -1087,9 +1095,9 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         visitor.index.into_items()
     }
 
-    fn encode_attributes(&mut self, attrs: &[ast::Attribute]) -> LazySeq<ast::Attribute> {
-        self.lazy_seq_ref(attrs)
-    }
+    // fn encode_attributes(&mut self, attrs: &[ast::Attribute]) -> LazySeq<ast::Attribute> {
+    //     self.lazy_seq_ref(attrs)
+    // }
 
     fn encode_crate_deps(&mut self) -> LazySeq<CrateDep> {
         fn get_ordered_deps(cstore: &cstore::CStore) -> Vec<(CrateNum, Rc<cstore::CrateMetadata>)> {
@@ -1372,14 +1380,14 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                  reexports: &def::ExportMap,
                                  link_meta: &LinkMeta,
                                  exported_symbols: &NodeSet)
-                                 -> Vec<u8> {
+                                 -> (Vec<u8>, Vec<(DefIndex, ich::Fingerprint)>) {
     let mut cursor = Cursor::new(vec![]);
     cursor.write_all(METADATA_HEADER).unwrap();
 
     // Will be filed with the root position after encoding everything.
     cursor.write_all(&[0, 0, 0, 0]).unwrap();
 
-    let root = {
+    let (root, metadata_hashes) = {
         let mut ecx = EncodeContext {
             opaque: opaque::Encoder::new(&mut cursor),
             tcx: tcx,
@@ -1390,6 +1398,7 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             lazy_state: LazyState::NoNode,
             type_shorthands: Default::default(),
             predicate_shorthands: Default::default(),
+            metadata_hashes: Vec::new(),
         };
 
         // Encode the rustc version string in a predictable location.
@@ -1397,7 +1406,7 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
         // Encode all the entries and extra information in the crate,
         // culminating in the `CrateRoot` which points to all of it.
-        ecx.encode_crate_root()
+        (ecx.encode_crate_root(), ecx.metadata_hashes)
     };
     let mut result = cursor.into_inner();
 
@@ -1409,7 +1418,7 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     result[header + 2] = (pos >> 8) as u8;
     result[header + 3] = (pos >> 0) as u8;
 
-    result
+    (result, metadata_hashes)
 }
 
 

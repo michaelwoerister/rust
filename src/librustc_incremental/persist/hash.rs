@@ -18,7 +18,7 @@ use rustc_serialize::Decodable;
 use rustc_serialize::opaque::Decoder;
 
 use IncrementalHashesMap;
-use ich::Fingerprint;
+use rustc::ich::Fingerprint;
 use super::data::*;
 use super::fs::*;
 use super::file_format;

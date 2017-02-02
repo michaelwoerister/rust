@@ -48,7 +48,7 @@ extern crate graphviz;
 extern crate libc;
 extern crate rustc_llvm as llvm;
 extern crate rustc_back;
-#[macro_use] extern crate rustc_data_structures;
+extern crate rustc_data_structures;
 extern crate serialize;
 extern crate rustc_const_math;
 extern crate rustc_errors as errors;

@@ -23,6 +23,7 @@ use rustc::hir::def_id::{CrateNum, DefId, DefIndex, CRATE_DEF_INDEX, LOCAL_CRATE
 
 use rustc::dep_graph::DepNode;
 use rustc::hir::map::{DefKey, DefPath, DisambiguatedDefPathData};
+use rustc::ich;
 use rustc::mir::Mir;
 use rustc::util::nodemap::{NodeSet, DefIdMap};
 use rustc_back::PanicStrategy;
@@ -505,7 +506,7 @@ impl<'tcx> CrateStore<'tcx> for cstore::CStore {
     fn encode_metadata<'a>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            reexports: &def::ExportMap,
                            link_meta: &LinkMeta,
-                           reachable: &NodeSet) -> Vec<u8>
+                           reachable: &NodeSet) -> (Vec<u8>, Vec<(DefIndex, ich::Fingerprint)>)
     {
         encoder::encode_metadata(tcx, self, reexports, link_meta, reachable)
     }

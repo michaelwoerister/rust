@@ -63,17 +63,15 @@ use rustc::dep_graph::DepNode;
 use rustc::hir;
 use rustc::hir::def;
 use rustc::hir::def_id::DefId;
+use rustc::ich::{IchHasher, StableHashingContext};
 use rustc::ty::TyCtxt;
 use syntax::ast;
 
 use std::ops::{Deref, DerefMut};
+use std::fmt::Debug;
 
-use rustc_incremental::IchHasher;
 use rustc_data_structures::stable_hasher::{StableHasher, HashStable, StableHasherResult};
-use rustc_incremental::ich::Fingerprint;
 use rustc_serialize::Encodable;
-
-use rustc::ich::StableHashingContext;
 
 /// Builder that can encode new items, adding them into the index.
 /// Item encoding cannot be nested.
@@ -126,23 +124,23 @@ impl<'a, 'b: 'a, 'tcx: 'b> IndexBuilder<'a, 'b, 'tcx> {
                             data: DATA)
         where DATA: DepGraphRead
     {
+        let _task = self.tcx.dep_graph.in_task(DepNode::MetaData(id));
+        data.read(self.tcx);
+
+        assert!(id.is_local());
         let tcx: TyCtxt<'b, 'tcx, 'tcx> = self.ecx.tcx;
-
-        let entry = {
-            let ecx: &'x mut EncodeContext<'b, 'tcx> = &mut *self.ecx;
-            let mut entry_builder = EntryBuilder {
-                tcx: tcx,
-                ecx: ecx,
-                hasher: IchHasher::new(),
-                hcx: StableHashingContext::new(tcx),
-            };
-
-            let entry = op(&mut entry_builder, data);
-            let _hash = entry_builder.finish();
-            entry
+        let ecx: &'x mut EncodeContext<'b, 'tcx> = &mut *self.ecx;
+        let mut entry_builder = EntryBuilder {
+            tcx: tcx,
+            ecx: ecx,
+            hasher: IchHasher::new(),
+            hcx: StableHashingContext::new(tcx),
         };
 
-        self.items.record(id, self.ecx.lazy(&entry));
+        let entry = op(&mut entry_builder, data);
+        let entry = entry_builder.ecx.lazy(&entry);
+        entry_builder.finish(id);
+        self.items.record(id, entry);
     }
 
     pub fn into_items(self) -> Index {
@@ -255,37 +253,41 @@ pub struct EntryBuilder<'a, 'b: 'a, 'tcx: 'b> {
 
 impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
 
-    pub fn finish(self) -> Fingerprint {
-        self.hasher.finish()
+    pub fn finish(self, def_id: DefId) {
+        let hash = self.hasher.finish();
+        self.ecx.metadata_hashes.push((def_id.index, hash));
     }
 
     pub fn lazy<T>(&mut self, value: &T) -> Lazy<T>
-        where T: Encodable+HashStable<StableHashingContext<'b, 'tcx>>
+        where T: Encodable + HashStable<StableHashingContext<'b, 'tcx>> + Debug
     {
         value.hash_stable(&mut self.hcx, &mut self.hasher);
+        debug!("state={:?} after hashing {:?}", self.hasher, value);
         self.ecx.lazy(value)
     }
 
     pub fn lazy_seq<I, T>(&mut self, iter: I) -> LazySeq<T>
         where I: IntoIterator<Item = T>,
-              T: Encodable+HashStable<StableHashingContext<'b, 'tcx>>
+              T: Encodable + HashStable<StableHashingContext<'b, 'tcx>> + Debug
     {
         let items: Vec<_> = iter.into_iter().collect();
         items.len().hash_stable(&mut self.hcx, &mut self.hasher);
-        for item in items {
+        for item in &items {
             item.hash_stable(&mut self.hcx, &mut self.hasher);
+            debug!("state={:?} after hashing {:?}", self.hasher, item);
         }
         self.ecx.lazy_seq(items)
     }
 
     pub fn lazy_seq_ref<'x, I, T>(&mut self, iter: I) -> LazySeq<T>
         where I: IntoIterator<Item = &'x T>,
-              T: 'x + Encodable + HashStable<StableHashingContext<'b, 'tcx>>
+              T: 'x + Encodable + HashStable<StableHashingContext<'b, 'tcx>>  + Debug
     {
         let items: Vec<_> = iter.into_iter().collect();
         items.len().hash_stable(&mut self.hcx, &mut self.hasher);
-        for item in items {
+        for item in &items {
             item.hash_stable(&mut self.hcx, &mut self.hasher);
+            debug!("state={:?} after hashing {:?}", self.hasher, item);
         }
         self.ecx.lazy_seq_ref(items)
     }
@@ -340,7 +342,28 @@ impl<'a, 'tcx, T> HashStable<StableHashingContext<'a, 'tcx>> for LazySeq<T> {
     }
 }
 
-pub struct FnData {
-    pub constness: hir::Constness,
-    pub arg_names: LazySeq<ast::Name>,
-}
+impl_stable_hash_for!(struct ::schema::FnData { constness, arg_names });
+
+impl_stable_hash_for!(struct ::schema::ModData { reexports });
+impl_stable_hash_for!(struct ::schema::MacroDef { body });
+impl_stable_hash_for!(struct ::schema::VariantData { ctor_kind, disr, struct_ctor });
+impl_stable_hash_for!(struct ::schema::TraitData<'tcx> {
+    unsafety,
+    paren_sugar,
+    has_default_impl,
+    super_predicates
+});
+
+impl_stable_hash_for!(struct ::schema::ImplData<'tcx> {
+    polarity,
+    parent_impl,
+    coerce_unsized_kind,
+    trait_ref
+});
+
+impl_stable_hash_for!(struct ::astencode::Ast<'tcx> {
+    body,
+    tables,
+    nested_bodies,
+    rvalue_promotable_to_static
+});

@@ -168,7 +168,9 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::Ty<'tcx> {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
+        // let ty = hcx.tcx.erase_regions(self);
         let type_hash = hcx.tcx.type_id_hash(*self);
+        debug!("hash_stable({:?}) = {}", *self, type_hash);
         type_hash.hash_stable(hcx, hasher);
     }
 }
@@ -202,9 +204,12 @@ fn hash_stable_nodemap<'a, 'tcx, V, W>(hcx: &mut StableHashingContext<'a, 'tcx>,
     where V: HashStable<StableHashingContext<'a, 'tcx>>,
           W: StableHasherResult,
 {
-    hash_stable_hashmap(hcx, hasher, map, |hcx, node_id| {
-        let def_id = hcx.tcx().map.local_def_id(node_id);
-        hcx.def_path_hash(def_id)
+    let min = map.keys().min().map(ast::NodeId::as_u32).unwrap_or(0u32);
+
+    hash_stable_hashmap(hcx, hasher, map, |_cx, node_id| {
+        // let def_id = hcx.tcx().map.local_def_id(node_id);
+        // hcx.def_path_hash(def_id)
+        node_id.as_u32() - min
     });
 }
 
@@ -219,61 +224,61 @@ fn hash_stable_nodemap<'a, 'tcx, V, W>(hcx: &mut StableHashingContext<'a, 'tcx>,
 //     });
 // }
 
-#[macro_export]
-macro_rules! __impl_stable_hash_field {
-    (DECL IGNORED) => (_);
-    (DECL $name:ident) => (ref $name);
-    (USE IGNORED $ctx:expr, $hasher:expr) => ({});
-    (USE $name:ident, $ctx:expr, $hasher:expr) => ($name.hash_stable($ctx, $hasher));
-}
+// #[macro_export]
+// macro_rules! __impl_stable_hash_field {
+//     (DECL IGNORED) => (_);
+//     (DECL $name:ident) => (ref $name);
+//     (USE IGNORED $ctx:expr, $hasher:expr) => ({});
+//     (USE $name:ident, $ctx:expr, $hasher:expr) => ($name.hash_stable($ctx, $hasher));
+// }
 
-#[macro_export]
-macro_rules! impl_stable_hash_for {
-    (enum $enum_name:path { $( $variant:ident $( ( $($arg:ident),* ) )* ),* }) => {
-        impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $enum_name {
-            fn hash_stable<W: StableHasherResult>(&self,
-                                                  __ctx: &mut StableHashingContext<'a, 'tcx>,
-                                                  __hasher: &mut StableHasher<W>) {
-                use $enum_name::*;
-                ::std::mem::discriminant(self).hash_stable(__ctx, __hasher);
+// #[macro_export]
+// macro_rules! impl_stable_hash_for {
+//     (enum $enum_name:path { $( $variant:ident $( ( $($arg:ident),* ) )* ),* }) => {
+//         impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $enum_name {
+//             fn hash_stable<W: StableHasherResult>(&self,
+//                                                   __ctx: &mut StableHashingContext<'a, 'tcx>,
+//                                                   __hasher: &mut StableHasher<W>) {
+//                 use $enum_name::*;
+//                 ::std::mem::discriminant(self).hash_stable(__ctx, __hasher);
 
-                match *self {
-                    $(
-                        $variant $( ( $( __impl_stable_hash_field!(DECL $arg) ),* ) )* => {
-                            $($( __impl_stable_hash_field!(USE $arg, __ctx, __hasher) );*)*
-                        }
-                    )*
-                }
-            }
-        }
-    };
-    (struct $struct_name:path { $($field:ident),* }) => {
-        impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $struct_name {
-            fn hash_stable<W: StableHasherResult>(&self,
-                                                  __ctx: &mut StableHashingContext<'a, 'tcx>,
-                                                  __hasher: &mut StableHasher<W>) {
-                let $struct_name {
-                    $(ref $field),*
-                } = *self;
+//                 match *self {
+//                     $(
+//                         $variant $( ( $( __impl_stable_hash_field!(DECL $arg) ),* ) )* => {
+//                             $($( __impl_stable_hash_field!(USE $arg, __ctx, __hasher) );*)*
+//                         }
+//                     )*
+//                 }
+//             }
+//         }
+//     };
+//     (struct $struct_name:path { $($field:ident),* }) => {
+//         impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $struct_name {
+//             fn hash_stable<W: StableHasherResult>(&self,
+//                                                   __ctx: &mut StableHashingContext<'a, 'tcx>,
+//                                                   __hasher: &mut StableHasher<W>) {
+//                 let $struct_name {
+//                     $(ref $field),*
+//                 } = *self;
 
-                $( $field.hash_stable(__ctx, __hasher));*
-            }
-        }
-    };
-    (tuple_struct $struct_name:path { $($field:ident),* }) => {
-        impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $struct_name {
-            fn hash_stable<W: StableHasherResult>(&self,
-                                                  __ctx: &mut StableHashingContext<'a, 'tcx>,
-                                                  __hasher: &mut StableHasher<W>) {
-                let $struct_name (
-                    $(ref $field),*
-                ) = *self;
+//                 $( $field.hash_stable(__ctx, __hasher));*
+//             }
+//         }
+//     };
+//     (tuple_struct $struct_name:path { $($field:ident),* }) => {
+//         impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for $struct_name {
+//             fn hash_stable<W: StableHasherResult>(&self,
+//                                                   __ctx: &mut StableHashingContext<'a, 'tcx>,
+//                                                   __hasher: &mut StableHasher<W>) {
+//                 let $struct_name (
+//                     $(ref $field),*
+//                 ) = *self;
 
-                $( $field.hash_stable(__ctx, __hasher));*
-            }
-        }
-    };
-}
+//                 $( $field.hash_stable(__ctx, __hasher));*
+//             }
+//         }
+//     };
+// }
 
 impl_stable_hash_for!(enum hir::PrimTy {
     TyInt(t),
@@ -341,21 +346,26 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::Region {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
+        mem::discriminant(self).hash_stable(hcx, hasher);
         match *self {
-            ty::ReErased => {
-                0u32.hash_stable(hcx, hasher);
-            }
+            ty::ReEmpty |
+            ty::ReStatic |
+            ty::ReErased => {}
             ty::ReLateBound(db, ty::BrAnon(i)) => {
                 assert!(db.depth > 0);
                 db.depth.hash_stable(hcx, hasher);
                 i.hash_stable(hcx, hasher);
             }
-            ty::ReStatic |
-            ty::ReEmpty |
-            ty::ReEarlyBound(..) |
+            ty::ReEarlyBound(ty::EarlyBoundRegion { index, name }) => {
+                index.hash_stable(hcx, hasher);
+                name.hash_stable(hcx, hasher);
+            }
+            ty::ReScope(..) => {
+                // FIXME: Verify that this is true.
+                // We don't do anything here, the contents should not matter.
+            }
             ty::ReLateBound(..) |
             ty::ReFree(..) |
-            ty::ReScope(..) |
             ty::ReVar(..) |
             ty::ReSkolemized(..) => {
                 bug!("HashStable::hash_stable: unexpected region {:?}", self)
@@ -437,12 +447,17 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::UpvarCapture<'
 impl_stable_hash_for!(struct ty::FnSig<'tcx> { inputs_and_output, variadic });
 
 impl<'a, 'tcx, T> HashStable<StableHashingContext<'a, 'tcx>> for ty::Binder<T>
-    where T: HashStable<StableHashingContext<'a, 'tcx>>
+    where T: HashStable<StableHashingContext<'a, 'tcx>> + ty::fold::TypeFoldable<'tcx>
 {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
-        self.0.hash_stable(hcx, hasher);
+        // self.0.hash_stable(hcx, hasher);
+        // Anonymize late-bound regions so that, for example:
+        // `for<'a, b> fn(&'a &'b T)` and `for<'a, b> fn(&'b &'a T)`
+        // result in the same TypeId (the two types are equivalent).
+        // hcx.tcx.erase_regions(self).0.hash_stable(hcx, hasher);
+        hcx.tcx.anonymize_late_bound_regions(self).0.hash_stable(hcx, hasher);
     }
 }
 
@@ -475,6 +490,11 @@ impl_stable_hash_for!(struct ty::ClosureTy<'tcx> { unsafety, abi, sig });
 impl_stable_hash_for!(enum ty::ClosureKind { Fn, FnMut, FnOnce });
 
 
+impl<'tcx> ::std::fmt::Debug for ty::Tables<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "ty::Tables")
+    }
+}
 
 impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::Tables<'tcx> {
     fn hash_stable<W: StableHasherResult>(&self,
@@ -536,7 +556,59 @@ impl_stable_hash_for!(struct ty::TraitRef<'tcx> { def_id, substs });
 impl_stable_hash_for!(struct ty::TraitPredicate<'tcx> { trait_ref });
 impl_stable_hash_for!(tuple_struct ty::EquatePredicate<'tcx> { t1, t2 });
 
+impl<'a, 'tcx, A, B> HashStable<StableHashingContext<'a, 'tcx>> for ty::OutlivesPredicate<A, B>
+    where A: HashStable<StableHashingContext<'a, 'tcx>>,
+          B: HashStable<StableHashingContext<'a, 'tcx>>,
+{
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ty::OutlivesPredicate(ref a, ref b) = *self;
+        a.hash_stable(hcx, hasher);
+        b.hash_stable(hcx, hasher);
+    }
+}
 
+impl_stable_hash_for!(struct ty::ProjectionPredicate<'tcx> { projection_ty, ty });
+impl_stable_hash_for!(struct ty::ProjectionTy<'tcx> { trait_ref, item_name });
+
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::Predicate<'tcx> {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        mem::discriminant(self).hash_stable(hcx, hasher);
+        match *self {
+            ty::Predicate::Trait(ref pred) => {
+                pred.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::Equate(ref pred) => {
+                pred.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::RegionOutlives(ref pred) => {
+                pred.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::TypeOutlives(ref pred) => {
+                pred.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::Projection(ref pred) => {
+                pred.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::WellFormed(ty) => {
+                ty.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::ObjectSafe(def_id) => {
+                def_id.hash_stable(hcx, hasher);
+            }
+            ty::Predicate::ClosureKind(def_id, closure_kind) => {
+                def_id.hash_stable(hcx, hasher);
+                closure_kind.hash_stable(hcx, hasher);
+            }
+        }
+    }
+}
+
+impl_stable_hash_for!(struct ::syntax::attr::Deprecation { since, note });
 impl_stable_hash_for!(struct ::syntax::attr::Stability { level, feature, rustc_depr });
 
 impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ::syntax::attr::StabilityLevel {
@@ -1158,4 +1230,147 @@ fn indices_sorted_by<T, K, F>(items: &[T], get_key: F) -> Vec<usize>
     indices.extend(0 .. items.len());
     indices.sort_by_key(|index| get_key(&items[*index]));
     indices
+}
+
+
+impl_stable_hash_for!(enum ::hir::Constness {
+    Const,
+    NotConst
+});
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ::hir::def_id::DefIndex {
+
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        DefId::local(*self).hash_stable(hcx, hasher);
+    }
+}
+
+impl_stable_hash_for!(struct ty::GenericPredicates<'tcx> {
+    parent,
+    predicates
+});
+
+impl_stable_hash_for!(enum hir::ImplPolarity {
+    Positive,
+    Negative
+});
+
+impl_stable_hash_for!(struct hir::def::Export { name, def });
+
+impl_stable_hash_for!(enum ty::Variance {
+    Covariant,
+    Invariant,
+    Contravariant,
+    Bivariant
+});
+
+impl_stable_hash_for!(enum ty::adjustment::CustomCoerceUnsized {
+    Struct(index)
+});
+
+impl_stable_hash_for!(struct ty::Generics<'tcx> {
+    parent,
+    parent_regions,
+    parent_types,
+    regions,
+    types,
+    has_self
+});
+
+// impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::Generics<'tcx> {
+//     fn hash_stable<W: StableHasherResult>(&self,
+//                                           hcx: &mut StableHashingContext<'a, 'tcx>,
+//                                           hasher: &mut StableHasher<W>) {
+//         let generics = hcx.tcx.erase_regions(self);
+
+//         let ty::Generics {
+//             parent,
+//             ref parent_regions,
+//             ref parent_types,
+//             ref regions,
+//             ref types,
+//             has_self
+//         } = generics;
+
+//         parent.hash_stable(hcx, hasher);
+//         parent_regions.hash_stable(hcx, hasher);
+//         parent_types.hash_stable(hcx, hasher);
+//         regions.hash_stable(hcx, hasher);
+//         types.hash_stable(hcx, hasher);
+//         has_self.hash_stable(hcx, hasher);
+//     }
+// }
+
+impl_stable_hash_for!(struct ty::RegionParameterDef<'tcx> {
+    name,
+    def_id,
+    index,
+    bounds,
+    pure_wrt_drop
+});
+
+impl_stable_hash_for!(struct ty::TypeParameterDef<'tcx> {
+    name,
+    def_id,
+    index,
+    default_def_id,
+    default,
+    object_lifetime_default,
+    pure_wrt_drop
+});
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::ObjectLifetimeDefault<'tcx> {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        mem::discriminant(self).hash_stable(hcx, hasher);
+        match *self {
+            ty::ObjectLifetimeDefault::Ambiguous |
+            ty::ObjectLifetimeDefault::BaseDefault => {}
+            ty::ObjectLifetimeDefault::Specific(region) => {
+                region.hash_stable(hcx, hasher);
+            }
+        }
+    }
+}
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for hir::Body {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        // pub struct Body {
+        //     pub arguments: HirVec<Arg>,
+        //     pub value: Expr
+        // }
+
+        self.arguments.len().hash_stable(hcx, hasher);
+
+        let StableHashingContext {
+            tcx,
+            ref mut def_path_hashes,
+            ref mut codemap,
+            hash_spans,
+            ..
+        } = *hcx;
+
+        let mut hir_hasher = super::StrictVersionHashVisitor::new(hasher,
+               tcx,
+               def_path_hashes,
+               codemap,
+               hash_spans,
+               true);
+
+        // TODO: Arg
+        // for arg in self.arguments.iter() {
+        //     hir
+        // }
+
+        let expr: &'tcx hir::Expr = unsafe {
+            mem::transmute(&self.value)
+        };
+
+        hir::intravisit::Visitor::visit_expr(&mut hir_hasher, &expr);
+    }
 }

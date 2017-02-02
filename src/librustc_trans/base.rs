@@ -34,7 +34,8 @@ use back::linker::LinkerInfo;
 use back::symbol_export::{self, ExportedSymbols};
 use llvm::{Linkage, ValueRef, Vector, get_param};
 use llvm;
-use rustc::hir::def_id::{DefId, LOCAL_CRATE};
+use rustc::hir::def_id::{DefId, DefIndex, LOCAL_CRATE};
+use rustc::ich;
 use middle::lang_items::StartFnLangItem;
 use rustc::ty::subst::Substs;
 use rustc::mir::tcx::LvalueTy;
@@ -784,7 +785,8 @@ fn contains_null(s: &str) -> bool {
 }
 
 fn write_metadata(cx: &SharedCrateContext,
-                  exported_symbols: &NodeSet) -> Vec<u8> {
+                  exported_symbols: &NodeSet)
+                  -> (Vec<u8>, Vec<(DefIndex, ich::Fingerprint)>) {
     use flate;
 
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -808,7 +810,7 @@ fn write_metadata(cx: &SharedCrateContext,
     }).max().unwrap();
 
     if kind == MetadataKind::None {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
     let cstore = &cx.tcx().sess.cstore;
@@ -822,7 +824,7 @@ fn write_metadata(cx: &SharedCrateContext,
 
     assert!(kind == MetadataKind::Compressed);
     let mut compressed = cstore.metadata_encoding_version().to_vec();
-    compressed.extend_from_slice(&flate::deflate_bytes(&metadata));
+    compressed.extend_from_slice(&flate::deflate_bytes(&metadata.0));
 
     let llmeta = C_bytes_in_context(cx.metadata_llcx(), &compressed[..]);
     let llconst = C_struct_in_context(cx.metadata_llcx(), &[llmeta], false);
@@ -1131,7 +1133,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                              exported_symbols,
                                              check_overflow);
     // Translate the metadata.
-    let metadata = time(tcx.sess.time_passes(), "write metadata", || {
+    let (metadata, metadata_hashes) = time(tcx.sess.time_passes(), "write metadata", || {
         write_metadata(&shared_ccx, shared_ccx.exported_symbols())
     });
 
@@ -1159,6 +1161,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             no_builtins: no_builtins,
             linker_info: linker_info,
             windows_subsystem: None,
+            metadata_hashes: metadata_hashes,
         };
     }
 
@@ -1315,6 +1318,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         no_builtins: no_builtins,
         linker_info: linker_info,
         windows_subsystem: windows_subsystem,
+        metadata_hashes: metadata_hashes,
     }
 }
 

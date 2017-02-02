@@ -2,9 +2,13 @@
 
 mod def_path_hash;
 mod hashing_context;
+mod fingerprint;
+mod hir_hasher;
 
 pub use self::def_path_hash::DefPathHashes;
 pub use self::hashing_context::StableHashingContext;
+pub use self::fingerprint::Fingerprint;
+pub use self::hir_hasher::StrictVersionHashVisitor;
 
 pub const ATTR_DIRTY: &'static str = "rustc_dirty";
 pub const ATTR_CLEAN: &'static str = "rustc_clean";
@@ -22,3 +26,5 @@ pub const IGNORED_ATTRIBUTES: &'static [&'static str] = &[
     ATTR_DIRTY_METADATA,
     ATTR_CLEAN_METADATA
 ];
+
+pub type IchHasher = ::rustc_data_structures::stable_hasher::StableHasher<Fingerprint>;

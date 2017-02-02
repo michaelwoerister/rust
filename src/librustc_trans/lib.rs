@@ -39,6 +39,8 @@
 #![feature(conservative_impl_trait)]
 
 use rustc::dep_graph::WorkProduct;
+use rustc::ich;
+use rustc::hir::def_id::DefIndex;
 
 extern crate flate;
 extern crate libc;
@@ -172,7 +174,8 @@ pub struct CrateTranslation {
     pub exported_symbols: back::symbol_export::ExportedSymbols,
     pub no_builtins: bool,
     pub windows_subsystem: Option<String>,
-    pub linker_info: back::linker::LinkerInfo
+    pub linker_info: back::linker::LinkerInfo,
+    pub metadata_hashes: Vec<(DefIndex, ich::Fingerprint)>,
 }
 
 __build_diagnostic_array! { librustc_trans, DIAGNOSTICS }

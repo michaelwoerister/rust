@@ -41,14 +41,20 @@ fn write_signed_leb128_to_buf(buf: &mut [u8; 16], value: i64) -> usize {
 /// This hasher currently always uses the stable Blake2b algorithm
 /// and allows for variable output lengths through its type
 /// parameter.
-#[derive(Debug)]
 pub struct StableHasher<W: StableHasherResult> {
     state: Blake2bHasher,
     bytes_hashed: u64,
     width: PhantomData<W>,
+    fnv_hash: u64,
 }
 
-pub trait StableHasherResult: Sized {
+impl<W: StableHasherResult> ::std::fmt::Debug for StableHasher<W> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "{}", self.fnv_hash)
+    }
+}
+
+pub trait StableHasherResult: Sized + 'static {
     fn finish(hasher: StableHasher<Self>) -> Self;
 }
 
@@ -58,6 +64,7 @@ impl<W: StableHasherResult> StableHasher<W> {
             state: Blake2bHasher::new(mem::size_of::<W>(), &[]),
             bytes_hashed: 0,
             width: PhantomData,
+            fnv_hash: 0xcbf29ce484222325,
         }
     }
 
@@ -97,6 +104,7 @@ impl<W: StableHasherResult> StableHasher<W> {
         let mut buf = [0; 16];
         let len = write_unsigned_leb128_to_buf(&mut buf, value);
         self.state.write(&buf[..len]);
+        self.fnv_write(&buf[..len]);
         self.bytes_hashed += len as u64;
     }
 
@@ -105,7 +113,16 @@ impl<W: StableHasherResult> StableHasher<W> {
         let mut buf = [0; 16];
         let len = write_signed_leb128_to_buf(&mut buf, value);
         self.state.write(&buf[..len]);
+        self.fnv_write(&buf[..len]);
         self.bytes_hashed += len as u64;
+    }
+
+    fn fnv_write(&mut self, bytes: &[u8]) {
+        const MAGIC_PRIME: u64 = 0x00000100000001b3;
+
+        for &byte in bytes {
+            self.fnv_hash = (self.fnv_hash ^ byte as u64).wrapping_mul(MAGIC_PRIME);
+        }
     }
 }
 
@@ -120,12 +137,14 @@ impl<W: StableHasherResult> Hasher for StableHasher<W> {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         self.state.write(bytes);
+        self.fnv_write(bytes);
         self.bytes_hashed += bytes.len() as u64;
     }
 
     #[inline]
     fn write_u8(&mut self, i: u8) {
         self.state.write_u8(i);
+        self.fnv_write(&[i]);
         self.bytes_hashed += 1;
     }
 
@@ -152,6 +171,7 @@ impl<W: StableHasherResult> Hasher for StableHasher<W> {
     #[inline]
     fn write_i8(&mut self, i: i8) {
         self.state.write_i8(i);
+        self.fnv_write(&[i as u8]);
         self.bytes_hashed += 1;
     }
 
@@ -218,6 +238,11 @@ impl_stable_hash_via_hash!(u16);
 impl_stable_hash_via_hash!(u32);
 impl_stable_hash_via_hash!(u64);
 impl_stable_hash_via_hash!(usize);
+
+#[cfg(not(stage0))]
+impl_stable_hash_via_hash!(u128);
+#[cfg(not(stage0))]
+impl_stable_hash_via_hash!(i128);
 
 impl_stable_hash_via_hash!(char);
 impl_stable_hash_via_hash!(());
@@ -359,53 +384,17 @@ impl<T, CTX> HashStable<CTX> for ::std::collections::BTreeSet<T>
     }
 }
 
-// #[macro_export]
-// macro_rules! impl_stable_hash {
-//     (<$CTX:path> for $struct_name:path { $(field:$ident),* } $(ignoring { $(ignored_field:$ident),* })*) => (
-//         impl HashStable<$CTX> for $struct_name {
-//             #[inline]
-//             fn hash_stable<W: StableHasherResult>(&self,
-//                                                   __ctx: &mut CTX,
-//                                                   __hasher: &mut StableHasher<W>) {
-//                 let $struct_name {
-//                     $(ref $field),*
-//                     $($ignored_field: _),*
-//                 } = *self;
+impl<I: ::indexed_vec::Idx, T, CTX> HashStable<CTX> for ::indexed_vec::IndexVec<I, T>
+    where T: HashStable<CTX>,
+{
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        self.len().hash_stable(ctx, hasher);
+        for v in &self.raw {
+            v.hash_stable(ctx, hasher);
+        }
+    }
+}
 
-//                 $($field.hash_stable(__ctx, __hasher);)*
-//             }
-//         }
-//     )
-// }
-
-// #[macro_export]
-// macro_rules! enum_stable_hash {
-//     (impl<$p:lifetime> HashStable<$CTX:ty> for $enum_name:ty { $($variant:ident($($name:ident),*)),* }) => {
-//         impl<$p> HashStable<$CTX> for $enum_name {
-//             fn hash_stable<W: StableHasherResult>(&self,
-//                                                   __ctx: &mut CTX,
-//                                                   __hasher: &mut StableHasher<W>) {
-//                 ::std::hash::Hash::hash(&::std::mem::discriminant(self), __hasher);
-//                 match *self {
-//                     $(
-//                         $enum_name::$variant( $(ref $name),* ) => {
-//                             $($name.hash_stable(__ctx, __hasher);)*
-//                         }
-//                     )*
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// enum Abc {
-//     XXX(u32),
-//     YYY(u64),
-// }
-
-// enum_stable_hash! {
-//     impl<'a> HashStable<&'a u32> for Abc {
-//         XXX(x),
-//         YYY(y),
-//     }
-// }

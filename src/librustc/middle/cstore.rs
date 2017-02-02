@@ -27,6 +27,7 @@ use hir::def_id::{CrateNum, DefId, DefIndex};
 use hir::map as hir_map;
 use hir::map::definitions::{Definitions, DefKey, DisambiguatedDefPathData};
 use hir::svh::Svh;
+use ich;
 use middle::lang_items;
 use ty::{self, Ty, TyCtxt};
 use mir::Mir;
@@ -274,7 +275,8 @@ pub trait CrateStore<'tcx> {
     fn encode_metadata<'a>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            reexports: &def::ExportMap,
                            link_meta: &LinkMeta,
-                           reachable: &NodeSet) -> Vec<u8>;
+                           reachable: &NodeSet)
+                           -> (Vec<u8>, Vec<(DefIndex, ich::Fingerprint)>);
     fn metadata_encoding_version(&self) -> &[u8];
 }
 
@@ -450,7 +452,10 @@ impl<'tcx> CrateStore<'tcx> for DummyCrateStore {
     fn encode_metadata<'a>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>,
                            reexports: &def::ExportMap,
                            link_meta: &LinkMeta,
-                           reachable: &NodeSet) -> Vec<u8> { vec![] }
+                           reachable: &NodeSet)
+                           -> (Vec<u8>, Vec<(DefIndex, ich::Fingerprint)>) {
+        (vec![], vec![])
+    }
     fn metadata_encoding_version(&self) -> &[u8] { bug!("metadata_encoding_version") }
 }
 

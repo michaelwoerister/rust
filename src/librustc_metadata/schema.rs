@@ -252,16 +252,37 @@ pub struct ModData {
     pub reexports: LazySeq<def::Export>,
 }
 
+impl ::std::fmt::Debug for ModData {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::ModData")
+    }
+}
+
+
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct MacroDef {
     pub body: String,
 }
+
+impl ::std::fmt::Debug for MacroDef {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::MacroDef")
+    }
+}
+
 
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct FnData {
     pub constness: hir::Constness,
     pub arg_names: LazySeq<ast::Name>,
 }
+
+impl ::std::fmt::Debug for FnData {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::FnData")
+    }
+}
+
 
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct VariantData {
@@ -273,12 +294,24 @@ pub struct VariantData {
     pub struct_ctor: Option<DefIndex>,
 }
 
+impl ::std::fmt::Debug for VariantData {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::VariantData")
+    }
+}
+
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct TraitData<'tcx> {
     pub unsafety: hir::Unsafety,
     pub paren_sugar: bool,
     pub has_default_impl: bool,
     pub super_predicates: Lazy<ty::GenericPredicates<'tcx>>,
+}
+
+impl<'tcx> ::std::fmt::Debug for TraitData<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::TraitData")
+    }
 }
 
 #[derive(RustcEncodable, RustcDecodable)]
@@ -289,10 +322,16 @@ pub struct ImplData<'tcx> {
     pub trait_ref: Option<Lazy<ty::TraitRef<'tcx>>>,
 }
 
+impl<'tcx> ::std::fmt::Debug for ImplData<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::ImplData")
+    }
+}
+
 /// Describes whether the container of an associated item
 /// is a trait or an impl and whether, in a trait, it has
 /// a default, or an in impl, whether it's marked "default".
-#[derive(Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, RustcEncodable, RustcDecodable, Debug)]
 pub enum AssociatedContainer {
     TraitRequired,
     TraitWithDefault,
@@ -334,10 +373,20 @@ pub struct MethodData {
     pub has_self: bool,
 }
 
+impl ::std::fmt::Debug for MethodData {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::MethodData")
+    }
+}
+
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct ClosureData<'tcx> {
     pub kind: ty::ClosureKind,
     pub ty: Lazy<ty::ClosureTy<'tcx>>,
 }
 
-
+impl<'tcx> ::std::fmt::Debug for ClosureData<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "schema::ClosureData")
+    }
+}

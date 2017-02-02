@@ -495,26 +495,55 @@ impl<'a, 'gcx, 'tcx, W> TypeVisitor<'tcx> for TypeIdHasher<'a, 'gcx, 'tcx, W>
     }
 
     fn visit_region(&mut self, r: &'tcx ty::Region) -> bool {
+        self.hash_discriminant_u8(r);
         match *r {
-            ty::ReErased => {
-                self.hash::<u32>(0);
-            }
+            ty::ReEmpty |
+            ty::ReStatic |
+            ty::ReErased => {}
             ty::ReLateBound(db, ty::BrAnon(i)) => {
                 assert!(db.depth > 0);
-                self.hash::<u32>(db.depth);
+                // db.depth.hash_stable(hcx, hasher);
+                self.hash(db.depth);
                 self.hash(i);
+                // i.hash_stable(hcx, hasher);
             }
-            ty::ReStatic |
-            ty::ReEmpty |
-            ty::ReEarlyBound(..) |
+            ty::ReEarlyBound(ty::EarlyBoundRegion { index, name }) => {
+                // index.hash_stable(hcx, hasher);
+                self.hash(index);
+                self.hash(name.as_str());
+            }
+            ty::ReScope(..) => {
+                // FIXME: Verify that this is true.
+                // We don't do anything here, the contents should not matter.
+            }
             ty::ReLateBound(..) |
             ty::ReFree(..) |
-            ty::ReScope(..) |
             ty::ReVar(..) |
             ty::ReSkolemized(..) => {
                 bug!("TypeIdHasher: unexpected region {:?}", r)
+                // bug!("HashStable::hash_stable: unexpected region {:?}", self)
             }
         }
+        // match *r {
+        //     ty::ReErased => {
+        //         self.hash::<u32>(0);
+        //     }
+        //     ty::ReLateBound(db, ty::BrAnon(i)) => {
+        //         assert!(db.depth > 0);
+        //         self.hash::<u32>(db.depth);
+        //         self.hash(i);
+        //     }
+        //     ty::ReStatic |
+        //     ty::ReEmpty |
+        //     ty::ReEarlyBound(..) |
+        //     ty::ReLateBound(..) |
+        //     ty::ReFree(..) |
+        //     ty::ReScope(..) |
+        //     ty::ReVar(..) |
+        //     ty::ReSkolemized(..) => {
+        //         bug!("TypeIdHasher: unexpected region {:?}", r)
+        //     }
+        // }
         false
     }
 

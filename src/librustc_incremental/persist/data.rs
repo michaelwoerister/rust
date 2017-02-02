@@ -14,7 +14,7 @@ use rustc::dep_graph::{DepNode, WorkProduct, WorkProductId};
 use rustc::hir::def_id::DefIndex;
 use std::sync::Arc;
 use rustc_data_structures::fx::FxHashMap;
-use ich::Fingerprint;
+use rustc::ich::Fingerprint;
 
 use super::directory::DefPathIndex;
 

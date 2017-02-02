@@ -10,7 +10,7 @@
 
 use rustc::hir::intravisit::{Visitor, NestedVisitorMap};
 
-use encoder::EncodeContext;
+// use encoder::EncodeContext;
 use schema::*;
 
 use rustc::hir;
@@ -26,6 +26,12 @@ pub struct Ast<'tcx> {
     pub rvalue_promotable_to_static: bool,
 }
 
+impl<'tcx> ::std::fmt::Debug for Ast<'tcx> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "astencode::Ast")
+    }
+}
+
 // impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
 impl<'a, 'b: 'a, 'tcx: 'b> ::index_builder::EntryBuilder<'a, 'b, 'tcx> {
     pub fn encode_body(&mut self, body_id: hir::BodyId) -> Lazy<Ast<'tcx>> {
@@ -34,12 +40,12 @@ impl<'a, 'b: 'a, 'tcx: 'b> ::index_builder::EntryBuilder<'a, 'b, 'tcx> {
 
         let tables = self.tcx.body_tables(body_id);
         let lazy_tables = self.lazy(tables);
-
+        let tcx = self.tcx;
         let nested_pos = self.encoder().position();
         let nested_count = {
             let mut visitor = NestedBodyEncodingVisitor {
                 encoder: self.encoder(),
-                tcx: self.tcx,
+                tcx: tcx,
                 count: 0,
             };
             visitor.visit_body(body);

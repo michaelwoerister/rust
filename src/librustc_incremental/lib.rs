@@ -22,7 +22,6 @@
 #![feature(rustc_private)]
 #![feature(staged_api)]
 #![feature(rand)]
-#![feature(core_intrinsics)]
 
 extern crate graphviz;
 #[macro_use] extern crate rustc;
@@ -39,12 +38,10 @@ extern crate syntax_pos;
 mod assert_dep_graph;
 mod calculate_svh;
 mod persist;
-pub mod ich;
 
 pub use assert_dep_graph::assert_dep_graph;
 pub use calculate_svh::compute_incremental_hashes_map;
 pub use calculate_svh::IncrementalHashesMap;
-pub use calculate_svh::IchHasher;
 pub use persist::load_dep_graph;
 pub use persist::save_dep_graph;
 pub use persist::save_trans_partition;
