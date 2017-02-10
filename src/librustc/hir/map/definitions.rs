@@ -14,6 +14,7 @@
 //! There are also some rather random cases (like const initializer
 //! expressions) that are mostly just leftovers.
 
+use hir;
 use hir::def_id::{CrateNum, DefId, DefIndex, LOCAL_CRATE};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stable_hasher::StableHasher;
@@ -23,7 +24,6 @@ use std::hash::{Hash, Hasher};
 use syntax::ast;
 use syntax::symbol::{Symbol, InternedString};
 use ty::TyCtxt;
-use util::nodemap::NodeMap;
 
 /// The DefPathTable maps DefIndexes to DefKeys and vice versa.
 /// Internally the DefPathTable holds a tree of DefKeys, where each DefKey
@@ -119,8 +119,9 @@ impl Decodable for DefPathTable {
 #[derive(Clone)]
 pub struct Definitions {
     table: DefPathTable,
-    node_to_def_index: NodeMap<DefIndex>,
+    node_to_def_index: FxHashMap<ast::NodeId, DefIndex>,
     def_index_to_node: Vec<ast::NodeId>,
+    pub ast_to_hir_node_id: Vec<hir::StableNodeId>,
 }
 
 /// A unique identifier that we can use to lookup a definition
@@ -271,8 +272,9 @@ impl Definitions {
                 index_to_key: vec![],
                 key_to_index: FxHashMap(),
             },
-            node_to_def_index: NodeMap(),
+            node_to_def_index: FxHashMap(),
             def_index_to_node: vec![],
+            ast_to_hir_node_id: vec![],
         }
     }
 
@@ -323,6 +325,12 @@ impl Definitions {
         }
     }
 
+    pub fn ast_node_id_to_hir_node_id(&self, ast_node_id: ast::NodeId) -> hir::StableNodeId {
+        let hir_node = self.ast_to_hir_node_id[ast_node_id.as_usize()];
+        debug_assert!(hir_node != hir::DUMMY_NODE_ID);
+        hir_node
+    }
+
     /// Add a definition with a parent definition.
     pub fn create_def_with_parent(&mut self,
                                   parent: Option<DefIndex>,
@@ -364,6 +372,11 @@ impl Definitions {
         self.def_index_to_node.push(node_id);
 
         index
+    }
+
+    pub fn register_ast_id_to_stable_id_mapping(&mut self, mapping: Vec<hir::StableNodeId>) {
+        assert!(self.ast_to_hir_node_id.is_empty());
+        self.ast_to_hir_node_id = mapping;
     }
 }
 

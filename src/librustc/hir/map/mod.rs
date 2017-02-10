@@ -252,6 +252,7 @@ pub struct Map<'hir> {
     /// Also, indexing is pretty quick when you've got a vector and
     /// plain old integers.
     map: Vec<MapEntry<'hir>>,
+    // map: Vec<Vec<MapEntry<'hir>>>,
 
     definitions: Definitions,
 
@@ -275,7 +276,7 @@ impl<'hir> Map<'hir> {
         let mut id = id0;
         let mut last_expr = None;
         loop {
-            let entry = self.map[id.as_usize()];
+            let entry = self.find_entry(id).unwrap();
             match entry {
                 EntryItem(..) |
                 EntryTraitItem(..) |
@@ -385,10 +386,12 @@ impl<'hir> Map<'hir> {
     }
 
     fn entry_count(&self) -> usize {
-        self.map.len()
+        self.map.len() // TODO: wrong!
     }
 
     fn find_entry(&self, id: NodeId) -> Option<MapEntry<'hir>> {
+        // let stable_node_id = self.definitions.ast_node_id_to_hir_node_id(id);
+        // self.map[stable_node_id.owner.as_usize()].get(stable_node_id.local_id as usize).cloned()
         self.map.get(id.as_usize()).cloned()
     }
 
@@ -426,7 +429,7 @@ impl<'hir> Map<'hir> {
     /// for embedded constant expressions (e.g. `N` in `[T; N]`).
     pub fn body_owner(&self, BodyId { node_id }: BodyId) -> NodeId {
         let parent = self.get_parent_node(node_id);
-        if self.map[parent.as_usize()].is_body_owner(node_id) {
+        if self.find_entry(parent).unwrap().is_body_owner(node_id) {
             parent
         } else {
             node_id
@@ -788,6 +791,23 @@ impl<'hir> Map<'hir> {
     pub fn node_to_pretty_string(&self, id: NodeId) -> String {
         print::to_string(self, |s| s.print_node(self.get(id)))
     }
+
+    pub fn print_hir_nodes_unlowered(&self) {
+        let _ignore = self.dep_graph.in_ignore();
+
+        for i in 0 .. self.map.len() {
+            let node_id = NodeId::new(i);
+            match self.map[i] {
+                NotPresent => {}
+                _ => {
+                    if self.definitions.ast_to_hir_node_id[i] == super::DUMMY_NODE_ID {
+                        let s = self.node_to_string(node_id);
+                        println!("unlowered: {}", s);
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub struct NodesMatchingSuffix<'a, 'hir:'a> {
@@ -895,14 +915,19 @@ impl Named for ImplItem { fn name(&self) -> Name { self.name } }
 pub fn map_crate<'hir>(forest: &'hir mut Forest,
                        definitions: Definitions)
                        -> Map<'hir> {
-    let mut collector = NodeCollector::root(&forest.krate);
+    let mut collector = NodeCollector::root(&forest.krate, definitions);
     intravisit::walk_crate(&mut collector, &forest.krate);
-    let map = collector.map;
+    let NodeCollector {
+        map,
+        definitions,
+        ..
+    } = collector;
 
     if log_enabled!(::log::DEBUG) {
         // This only makes sense for ordered stores; note the
         // enumerate to count the number of entries.
         let (entries_less_1, _) = map.iter().filter(|&x| {
+            // x.len() > 0
             match *x {
                 NotPresent => false,
                 _ => true

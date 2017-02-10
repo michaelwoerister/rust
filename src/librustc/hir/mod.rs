@@ -30,13 +30,13 @@ pub use self::Visibility::{Public, Inherited};
 pub use self::PathParameters::*;
 
 use hir::def::Def;
-use hir::def_id::DefId;
+use hir::def_id::{DefId, DefIndex, CRATE_DEF_INDEX};
 use util::nodemap::{NodeMap, FxHashMap, FxHashSet};
 
 use syntax_pos::{Span, ExpnId, DUMMY_SP};
 use syntax::codemap::{self, Spanned};
 use syntax::abi::Abi;
-use syntax::ast::{Name, NodeId, DUMMY_NODE_ID, AsmDialect};
+use syntax::ast::{self, Name, NodeId, AsmDialect};
 use syntax::ast::{Attribute, Lit, StrStyle, FloatTy, IntTy, UintTy, MetaItem};
 use syntax::ptr::P;
 use syntax::symbol::{Symbol, keywords};
@@ -72,6 +72,16 @@ pub mod map;
 pub mod pat_util;
 pub mod print;
 pub mod svh;
+
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+pub struct StableNodeId {
+    owner: DefIndex,
+    local_id: u32
+}
+
+pub const CRATE_NODE_ID: StableNodeId = StableNodeId { owner: CRATE_DEF_INDEX, local_id: 0 };
+pub const DUMMY_NODE_ID: StableNodeId = StableNodeId { owner: CRATE_DEF_INDEX, local_id: !0 };
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
 pub struct Lifetime {
@@ -293,7 +303,7 @@ impl Generics {
             lifetimes: HirVec::new(),
             ty_params: HirVec::new(),
             where_clause: WhereClause {
-                id: DUMMY_NODE_ID,
+                id: ast::DUMMY_NODE_ID,
                 predicates: HirVec::new(),
             },
             span: DUMMY_SP,

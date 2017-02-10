@@ -134,6 +134,8 @@ pub fn compile_input(sess: &Session,
                            "indexing hir",
                            || hir_map::map_crate(&mut hir_forest, defs));
 
+        hir_map.print_hir_nodes_unlowered();
+
         {
             let _ignore = hir_map.dep_graph.in_ignore();
             controller_entry_point!(after_hir_lowering,

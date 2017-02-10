@@ -14,23 +14,28 @@ use hir::intravisit::{Visitor, NestedVisitorMap};
 use std::iter::repeat;
 use syntax::ast::{NodeId, CRATE_NODE_ID};
 use syntax_pos::Span;
+use hir::map::definitions::Definitions;
 
 /// A Visitor that walks over the HIR and collects Nodes into a HIR map
-pub struct NodeCollector<'hir> {
+pub(super) struct NodeCollector<'hir> {
     /// The crate
-    pub krate: &'hir Crate,
+    krate: &'hir Crate,
     /// The node map
-    pub(super) map: Vec<MapEntry<'hir>>,
+    // pub map: Vec<Vec<MapEntry<'hir>>>,
+    pub map: Vec<MapEntry<'hir>>,
     /// The parent of this node
-    pub parent_node: NodeId,
+    parent_node: NodeId,
+
+    pub definitions: Definitions,
 }
 
 impl<'hir> NodeCollector<'hir> {
-    pub fn root(krate: &'hir Crate) -> NodeCollector<'hir> {
+    pub fn root(krate: &'hir Crate, definitions: Definitions) -> NodeCollector<'hir> {
         let mut collector = NodeCollector {
             krate: krate,
             map: vec![],
             parent_node: CRATE_NODE_ID,
+            definitions: definitions,
         };
         collector.insert_entry(CRATE_NODE_ID, RootCrate);
 
@@ -38,6 +43,22 @@ impl<'hir> NodeCollector<'hir> {
     }
 
     fn insert_entry(&mut self, id: NodeId, entry: MapEntry<'hir>) {
+        // debug!("hir_map: {:?} => {:?}", id, entry);
+        // let id = self.definitions.ast_node_id_to_hir_node_id(id);
+        // let len = self.map.len();
+        // if id.owner.as_usize() >= len {
+        //     self.map.extend(repeat(Vec::new()).take(id.owner.as_usize() - len + 1));
+        // }
+
+        // let sub = &mut self.map[id.owner.as_usize()];
+        // let len = sub.len();
+        // if id.local_id as usize >= len {
+        //     sub.extend(repeat(NotPresent).take(id.local_id as usize - len + 1));
+        // }
+
+        // sub[id.local_id as usize] = entry;
+
+
         debug!("hir_map: {:?} => {:?}", id, entry);
         let len = self.map.len();
         if id.as_usize() >= len {

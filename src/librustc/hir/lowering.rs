@@ -43,7 +43,7 @@
 use hir;
 use hir::map::{Definitions, DefKey};
 use hir::map::definitions::DefPathData;
-use hir::def_id::{DefIndex, DefId};
+use hir::def_id::{DefIndex, DefId, CRATE_DEF_INDEX};
 use hir::def::{Def, PathResolution};
 use session::Session;
 use util::nodemap::{DefIdMap, NodeMap, FxHashMap};
@@ -80,6 +80,9 @@ pub struct LoweringContext<'a> {
     bodies: FxHashMap<hir::BodyId, hir::Body>,
 
     type_def_lifetime_params: DefIdMap<usize>,
+
+    local_node_id_owner: Vec<(DefIndex, u32)>,
+    ast_id_to_hir_id: Vec<hir::StableNodeId>,
 }
 
 pub trait Resolver {
@@ -113,6 +116,8 @@ pub fn lower_crate(sess: &Session,
         impl_items: BTreeMap::new(),
         bodies: FxHashMap(),
         type_def_lifetime_params: DefIdMap(),
+        local_node_id_owner: vec![(CRATE_DEF_INDEX, 1)],
+        ast_id_to_hir_id: vec![],
     }.lower_crate(krate)
 }
 
@@ -159,32 +164,47 @@ impl<'a> LoweringContext<'a> {
 
         impl<'lcx, 'interner> Visitor<'lcx> for ItemLowerer<'lcx, 'interner> {
             fn visit_item(&mut self, item: &'lcx Item) {
+                // println!("lowering item {:?}", item);
+                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                self.lctx.local_node_id_owner.push((def_index, 0));
                 let hir_item = self.lctx.lower_item(item);
                 self.lctx.items.insert(item.id, hir_item);
                 visit::walk_item(self, item);
+                self.lctx.local_node_id_owner.pop();
             }
 
             fn visit_trait_item(&mut self, item: &'lcx TraitItem) {
+                // println!("lowering trait item {:?}", item);
+                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                self.lctx.local_node_id_owner.push((def_index, 0));
                 let id = hir::TraitItemId { node_id: item.id };
                 let hir_item = self.lctx.lower_trait_item(item);
                 self.lctx.trait_items.insert(id, hir_item);
                 visit::walk_trait_item(self, item);
+                self.lctx.local_node_id_owner.pop();
             }
 
             fn visit_impl_item(&mut self, item: &'lcx ImplItem) {
+                // println!("lowering impl item {:?}", item);
+                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                self.lctx.local_node_id_owner.push((def_index, 0));
                 let id = hir::ImplItemId { node_id: item.id };
                 let hir_item = self.lctx.lower_impl_item(item);
                 self.lctx.impl_items.insert(id, hir_item);
                 visit::walk_impl_item(self, item);
+                self.lctx.local_node_id_owner.pop();
             }
         }
 
         visit::walk_crate(&mut MiscCollector { lctx: &mut self }, c);
         visit::walk_crate(&mut ItemLowerer { lctx: &mut self }, c);
 
+        self.lower_node_id(CRATE_NODE_ID);
         let module = self.lower_mod(&c.module);
         let attrs = self.lower_attrs(&c.attrs);
         let exported_macros = c.exported_macros.iter().map(|m| self.lower_macro_def(m)).collect();
+
+        self.resolver.definitions().register_ast_id_to_stable_id_mapping(self.ast_id_to_hir_id);
 
         hir::Crate {
             module: module,
@@ -196,6 +216,37 @@ impl<'a> LoweringContext<'a> {
             impl_items: self.impl_items,
             bodies: self.bodies,
         }
+    }
+
+    fn lower_node_id(&mut self, ast_node_id: NodeId) -> NodeId {
+        if ast_node_id == DUMMY_NODE_ID {
+            return ast_node_id;
+        }
+
+        let ast_node_id = ast_node_id.as_usize();
+
+        if ast_node_id >= self.ast_id_to_hir_id.len() {
+            self.ast_id_to_hir_id.resize(ast_node_id + 1, hir::DUMMY_NODE_ID);
+        }
+
+        if self.ast_id_to_hir_id[ast_node_id] == hir::DUMMY_NODE_ID {
+            // Generate a new stable ID
+            let hir_node_id = {
+                let &mut (def_index, ref mut local_id) = self//.lctx
+                                                             .local_node_id_owner
+                                                             .last_mut()
+                                                             .unwrap();
+                *local_id += 1;
+                hir::StableNodeId {
+                    owner: def_index,
+                    local_id: *local_id,
+                }
+            };
+
+            self.ast_id_to_hir_id[ast_node_id] = hir_node_id;
+        }
+
+        NodeId::new(ast_node_id)
     }
 
     fn record_body(&mut self, value: hir::Expr, decl: Option<&FnDecl>)
@@ -211,8 +262,8 @@ impl<'a> LoweringContext<'a> {
         id
     }
 
-    fn next_id(&self) -> NodeId {
-        self.sess.next_node_id()
+    fn next_id(&mut self) -> NodeId {
+        self.lower_node_id(self.sess.next_node_id())
     }
 
     fn expect_full_def(&mut self, id: NodeId) -> Def {
@@ -277,7 +328,7 @@ impl<'a> LoweringContext<'a> {
                 span: sp_ident.span,
                 name: sp_ident.node.name,
                 loop_id: match self.expect_full_def(id) {
-                    Def::Label(loop_id) => loop_id,
+                    Def::Label(loop_id) => self.lower_node_id(loop_id),
                     _ => DUMMY_NODE_ID
                 }
             }
@@ -299,7 +350,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_ty_binding(&mut self, b: &TypeBinding) -> hir::TypeBinding {
         hir::TypeBinding {
-            id: b.id,
+            id: self.lower_node_id(b.id),
             name: b.ident.name,
             ty: self.lower_ty(&b.ty),
             span: b.span,
@@ -308,7 +359,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_ty(&mut self, t: &Ty) -> P<hir::Ty> {
         P(hir::Ty {
-            id: t.id,
+            id: self.lower_node_id(t.id),
             node: match t.node {
                 TyKind::Infer => hir::TyInfer,
                 TyKind::Slice(ref ty) => hir::TySlice(self.lower_ty(ty)),
@@ -616,7 +667,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_local(&mut self, l: &Local) -> P<hir::Local> {
         P(hir::Local {
-            id: l.id,
+            id: self.lower_node_id(l.id),
             ty: l.ty.as_ref().map(|t| self.lower_ty(t)),
             pat: self.lower_pat(&l.pat),
             init: l.init.as_ref().map(|e| P(self.lower_expr(e))),
@@ -634,7 +685,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_arg(&mut self, arg: &Arg) -> hir::Arg {
         hir::Arg {
-            id: arg.id,
+            id: self.lower_node_id(arg.id),
             pat: self.lower_pat(&arg.pat),
         }
     }
@@ -690,7 +741,7 @@ impl<'a> LoweringContext<'a> {
         }
 
         hir::TyParam {
-            id: tp.id,
+            id: self.lower_node_id(tp.id),
             name: name,
             bounds: bounds,
             default: tp.default.as_ref().map(|x| self.lower_ty(x)),
@@ -708,7 +759,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_lifetime(&mut self, l: &Lifetime) -> hir::Lifetime {
         hir::Lifetime {
-            id: l.id,
+            id: self.lower_node_id(l.id),
             name: l.name,
             span: l.span,
         }
@@ -780,7 +831,7 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_where_clause(&mut self, wc: &WhereClause) -> hir::WhereClause {
         hir::WhereClause {
-            id: wc.id,
+            id: self.lower_node_id(wc.id),
             predicates: wc.predicates
                           .iter()
                           .map(|predicate| self.lower_where_predicate(predicate))
@@ -819,7 +870,7 @@ impl<'a> LoweringContext<'a> {
                                                           ref rhs_ty,
                                                           span}) => {
                 hir::WherePredicate::EqPredicate(hir::WhereEqPredicate {
-                    id: id,
+                    id: self.lower_node_id(id),
                     lhs_ty: self.lower_ty(lhs_ty),
                     rhs_ty: self.lower_ty(rhs_ty),
                     span: span,
@@ -835,16 +886,16 @@ impl<'a> LoweringContext<'a> {
                                                .enumerate()
                                                .map(|f| self.lower_struct_field(f))
                                                .collect(),
-                                         id)
+                                         self.lower_node_id(id))
             }
             VariantData::Tuple(ref fields, id) => {
                 hir::VariantData::Tuple(fields.iter()
                                               .enumerate()
                                               .map(|f| self.lower_struct_field(f))
                                               .collect(),
-                                        id)
+                                        self.lower_node_id(id))
             }
-            VariantData::Unit(id) => hir::VariantData::Unit(id),
+            VariantData::Unit(id) => hir::VariantData::Unit(self.lower_node_id(id)),
         }
     }
 
@@ -855,7 +906,7 @@ impl<'a> LoweringContext<'a> {
         };
         hir::TraitRef {
             path: path,
-            ref_id: p.ref_id,
+            ref_id: self.lower_node_id(p.ref_id),
         }
     }
 
@@ -870,7 +921,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_struct_field(&mut self, (index, f): (usize, &StructField)) -> hir::StructField {
         hir::StructField {
             span: f.span,
-            id: f.id,
+            id: self.lower_node_id(f.id),
             name: f.ident.map(|ident| ident.name).unwrap_or(Symbol::intern(&index.to_string())),
             vis: self.lower_visibility(&f.vis),
             ty: self.lower_ty(&f.ty),
@@ -899,6 +950,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_block(&mut self, b: &Block) -> P<hir::Block> {
+
         let mut expr = None;
 
         let mut stmts = b.stmts.iter().flat_map(|s| self.lower_stmt(s)).collect::<Vec<_>>();
@@ -911,7 +963,7 @@ impl<'a> LoweringContext<'a> {
         }
 
         P(hir::Block {
-            id: b.id,
+            id: self.lower_node_id(b.id),
             stmts: stmts.into(),
             expr: expr,
             rules: self.lower_block_check_mode(&b.rules),
@@ -949,6 +1001,7 @@ impl<'a> LoweringContext<'a> {
                             let mut path = self.lower_path_extra(import.id, path, suffix,
                                                                  ParamMode::Explicit, true);
                             path.span = span;
+                            self.lower_node_id(import.id);
                             self.items.insert(import.id, hir::Item {
                                 id: import.id,
                                 name: import.rename.unwrap_or(ident).name,
@@ -1055,7 +1108,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_trait_item(&mut self, i: &TraitItem) -> hir::TraitItem {
         self.with_parent_def(i.id, |this| {
             hir::TraitItem {
-                id: i.id,
+                id: this.lower_node_id(i.id),
                 name: i.ident.name,
                 attrs: this.lower_attrs(&i.attrs),
                 node: match i.node {
@@ -1114,9 +1167,10 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_impl_item(&mut self, i: &ImplItem) -> hir::ImplItem {
+
         self.with_parent_def(i.id, |this| {
             hir::ImplItem {
-                id: i.id,
+                id: this.lower_node_id(i.id),
                 name: i.ident.name,
                 attrs: this.lower_attrs(&i.attrs),
                 vis: this.lower_visibility(&i.vis),
@@ -1164,6 +1218,7 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_mod(&mut self, m: &Mod) -> hir::Mod {
+
         hir::Mod {
             inner: m.inner,
             item_ids: m.items.iter().flat_map(|x| self.lower_item_id(x)).collect(),
@@ -1174,7 +1229,7 @@ impl<'a> LoweringContext<'a> {
         hir::MacroDef {
             name: m.ident.name,
             attrs: self.lower_attrs(&m.attrs),
-            id: m.id,
+            id: self.lower_node_id(m.id),
             span: m.span,
             body: m.body.clone().into(),
         }
@@ -1199,7 +1254,7 @@ impl<'a> LoweringContext<'a> {
         });
 
         hir::Item {
-            id: i.id,
+            id: self.lower_node_id(i.id),
             name: name,
             attrs: attrs,
             node: node,
@@ -1211,7 +1266,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_foreign_item(&mut self, i: &ForeignItem) -> hir::ForeignItem {
         self.with_parent_def(i.id, |this| {
             hir::ForeignItem {
-                id: i.id,
+                id: this.lower_node_id(i.id),
                 name: i.ident.name,
                 attrs: this.lower_attrs(&i.attrs),
                 node: match i.node {
@@ -1289,8 +1344,9 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_pat(&mut self, p: &Pat) -> P<hir::Pat> {
+
         P(hir::Pat {
-            id: p.id,
+            id: self.lower_node_id(p.id),
             node: match p.node {
                 PatKind::Wild => hir::PatKind::Wild,
                 PatKind::Ident(ref binding_mode, pth1, ref sub) => {
@@ -1376,667 +1432,822 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_expr(&mut self, e: &Expr) -> hir::Expr {
-        hir::Expr {
-            id: e.id,
-            node: match e.node {
-                // Issue #22181:
-                // Eventually a desugaring for `box EXPR`
-                // (similar to the desugaring above for `in PLACE BLOCK`)
-                // should go here, desugaring
-                //
+        match e.node {
+            // Issue #22181:
+            // Eventually a desugaring for `box EXPR`
+            // (similar to the desugaring above for `in PLACE BLOCK`)
+            // should go here, desugaring
+            //
+            // to:
+            //
+            // let mut place = BoxPlace::make_place();
+            // let raw_place = Place::pointer(&mut place);
+            // let value = $value;
+            // unsafe {
+            //     ::std::ptr::write(raw_place, value);
+            //     Boxed::finalize(place)
+            // }
+            //
+            // But for now there are type-inference issues doing that.
+            ExprKind::Box(ref inner) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprBox(P(self.lower_expr(inner)))
+                }
+            }
+
+            // Desugar ExprBox: `in (PLACE) EXPR`
+            ExprKind::InPlace(ref placer, ref value_expr) => {
                 // to:
                 //
-                // let mut place = BoxPlace::make_place();
+                // let p = PLACE;
+                // let mut place = Placer::make_place(p);
                 // let raw_place = Place::pointer(&mut place);
-                // let value = $value;
-                // unsafe {
-                //     ::std::ptr::write(raw_place, value);
-                //     Boxed::finalize(place)
-                // }
-                //
-                // But for now there are type-inference issues doing that.
-                ExprKind::Box(ref e) => {
-                    hir::ExprBox(P(self.lower_expr(e)))
+                // push_unsafe!({
+                //     std::intrinsics::move_val_init(raw_place, pop_unsafe!( EXPR ));
+                //     InPlace::finalize(place)
+                // })
+                let placer_expr = P(self.lower_expr(placer));
+                let value_expr = P(self.lower_expr(value_expr));
+
+                let placer_ident = self.str_to_ident("placer");
+                let place_ident = self.str_to_ident("place");
+                let p_ptr_ident = self.str_to_ident("p_ptr");
+
+                let make_place = ["ops", "Placer", "make_place"];
+                let place_pointer = ["ops", "Place", "pointer"];
+                let move_val_init = ["intrinsics", "move_val_init"];
+                let inplace_finalize = ["ops", "InPlace", "finalize"];
+
+                let unstable_span = self.allow_internal_unstable("<-", e.span);
+                let make_call = |this: &mut LoweringContext, p, args| {
+                    let path = P(this.expr_std_path(unstable_span, p, ThinVec::new()));
+                    P(this.expr_call(e.span, path, args))
+                };
+
+                let mk_stmt_let = |this: &mut LoweringContext, bind, expr| {
+                    this.stmt_let(e.span, false, bind, expr)
+                };
+
+                let mk_stmt_let_mut = |this: &mut LoweringContext, bind, expr| {
+                    this.stmt_let(e.span, true, bind, expr)
+                };
+
+                // let placer = <placer_expr> ;
+                let (s1, placer_binding) = {
+                    mk_stmt_let(self, placer_ident, placer_expr)
+                };
+
+                // let mut place = Placer::make_place(placer);
+                let (s2, place_binding) = {
+                    let placer = self.expr_ident(e.span, placer_ident, placer_binding);
+                    let call = make_call(self, &make_place, hir_vec![placer]);
+                    mk_stmt_let_mut(self, place_ident, call)
+                };
+
+                // let p_ptr = Place::pointer(&mut place);
+                let (s3, p_ptr_binding) = {
+                    let agent = P(self.expr_ident(e.span, place_ident, place_binding));
+                    let args = hir_vec![self.expr_mut_addr_of(e.span, agent)];
+                    let call = make_call(self, &place_pointer, args);
+                    mk_stmt_let(self, p_ptr_ident, call)
+                };
+
+                // pop_unsafe!(EXPR));
+                let pop_unsafe_expr = {
+                    self.signal_block_expr(hir_vec![],
+                                           value_expr,
+                                           e.span,
+                                           hir::PopUnsafeBlock(hir::CompilerGenerated),
+                                           ThinVec::new())
+                };
+
+                // push_unsafe!({
+                //     std::intrinsics::move_val_init(raw_place, pop_unsafe!( EXPR ));
+                //     InPlace::finalize(place)
+                // })
+                let expr = {
+                    let ptr = self.expr_ident(e.span, p_ptr_ident, p_ptr_binding);
+                    let call_move_val_init =
+                        hir::StmtSemi(
+                            make_call(self, &move_val_init, hir_vec![ptr, pop_unsafe_expr]),
+                            self.next_id());
+                    let call_move_val_init = respan(e.span, call_move_val_init);
+
+                    let place = self.expr_ident(e.span, place_ident, place_binding);
+                    let call = make_call(self, &inplace_finalize, hir_vec![place]);
+                    P(self.signal_block_expr(hir_vec![call_move_val_init],
+                                             call,
+                                             e.span,
+                                             hir::PushUnsafeBlock(hir::CompilerGenerated),
+                                             ThinVec::new()))
+                };
+
+                let block = self.block_all(e.span, hir_vec![s1, s2, s3], Some(expr));
+                // add the attributes to the outer returned expr node
+                return self.expr_block(P(block), e.attrs.clone());
+            }
+
+            ExprKind::Array(ref exprs) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprArray(exprs.iter().map(|x| self.lower_expr(x)).collect())
                 }
-
-                // Desugar ExprBox: `in (PLACE) EXPR`
-                ExprKind::InPlace(ref placer, ref value_expr) => {
-                    // to:
-                    //
-                    // let p = PLACE;
-                    // let mut place = Placer::make_place(p);
-                    // let raw_place = Place::pointer(&mut place);
-                    // push_unsafe!({
-                    //     std::intrinsics::move_val_init(raw_place, pop_unsafe!( EXPR ));
-                    //     InPlace::finalize(place)
-                    // })
-                    let placer_expr = P(self.lower_expr(placer));
-                    let value_expr = P(self.lower_expr(value_expr));
-
-                    let placer_ident = self.str_to_ident("placer");
-                    let place_ident = self.str_to_ident("place");
-                    let p_ptr_ident = self.str_to_ident("p_ptr");
-
-                    let make_place = ["ops", "Placer", "make_place"];
-                    let place_pointer = ["ops", "Place", "pointer"];
-                    let move_val_init = ["intrinsics", "move_val_init"];
-                    let inplace_finalize = ["ops", "InPlace", "finalize"];
-
-                    let unstable_span = self.allow_internal_unstable("<-", e.span);
-                    let make_call = |this: &mut LoweringContext, p, args| {
-                        let path = P(this.expr_std_path(unstable_span, p, ThinVec::new()));
-                        P(this.expr_call(e.span, path, args))
-                    };
-
-                    let mk_stmt_let = |this: &mut LoweringContext, bind, expr| {
-                        this.stmt_let(e.span, false, bind, expr)
-                    };
-
-                    let mk_stmt_let_mut = |this: &mut LoweringContext, bind, expr| {
-                        this.stmt_let(e.span, true, bind, expr)
-                    };
-
-                    // let placer = <placer_expr> ;
-                    let (s1, placer_binding) = {
-                        mk_stmt_let(self, placer_ident, placer_expr)
-                    };
-
-                    // let mut place = Placer::make_place(placer);
-                    let (s2, place_binding) = {
-                        let placer = self.expr_ident(e.span, placer_ident, placer_binding);
-                        let call = make_call(self, &make_place, hir_vec![placer]);
-                        mk_stmt_let_mut(self, place_ident, call)
-                    };
-
-                    // let p_ptr = Place::pointer(&mut place);
-                    let (s3, p_ptr_binding) = {
-                        let agent = P(self.expr_ident(e.span, place_ident, place_binding));
-                        let args = hir_vec![self.expr_mut_addr_of(e.span, agent)];
-                        let call = make_call(self, &place_pointer, args);
-                        mk_stmt_let(self, p_ptr_ident, call)
-                    };
-
-                    // pop_unsafe!(EXPR));
-                    let pop_unsafe_expr = {
-                        self.signal_block_expr(hir_vec![],
-                                               value_expr,
-                                               e.span,
-                                               hir::PopUnsafeBlock(hir::CompilerGenerated),
-                                               ThinVec::new())
-                    };
-
-                    // push_unsafe!({
-                    //     std::intrinsics::move_val_init(raw_place, pop_unsafe!( EXPR ));
-                    //     InPlace::finalize(place)
-                    // })
-                    let expr = {
-                        let ptr = self.expr_ident(e.span, p_ptr_ident, p_ptr_binding);
-                        let call_move_val_init =
-                            hir::StmtSemi(
-                                make_call(self, &move_val_init, hir_vec![ptr, pop_unsafe_expr]),
-                                self.next_id());
-                        let call_move_val_init = respan(e.span, call_move_val_init);
-
-                        let place = self.expr_ident(e.span, place_ident, place_binding);
-                        let call = make_call(self, &inplace_finalize, hir_vec![place]);
-                        P(self.signal_block_expr(hir_vec![call_move_val_init],
-                                                 call,
-                                                 e.span,
-                                                 hir::PushUnsafeBlock(hir::CompilerGenerated),
-                                                 ThinVec::new()))
-                    };
-
-                    let block = self.block_all(e.span, hir_vec![s1, s2, s3], Some(expr));
-                    // add the attributes to the outer returned expr node
-                    return self.expr_block(P(block), e.attrs.clone());
+            }
+            ExprKind::Repeat(ref expr, ref count) => {
+                let expr = P(self.lower_expr(expr));
+                let count = self.lower_expr(count);
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprRepeat(expr, self.record_body(count, None))
                 }
-
-                ExprKind::Array(ref exprs) => {
-                    hir::ExprArray(exprs.iter().map(|x| self.lower_expr(x)).collect())
+            }
+            ExprKind::Tup(ref elts) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprTup(elts.iter().map(|x| self.lower_expr(x)).collect())
                 }
-                ExprKind::Repeat(ref expr, ref count) => {
-                    let expr = P(self.lower_expr(expr));
-                    let count = self.lower_expr(count);
-                    hir::ExprRepeat(expr, self.record_body(count, None))
+            }
+            ExprKind::Call(ref f, ref args) => {
+                let f = P(self.lower_expr(f));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprCall(f, args.iter().map(|x| self.lower_expr(x)).collect())
                 }
-                ExprKind::Tup(ref elts) => {
-                    hir::ExprTup(elts.iter().map(|x| self.lower_expr(x)).collect())
+            }
+            ExprKind::MethodCall(i, ref tps, ref args) => {
+                let tps = tps.iter().map(|x| self.lower_ty(x)).collect();
+                let args = args.iter().map(|x| self.lower_expr(x)).collect();
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprMethodCall(respan(i.span, i.node.name), tps, args)
                 }
-                ExprKind::Call(ref f, ref args) => {
-                    let f = P(self.lower_expr(f));
-                    hir::ExprCall(f, args.iter().map(|x| self.lower_expr(x)).collect())
+            }
+            ExprKind::Binary(binop, ref lhs, ref rhs) => {
+                let binop = self.lower_binop(binop);
+                let lhs = P(self.lower_expr(lhs));
+                let rhs = P(self.lower_expr(rhs));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprBinary(binop, lhs, rhs)
                 }
-                ExprKind::MethodCall(i, ref tps, ref args) => {
-                    let tps = tps.iter().map(|x| self.lower_ty(x)).collect();
-                    let args = args.iter().map(|x| self.lower_expr(x)).collect();
-                    hir::ExprMethodCall(respan(i.span, i.node.name), tps, args)
+            }
+            ExprKind::Unary(op, ref ohs) => {
+                let op = self.lower_unop(op);
+                let ohs = P(self.lower_expr(ohs));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprUnary(op, ohs)
                 }
-                ExprKind::Binary(binop, ref lhs, ref rhs) => {
-                    let binop = self.lower_binop(binop);
-                    let lhs = P(self.lower_expr(lhs));
-                    let rhs = P(self.lower_expr(rhs));
-                    hir::ExprBinary(binop, lhs, rhs)
+            }
+            ExprKind::Lit(ref l) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprLit(P((**l).clone()))
                 }
-                ExprKind::Unary(op, ref ohs) => {
-                    let op = self.lower_unop(op);
-                    let ohs = P(self.lower_expr(ohs));
-                    hir::ExprUnary(op, ohs)
+            }
+            ExprKind::Cast(ref expr, ref ty) => {
+                let expr = P(self.lower_expr(expr));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprCast(expr, self.lower_ty(ty))
                 }
-                ExprKind::Lit(ref l) => hir::ExprLit(P((**l).clone())),
-                ExprKind::Cast(ref expr, ref ty) => {
-                    let expr = P(self.lower_expr(expr));
-                    hir::ExprCast(expr, self.lower_ty(ty))
+            }
+            ExprKind::Type(ref expr, ref ty) => {
+                let expr = P(self.lower_expr(expr));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprType(expr, self.lower_ty(ty))
                 }
-                ExprKind::Type(ref expr, ref ty) => {
-                    let expr = P(self.lower_expr(expr));
-                    hir::ExprType(expr, self.lower_ty(ty))
+            }
+            ExprKind::AddrOf(m, ref ohs) => {
+                let m = self.lower_mutability(m);
+                let ohs = P(self.lower_expr(ohs));
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprAddrOf(m, ohs)
                 }
-                ExprKind::AddrOf(m, ref ohs) => {
-                    let m = self.lower_mutability(m);
-                    let ohs = P(self.lower_expr(ohs));
-                    hir::ExprAddrOf(m, ohs)
-                }
-                // More complicated than you might expect because the else branch
-                // might be `if let`.
-                ExprKind::If(ref cond, ref blk, ref else_opt) => {
-                    let else_opt = else_opt.as_ref().map(|els| {
-                        match els.node {
-                            ExprKind::IfLet(..) => {
-                                // wrap the if-let expr in a block
-                                let span = els.span;
-                                let els = P(self.lower_expr(els));
-                                let id = self.next_id();
-                                let blk = P(hir::Block {
-                                    stmts: hir_vec![],
-                                    expr: Some(els),
-                                    id: id,
-                                    rules: hir::DefaultBlock,
-                                    span: span,
-                                });
-                                P(self.expr_block(blk, ThinVec::new()))
-                            }
-                            _ => P(self.lower_expr(els)),
+            }
+            // More complicated than you might expect because the else branch
+            // might be `if let`.
+            ExprKind::If(ref cond, ref blk, ref else_opt) => {
+                let else_opt = else_opt.as_ref().map(|els| {
+                    match els.node {
+                        ExprKind::IfLet(..) => {
+                            // wrap the if-let expr in a block
+                            let span = els.span;
+                            let els = P(self.lower_expr(els));
+                            let id = self.next_id();
+                            let blk = P(hir::Block {
+                                stmts: hir_vec![],
+                                expr: Some(els),
+                                id: id,
+                                rules: hir::DefaultBlock,
+                                span: span,
+                            });
+                            P(self.expr_block(blk, ThinVec::new()))
                         }
-                    });
+                        _ => P(self.lower_expr(els)),
+                    }
+                });
 
-                    hir::ExprIf(P(self.lower_expr(cond)), self.lower_block(blk), else_opt)
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprIf(P(self.lower_expr(cond)), self.lower_block(blk), else_opt)
                 }
-                ExprKind::While(ref cond, ref body, opt_ident) => {
-                    hir::ExprWhile(P(self.lower_expr(cond)), self.lower_block(body),
-                                   self.lower_opt_sp_ident(opt_ident))
+            }
+            ExprKind::While(ref cond, ref body, opt_ident) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprWhile(P(self.lower_expr(cond)),
+                                         self.lower_block(body),
+                                         self.lower_opt_sp_ident(opt_ident))
                 }
-                ExprKind::Loop(ref body, opt_ident) => {
-                    hir::ExprLoop(self.lower_block(body),
-                                  self.lower_opt_sp_ident(opt_ident),
-                                  hir::LoopSource::Loop)
+            }
+            ExprKind::Loop(ref body, opt_ident) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprLoop(self.lower_block(body),
+                                        self.lower_opt_sp_ident(opt_ident),
+                                        hir::LoopSource::Loop)
                 }
-                ExprKind::Match(ref expr, ref arms) => {
-                    hir::ExprMatch(P(self.lower_expr(expr)),
-                                   arms.iter().map(|x| self.lower_arm(x)).collect(),
-                                   hir::MatchSource::Normal)
+            }
+            ExprKind::Match(ref expr, ref arms) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprMatch(P(self.lower_expr(expr)),
+                                         arms.iter().map(|x| self.lower_arm(x)).collect(),
+                                         hir::MatchSource::Normal)
                 }
-                ExprKind::Closure(capture_clause, ref decl, ref body, fn_decl_span) => {
-                    self.with_parent_def(e.id, |this| {
-                        let expr = this.lower_expr(body);
-                        hir::ExprClosure(this.lower_capture_clause(capture_clause),
+            }
+            ExprKind::Closure(capture_clause, ref decl, ref body, fn_decl_span) => {
+                self.with_parent_def(e.id, |this| {
+                    let expr = this.lower_expr(body);
+                    hir::Expr {
+                        id: this.lower_node_id(e.id),
+                        span: e.span,
+                        attrs: e.attrs.clone(),
+                        node: hir::ExprClosure(this.lower_capture_clause(capture_clause),
                                          this.lower_fn_decl(decl),
                                          this.record_body(expr, Some(decl)),
                                          fn_decl_span)
-                    })
+                    }
+                })
+            }
+            ExprKind::Block(ref blk) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprBlock(self.lower_block(blk))
                 }
-                ExprKind::Block(ref blk) => hir::ExprBlock(self.lower_block(blk)),
-                ExprKind::Assign(ref el, ref er) => {
-                    hir::ExprAssign(P(self.lower_expr(el)), P(self.lower_expr(er)))
+            }
+            ExprKind::Assign(ref el, ref er) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprAssign(P(self.lower_expr(el)), P(self.lower_expr(er)))
                 }
-                ExprKind::AssignOp(op, ref el, ref er) => {
-                    hir::ExprAssignOp(self.lower_binop(op),
-                                      P(self.lower_expr(el)),
-                                      P(self.lower_expr(er)))
+            }
+            ExprKind::AssignOp(op, ref el, ref er) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprAssignOp(self.lower_binop(op),
+                                            P(self.lower_expr(el)),
+                                            P(self.lower_expr(er)))
                 }
-                ExprKind::Field(ref el, ident) => {
-                    hir::ExprField(P(self.lower_expr(el)), respan(ident.span, ident.node.name))
+            }
+            ExprKind::Field(ref el, ident) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprField(P(self.lower_expr(el)), respan(ident.span, ident.node.name))
                 }
-                ExprKind::TupField(ref el, ident) => {
-                    hir::ExprTupField(P(self.lower_expr(el)), ident)
+            }
+            ExprKind::TupField(ref el, ident) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprTupField(P(self.lower_expr(el)), ident)
                 }
-                ExprKind::Index(ref el, ref er) => {
-                    hir::ExprIndex(P(self.lower_expr(el)), P(self.lower_expr(er)))
+            }
+            ExprKind::Index(ref el, ref er) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprIndex(P(self.lower_expr(el)), P(self.lower_expr(er)))
                 }
-                ExprKind::Range(ref e1, ref e2, lims) => {
-                    fn make_struct(this: &mut LoweringContext,
-                                   ast_expr: &Expr,
-                                   path: &[&str],
-                                   fields: &[(&str, &P<Expr>)]) -> hir::Expr {
-                        let struct_path = &iter::once(&"ops").chain(path).map(|s| *s)
-                                                             .collect::<Vec<_>>();
-                        let unstable_span = this.allow_internal_unstable("...", ast_expr.span);
+            }
+            ExprKind::Range(ref e1, ref e2, lims) => {
+                fn make_struct(this: &mut LoweringContext,
+                               ast_expr: &Expr,
+                               path: &[&str],
+                               fields: &[(&str, &P<Expr>)]) -> hir::Expr {
+                    let struct_path = &iter::once(&"ops").chain(path).map(|s| *s)
+                                                         .collect::<Vec<_>>();
+                    let unstable_span = this.allow_internal_unstable("...", ast_expr.span);
 
-                        if fields.len() == 0 {
-                            this.expr_std_path(unstable_span, struct_path,
-                                               ast_expr.attrs.clone())
-                        } else {
-                            let fields = fields.into_iter().map(|&(s, e)| {
-                                let expr = P(this.lower_expr(&e));
-                                let unstable_span = this.allow_internal_unstable("...", e.span);
-                                this.field(Symbol::intern(s), expr, unstable_span)
-                            }).collect();
-                            let attrs = ast_expr.attrs.clone();
+                    if fields.len() == 0 {
+                        this.expr_std_path(unstable_span, struct_path,
+                                           ast_expr.attrs.clone())
+                    } else {
+                        let fields = fields.into_iter().map(|&(s, e)| {
+                            let expr = P(this.lower_expr(&e));
+                            let unstable_span = this.allow_internal_unstable("...", e.span);
+                            this.field(Symbol::intern(s), expr, unstable_span)
+                        }).collect();
+                        let attrs = ast_expr.attrs.clone();
 
-                            this.expr_std_struct(unstable_span, struct_path, fields, None, attrs)
+                        this.expr_std_struct(unstable_span, struct_path, fields, None, attrs)
+                    }
+                }
+
+                use syntax::ast::RangeLimits::*;
+
+                return match (e1, e2, lims) {
+                    (&None,         &None,         HalfOpen) =>
+                        make_struct(self, e, &["RangeFull"], &[]),
+
+                    (&Some(ref e1), &None,         HalfOpen) =>
+                        make_struct(self, e, &["RangeFrom"],
+                                             &[("start", e1)]),
+
+                    (&None,         &Some(ref e2), HalfOpen) =>
+                        make_struct(self, e, &["RangeTo"],
+                                             &[("end", e2)]),
+
+                    (&Some(ref e1), &Some(ref e2), HalfOpen) =>
+                        make_struct(self, e, &["Range"],
+                                             &[("start", e1), ("end", e2)]),
+
+                    (&None,         &Some(ref e2), Closed)   =>
+                        make_struct(self, e, &["RangeToInclusive"],
+                                             &[("end", e2)]),
+
+                    (&Some(ref e1), &Some(ref e2), Closed)   =>
+                        make_struct(self, e, &["RangeInclusive", "NonEmpty"],
+                                             &[("start", e1), ("end", e2)]),
+
+                    _ => panic!(self.diagnostic()
+                                    .span_fatal(e.span, "inclusive range with no end")),
+                };
+            }
+            ExprKind::Path(ref qself, ref path) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprPath(self.lower_qpath(e.id, qself, path, ParamMode::Optional))
+                }
+            }
+            ExprKind::Break(opt_ident, ref opt_expr) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprBreak(self.lower_label(e.id, opt_ident),
+                                         opt_expr.as_ref().map(|x| P(self.lower_expr(x))))
+                }
+            }
+            ExprKind::Continue(opt_ident) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprAgain(self.lower_label(e.id, opt_ident))
+                }
+            }
+            ExprKind::Ret(ref re) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprRet(re.as_ref().map(|x| P(self.lower_expr(x))))
+                }
+            }
+            ExprKind::InlineAsm(ref asm) => {
+                let hir_asm = hir::InlineAsm {
+                    inputs: asm.inputs.iter().map(|&(ref c, _)| c.clone()).collect(),
+                    outputs: asm.outputs.iter().map(|out| {
+                        hir::InlineAsmOutput {
+                            constraint: out.constraint.clone(),
+                            is_rw: out.is_rw,
+                            is_indirect: out.is_indirect,
                         }
-                    }
-
-                    use syntax::ast::RangeLimits::*;
-
-                    return match (e1, e2, lims) {
-                        (&None,         &None,         HalfOpen) =>
-                            make_struct(self, e, &["RangeFull"], &[]),
-
-                        (&Some(ref e1), &None,         HalfOpen) =>
-                            make_struct(self, e, &["RangeFrom"],
-                                                 &[("start", e1)]),
-
-                        (&None,         &Some(ref e2), HalfOpen) =>
-                            make_struct(self, e, &["RangeTo"],
-                                                 &[("end", e2)]),
-
-                        (&Some(ref e1), &Some(ref e2), HalfOpen) =>
-                            make_struct(self, e, &["Range"],
-                                                 &[("start", e1), ("end", e2)]),
-
-                        (&None,         &Some(ref e2), Closed)   =>
-                            make_struct(self, e, &["RangeToInclusive"],
-                                                 &[("end", e2)]),
-
-                        (&Some(ref e1), &Some(ref e2), Closed)   =>
-                            make_struct(self, e, &["RangeInclusive", "NonEmpty"],
-                                                 &[("start", e1), ("end", e2)]),
-
-                        _ => panic!(self.diagnostic()
-                                        .span_fatal(e.span, "inclusive range with no end")),
-                    };
+                    }).collect(),
+                    asm: asm.asm.clone(),
+                    asm_str_style: asm.asm_str_style,
+                    clobbers: asm.clobbers.clone().into(),
+                    volatile: asm.volatile,
+                    alignstack: asm.alignstack,
+                    dialect: asm.dialect,
+                    expn_id: asm.expn_id,
+                };
+                let outputs =
+                    asm.outputs.iter().map(|out| self.lower_expr(&out.expr)).collect();
+                let inputs =
+                    asm.inputs.iter().map(|&(_, ref input)| self.lower_expr(input)).collect();
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprInlineAsm(P(hir_asm), outputs, inputs)
                 }
-                ExprKind::Path(ref qself, ref path) => {
-                    hir::ExprPath(self.lower_qpath(e.id, qself, path, ParamMode::Optional))
+            }
+            ExprKind::Struct(ref path, ref fields, ref maybe_expr) => {
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprStruct(self.lower_qpath(e.id, &None, path, ParamMode::Optional),
+                                fields.iter().map(|x| self.lower_field(x)).collect(),
+                                maybe_expr.as_ref().map(|x| P(self.lower_expr(x))))
                 }
-                ExprKind::Break(opt_ident, ref opt_expr) => {
-                    hir::ExprBreak(self.lower_label(e.id, opt_ident),
-                                   opt_expr.as_ref().map(|x| P(self.lower_expr(x))))
+            }
+            ExprKind::Paren(ref ex) => {
+                let mut ex = self.lower_expr(ex);
+                // include parens in span, but only if it is a super-span.
+                if e.span.contains(ex.span) {
+                    ex.span = e.span;
                 }
-                ExprKind::Continue(opt_ident) => hir::ExprAgain(self.lower_label(e.id, opt_ident)),
-                ExprKind::Ret(ref e) => hir::ExprRet(e.as_ref().map(|x| P(self.lower_expr(x)))),
-                ExprKind::InlineAsm(ref asm) => {
-                    let hir_asm = hir::InlineAsm {
-                        inputs: asm.inputs.iter().map(|&(ref c, _)| c.clone()).collect(),
-                        outputs: asm.outputs.iter().map(|out| {
-                            hir::InlineAsmOutput {
-                                constraint: out.constraint.clone(),
-                                is_rw: out.is_rw,
-                                is_indirect: out.is_indirect,
-                            }
-                        }).collect(),
-                        asm: asm.asm.clone(),
-                        asm_str_style: asm.asm_str_style,
-                        clobbers: asm.clobbers.clone().into(),
-                        volatile: asm.volatile,
-                        alignstack: asm.alignstack,
-                        dialect: asm.dialect,
-                        expn_id: asm.expn_id,
-                    };
-                    let outputs =
-                        asm.outputs.iter().map(|out| self.lower_expr(&out.expr)).collect();
-                    let inputs =
-                        asm.inputs.iter().map(|&(_, ref input)| self.lower_expr(input)).collect();
-                    hir::ExprInlineAsm(P(hir_asm), outputs, inputs)
-                }
-                ExprKind::Struct(ref path, ref fields, ref maybe_expr) => {
-                    hir::ExprStruct(self.lower_qpath(e.id, &None, path, ParamMode::Optional),
-                                    fields.iter().map(|x| self.lower_field(x)).collect(),
-                                    maybe_expr.as_ref().map(|x| P(self.lower_expr(x))))
-                }
-                ExprKind::Paren(ref ex) => {
-                    let mut ex = self.lower_expr(ex);
-                    // include parens in span, but only if it is a super-span.
-                    if e.span.contains(ex.span) {
-                        ex.span = e.span;
-                    }
-                    // merge attributes into the inner expression.
-                    let mut attrs = e.attrs.clone();
-                    attrs.extend::<Vec<_>>(ex.attrs.into());
-                    ex.attrs = attrs;
-                    return ex;
-                }
+                // merge attributes into the inner expression.
+                let mut attrs = e.attrs.clone();
+                attrs.extend::<Vec<_>>(ex.attrs.into());
+                ex.attrs = attrs;
+                return ex;
+            }
 
-                // Desugar ExprIfLet
-                // From: `if let <pat> = <sub_expr> <body> [<else_opt>]`
-                ExprKind::IfLet(ref pat, ref sub_expr, ref body, ref else_opt) => {
-                    // to:
-                    //
-                    //   match <sub_expr> {
-                    //     <pat> => <body>,
-                    //     [_ if <else_opt_if_cond> => <else_opt_if_body>,]
-                    //     _ => [<else_opt> | ()]
-                    //   }
+            // Desugar ExprIfLet
+            // From: `if let <pat> = <sub_expr> <body> [<else_opt>]`
+            ExprKind::IfLet(ref pat, ref sub_expr, ref body, ref else_opt) => {
+                // to:
+                //
+                //   match <sub_expr> {
+                //     <pat> => <body>,
+                //     [_ if <else_opt_if_cond> => <else_opt_if_body>,]
+                //     _ => [<else_opt> | ()]
+                //   }
 
-                    // `<pat> => <body>`
-                    let pat_arm = {
-                        let body = self.lower_block(body);
-                        let body_expr = P(self.expr_block(body, ThinVec::new()));
-                        let pat = self.lower_pat(pat);
-                        self.arm(hir_vec![pat], body_expr)
-                    };
+                // `<pat> => <body>`
+                let pat_arm = {
+                    let body = self.lower_block(body);
+                    let body_expr = P(self.expr_block(body, ThinVec::new()));
+                    let pat = self.lower_pat(pat);
+                    self.arm(hir_vec![pat], body_expr)
+                };
 
-                    // `[_ if <else_opt_if_cond> => <else_opt_if_body>,]`
-                    let mut else_opt = else_opt.as_ref().map(|e| P(self.lower_expr(e)));
-                    let else_if_arms = {
-                        let mut arms = vec![];
-                        loop {
-                            let else_opt_continue = else_opt.and_then(|els| {
-                                els.and_then(|els| {
-                                    match els.node {
-                                        // else if
-                                        hir::ExprIf(cond, then, else_opt) => {
-                                            let pat_under = self.pat_wild(e.span);
-                                            arms.push(hir::Arm {
-                                                attrs: hir_vec![],
-                                                pats: hir_vec![pat_under],
-                                                guard: Some(cond),
-                                                body: P(self.expr_block(then, ThinVec::new())),
-                                            });
-                                            else_opt.map(|else_opt| (else_opt, true))
-                                        }
-                                        _ => Some((P(els), false)),
+                // `[_ if <else_opt_if_cond> => <else_opt_if_body>,]`
+                let mut else_opt = else_opt.as_ref().map(|e| P(self.lower_expr(e)));
+                let else_if_arms = {
+                    let mut arms = vec![];
+                    loop {
+                        let else_opt_continue = else_opt.and_then(|els| {
+                            els.and_then(|els| {
+                                match els.node {
+                                    // else if
+                                    hir::ExprIf(cond, then, else_opt) => {
+                                        let pat_under = self.pat_wild(e.span);
+                                        arms.push(hir::Arm {
+                                            attrs: hir_vec![],
+                                            pats: hir_vec![pat_under],
+                                            guard: Some(cond),
+                                            body: P(self.expr_block(then, ThinVec::new())),
+                                        });
+                                        else_opt.map(|else_opt| (else_opt, true))
                                     }
-                                })
-                            });
-                            match else_opt_continue {
-                                Some((e, true)) => {
-                                    else_opt = Some(e);
+                                    _ => Some((P(els), false)),
                                 }
-                                Some((e, false)) => {
-                                    else_opt = Some(e);
-                                    break;
-                                }
-                                None => {
-                                    else_opt = None;
-                                    break;
-                                }
+                            })
+                        });
+                        match else_opt_continue {
+                            Some((e, true)) => {
+                                else_opt = Some(e);
+                            }
+                            Some((e, false)) => {
+                                else_opt = Some(e);
+                                break;
+                            }
+                            None => {
+                                else_opt = None;
+                                break;
                             }
                         }
-                        arms
-                    };
+                    }
+                    arms
+                };
 
-                    let contains_else_clause = else_opt.is_some();
+                let contains_else_clause = else_opt.is_some();
 
-                    // `_ => [<else_opt> | ()]`
-                    let else_arm = {
-                        let pat_under = self.pat_wild(e.span);
-                        let else_expr =
-                            else_opt.unwrap_or_else(|| self.expr_tuple(e.span, hir_vec![]));
-                        self.arm(hir_vec![pat_under], else_expr)
-                    };
+                // `_ => [<else_opt> | ()]`
+                let else_arm = {
+                    let pat_under = self.pat_wild(e.span);
+                    let else_expr =
+                        else_opt.unwrap_or_else(|| self.expr_tuple(e.span, hir_vec![]));
+                    self.arm(hir_vec![pat_under], else_expr)
+                };
 
-                    let mut arms = Vec::with_capacity(else_if_arms.len() + 2);
-                    arms.push(pat_arm);
-                    arms.extend(else_if_arms);
-                    arms.push(else_arm);
+                let mut arms = Vec::with_capacity(else_if_arms.len() + 2);
+                arms.push(pat_arm);
+                arms.extend(else_if_arms);
+                arms.push(else_arm);
 
-                    let sub_expr = P(self.lower_expr(sub_expr));
-                    // add attributes to the outer returned expr node
-                    return self.expr(e.span,
-                                     hir::ExprMatch(sub_expr,
-                                                    arms.into(),
-                                                    hir::MatchSource::IfLetDesugar {
-                                                        contains_else_clause: contains_else_clause,
-                                                    }),
-                                     e.attrs.clone());
+                let sub_expr = P(self.lower_expr(sub_expr));
+                // add attributes to the outer returned expr node
+                return self.expr(e.span,
+                                 hir::ExprMatch(sub_expr,
+                                                arms.into(),
+                                                hir::MatchSource::IfLetDesugar {
+                                                    contains_else_clause: contains_else_clause,
+                                                }),
+                                 e.attrs.clone());
+            }
+
+            // Desugar ExprWhileLet
+            // From: `[opt_ident]: while let <pat> = <sub_expr> <body>`
+            ExprKind::WhileLet(ref pat, ref sub_expr, ref body, opt_ident) => {
+                // to:
+                //
+                //   [opt_ident]: loop {
+                //     match <sub_expr> {
+                //       <pat> => <body>,
+                //       _ => break
+                //     }
+                //   }
+
+                // `<pat> => <body>`
+                let pat_arm = {
+                    let body = self.lower_block(body);
+                    let body_expr = P(self.expr_block(body, ThinVec::new()));
+                    let pat = self.lower_pat(pat);
+                    self.arm(hir_vec![pat], body_expr)
+                };
+
+                // `_ => break`
+                let break_arm = {
+                    let pat_under = self.pat_wild(e.span);
+                    let break_expr = self.expr_break(e.span, ThinVec::new());
+                    self.arm(hir_vec![pat_under], break_expr)
+                };
+
+                // `match <sub_expr> { ... }`
+                let arms = hir_vec![pat_arm, break_arm];
+                let sub_expr = P(self.lower_expr(sub_expr));
+                let match_expr = self.expr(e.span,
+                                           hir::ExprMatch(sub_expr,
+                                                          arms,
+                                                          hir::MatchSource::WhileLetDesugar),
+                                           ThinVec::new());
+
+                // `[opt_ident]: loop { ... }`
+                let loop_block = P(self.block_expr(P(match_expr)));
+                let loop_expr = hir::ExprLoop(loop_block, self.lower_opt_sp_ident(opt_ident),
+                                              hir::LoopSource::WhileLet);
+                // add attributes to the outer returned expr node
+                let attrs = e.attrs.clone();
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    node: loop_expr,
+                    span: e.span,
+                    attrs: attrs
                 }
+            }
 
-                // Desugar ExprWhileLet
-                // From: `[opt_ident]: while let <pat> = <sub_expr> <body>`
-                ExprKind::WhileLet(ref pat, ref sub_expr, ref body, opt_ident) => {
-                    // to:
-                    //
-                    //   [opt_ident]: loop {
-                    //     match <sub_expr> {
-                    //       <pat> => <body>,
-                    //       _ => break
-                    //     }
-                    //   }
+            // Desugar ExprForLoop
+            // From: `[opt_ident]: for <pat> in <head> <body>`
+            ExprKind::ForLoop(ref pat, ref head, ref body, opt_ident) => {
+                // to:
+                //
+                //   {
+                //     let result = match ::std::iter::IntoIterator::into_iter(<head>) {
+                //       mut iter => {
+                //         [opt_ident]: loop {
+                //           match ::std::iter::Iterator::next(&mut iter) {
+                //             ::std::option::Option::Some(<pat>) => <body>,
+                //             ::std::option::Option::None => break
+                //           }
+                //         }
+                //       }
+                //     };
+                //     result
+                //   }
 
-                    // `<pat> => <body>`
-                    let pat_arm = {
-                        let body = self.lower_block(body);
-                        let body_expr = P(self.expr_block(body, ThinVec::new()));
-                        let pat = self.lower_pat(pat);
-                        self.arm(hir_vec![pat], body_expr)
-                    };
+                // expand <head>
+                let head = self.lower_expr(head);
 
-                    // `_ => break`
-                    let break_arm = {
-                        let pat_under = self.pat_wild(e.span);
-                        let break_expr = self.expr_break(e.span, ThinVec::new());
-                        self.arm(hir_vec![pat_under], break_expr)
-                    };
+                let iter = self.str_to_ident("iter");
 
-                    // `match <sub_expr> { ... }`
+                // `::std::option::Option::Some(<pat>) => <body>`
+                let pat_arm = {
+                    let body_block = self.lower_block(body);
+                    let body_expr = P(self.expr_block(body_block, ThinVec::new()));
+                    let pat = self.lower_pat(pat);
+                    let some_pat = self.pat_some(e.span, pat);
+
+                    self.arm(hir_vec![some_pat], body_expr)
+                };
+
+                // `::std::option::Option::None => break`
+                let break_arm = {
+                    let break_expr = self.expr_break(e.span, ThinVec::new());
+                    let pat = self.pat_none(e.span);
+                    self.arm(hir_vec![pat], break_expr)
+                };
+
+                // `mut iter`
+                let iter_pat = self.pat_ident_binding_mode(e.span, iter,
+                                                           hir::BindByValue(hir::MutMutable));
+
+                // `match ::std::iter::Iterator::next(&mut iter) { ... }`
+                let match_expr = {
+                    let iter = P(self.expr_ident(e.span, iter, iter_pat.id));
+                    let ref_mut_iter = self.expr_mut_addr_of(e.span, iter);
+                    let next_path = &["iter", "Iterator", "next"];
+                    let next_path = P(self.expr_std_path(e.span, next_path, ThinVec::new()));
+                    let next_expr = P(self.expr_call(e.span, next_path,
+                                      hir_vec![ref_mut_iter]));
                     let arms = hir_vec![pat_arm, break_arm];
-                    let sub_expr = P(self.lower_expr(sub_expr));
-                    let match_expr = self.expr(e.span,
-                                               hir::ExprMatch(sub_expr,
-                                                              arms,
-                                                              hir::MatchSource::WhileLetDesugar),
-                                               ThinVec::new());
 
-                    // `[opt_ident]: loop { ... }`
-                    let loop_block = P(self.block_expr(P(match_expr)));
-                    let loop_expr = hir::ExprLoop(loop_block, self.lower_opt_sp_ident(opt_ident),
-                                                  hir::LoopSource::WhileLet);
-                    // add attributes to the outer returned expr node
-                    let attrs = e.attrs.clone();
-                    return hir::Expr { id: e.id, node: loop_expr, span: e.span, attrs: attrs };
-                }
+                    P(self.expr(e.span,
+                                hir::ExprMatch(next_expr, arms,
+                                               hir::MatchSource::ForLoopDesugar),
+                                ThinVec::new()))
+                };
 
-                // Desugar ExprForLoop
-                // From: `[opt_ident]: for <pat> in <head> <body>`
-                ExprKind::ForLoop(ref pat, ref head, ref body, opt_ident) => {
-                    // to:
-                    //
-                    //   {
-                    //     let result = match ::std::iter::IntoIterator::into_iter(<head>) {
-                    //       mut iter => {
-                    //         [opt_ident]: loop {
-                    //           match ::std::iter::Iterator::next(&mut iter) {
-                    //             ::std::option::Option::Some(<pat>) => <body>,
-                    //             ::std::option::Option::None => break
-                    //           }
-                    //         }
-                    //       }
-                    //     };
-                    //     result
-                    //   }
+                // `[opt_ident]: loop { ... }`
+                let loop_block = P(self.block_expr(match_expr));
+                let loop_expr = hir::ExprLoop(loop_block, self.lower_opt_sp_ident(opt_ident),
+                                              hir::LoopSource::ForLoop);
+                let loop_expr = P(hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    node: loop_expr,
+                    span: e.span,
+                    attrs: ThinVec::new(),
+                });
 
-                    // expand <head>
-                    let head = self.lower_expr(head);
+                // `mut iter => { ... }`
+                let iter_arm = self.arm(hir_vec![iter_pat], loop_expr);
 
-                    let iter = self.str_to_ident("iter");
+                // `match ::std::iter::IntoIterator::into_iter(<head>) { ... }`
+                let into_iter_expr = {
+                    let into_iter_path = &["iter", "IntoIterator", "into_iter"];
+                    let into_iter = P(self.expr_std_path(e.span, into_iter_path,
+                                                         ThinVec::new()));
+                    P(self.expr_call(e.span, into_iter, hir_vec![head]))
+                };
 
-                    // `::std::option::Option::Some(<pat>) => <body>`
-                    let pat_arm = {
-                        let body_block = self.lower_block(body);
-                        let body_expr = P(self.expr_block(body_block, ThinVec::new()));
-                        let pat = self.lower_pat(pat);
-                        let some_pat = self.pat_some(e.span, pat);
+                let match_expr = P(self.expr_match(e.span,
+                                                   into_iter_expr,
+                                                   hir_vec![iter_arm],
+                                                   hir::MatchSource::ForLoopDesugar));
 
-                        self.arm(hir_vec![some_pat], body_expr)
+                // `{ let _result = ...; _result }`
+                // underscore prevents an unused_variables lint if the head diverges
+                let result_ident = self.str_to_ident("_result");
+                let (let_stmt, let_stmt_binding) =
+                    self.stmt_let(e.span, false, result_ident, match_expr);
+
+                let result = P(self.expr_ident(e.span, result_ident, let_stmt_binding));
+                let block = P(self.block_all(e.span, hir_vec![let_stmt], Some(result)));
+                // add the attributes to the outer returned expr node
+                return self.expr_block(block, e.attrs.clone());
+            }
+
+            // Desugar ExprKind::Try
+            // From: `<expr>?`
+            ExprKind::Try(ref sub_expr) => {
+                // to:
+                //
+                // match Carrier::translate(<expr>) {
+                //     Ok(val) => #[allow(unreachable_code)] val,
+                //     Err(err) => #[allow(unreachable_code)]
+                //                 return Carrier::from_error(From::from(err)),
+                // }
+                let unstable_span = self.allow_internal_unstable("?", e.span);
+
+                // Carrier::translate(<expr>)
+                let discr = {
+                    // expand <expr>
+                    let sub_expr = self.lower_expr(sub_expr);
+
+                    let path = &["ops", "Carrier", "translate"];
+                    let path = P(self.expr_std_path(unstable_span, path, ThinVec::new()));
+                    P(self.expr_call(e.span, path, hir_vec![sub_expr]))
+                };
+
+                // #[allow(unreachable_code)]
+                let attr = {
+                    // allow(unreachable_code)
+                    let allow = {
+                        let allow_ident = self.str_to_ident("allow");
+                        let uc_ident = self.str_to_ident("unreachable_code");
+                        let uc_meta_item = attr::mk_spanned_word_item(e.span, uc_ident);
+                        let uc_nested = NestedMetaItemKind::MetaItem(uc_meta_item);
+                        let uc_spanned = respan(e.span, uc_nested);
+                        attr::mk_spanned_list_item(e.span, allow_ident, vec![uc_spanned])
+                    };
+                    attr::mk_spanned_attr_outer(e.span, attr::mk_attr_id(), allow)
+                };
+                let attrs = vec![attr];
+
+                // Ok(val) => #[allow(unreachable_code)] val,
+                let ok_arm = {
+                    let val_ident = self.str_to_ident("val");
+                    let val_pat = self.pat_ident(e.span, val_ident);
+                    let val_expr = P(self.expr_ident_with_attrs(e.span,
+                                                                val_ident,
+                                                                val_pat.id,
+                                                                ThinVec::from(attrs.clone())));
+                    let ok_pat = self.pat_ok(e.span, val_pat);
+
+                    self.arm(hir_vec![ok_pat], val_expr)
+                };
+
+                // Err(err) => #[allow(unreachable_code)]
+                //             return Carrier::from_error(From::from(err)),
+                let err_arm = {
+                    let err_ident = self.str_to_ident("err");
+                    let err_local = self.pat_ident(e.span, err_ident);
+                    let from_expr = {
+                        let path = &["convert", "From", "from"];
+                        let from = P(self.expr_std_path(e.span, path, ThinVec::new()));
+                        let err_expr = self.expr_ident(e.span, err_ident, err_local.id);
+
+                        self.expr_call(e.span, from, hir_vec![err_expr])
+                    };
+                    let from_err_expr = {
+                        let path = &["ops", "Carrier", "from_error"];
+                        let from_err = P(self.expr_std_path(unstable_span, path,
+                                                            ThinVec::new()));
+                        P(self.expr_call(e.span, from_err, hir_vec![from_expr]))
                     };
 
-                    // `::std::option::Option::None => break`
-                    let break_arm = {
-                        let break_expr = self.expr_break(e.span, ThinVec::new());
-                        let pat = self.pat_none(e.span);
-                        self.arm(hir_vec![pat], break_expr)
-                    };
+                    let ret_expr = P(self.expr(e.span,
+                                               hir::Expr_::ExprRet(Some(from_err_expr)),
+                                                                   ThinVec::from(attrs)));
 
-                    // `mut iter`
-                    let iter_pat = self.pat_ident_binding_mode(e.span, iter,
-                                                               hir::BindByValue(hir::MutMutable));
+                    let err_pat = self.pat_err(e.span, err_local);
+                    self.arm(hir_vec![err_pat], ret_expr)
+                };
 
-                    // `match ::std::iter::Iterator::next(&mut iter) { ... }`
-                    let match_expr = {
-                        let iter = P(self.expr_ident(e.span, iter, iter_pat.id));
-                        let ref_mut_iter = self.expr_mut_addr_of(e.span, iter);
-                        let next_path = &["iter", "Iterator", "next"];
-                        let next_path = P(self.expr_std_path(e.span, next_path, ThinVec::new()));
-                        let next_expr = P(self.expr_call(e.span, next_path,
-                                          hir_vec![ref_mut_iter]));
-                        let arms = hir_vec![pat_arm, break_arm];
+                return self.expr_match(e.span, discr, hir_vec![err_arm, ok_arm],
+                                       hir::MatchSource::TryDesugar);
+            }
 
-                        P(self.expr(e.span,
-                                    hir::ExprMatch(next_expr, arms,
-                                                   hir::MatchSource::ForLoopDesugar),
-                                    ThinVec::new()))
-                    };
-
-                    // `[opt_ident]: loop { ... }`
-                    let loop_block = P(self.block_expr(match_expr));
-                    let loop_expr = hir::ExprLoop(loop_block, self.lower_opt_sp_ident(opt_ident),
-                                                  hir::LoopSource::ForLoop);
-                    let loop_expr = P(hir::Expr {
-                        id: e.id,
-                        node: loop_expr,
-                        span: e.span,
-                        attrs: ThinVec::new(),
-                    });
-
-                    // `mut iter => { ... }`
-                    let iter_arm = self.arm(hir_vec![iter_pat], loop_expr);
-
-                    // `match ::std::iter::IntoIterator::into_iter(<head>) { ... }`
-                    let into_iter_expr = {
-                        let into_iter_path = &["iter", "IntoIterator", "into_iter"];
-                        let into_iter = P(self.expr_std_path(e.span, into_iter_path,
-                                                             ThinVec::new()));
-                        P(self.expr_call(e.span, into_iter, hir_vec![head]))
-                    };
-
-                    let match_expr = P(self.expr_match(e.span,
-                                                       into_iter_expr,
-                                                       hir_vec![iter_arm],
-                                                       hir::MatchSource::ForLoopDesugar));
-
-                    // `{ let _result = ...; _result }`
-                    // underscore prevents an unused_variables lint if the head diverges
-                    let result_ident = self.str_to_ident("_result");
-                    let (let_stmt, let_stmt_binding) =
-                        self.stmt_let(e.span, false, result_ident, match_expr);
-
-                    let result = P(self.expr_ident(e.span, result_ident, let_stmt_binding));
-                    let block = P(self.block_all(e.span, hir_vec![let_stmt], Some(result)));
-                    // add the attributes to the outer returned expr node
-                    return self.expr_block(block, e.attrs.clone());
-                }
-
-                // Desugar ExprKind::Try
-                // From: `<expr>?`
-                ExprKind::Try(ref sub_expr) => {
-                    // to:
-                    //
-                    // match Carrier::translate(<expr>) {
-                    //     Ok(val) => #[allow(unreachable_code)] val,
-                    //     Err(err) => #[allow(unreachable_code)]
-                    //                 return Carrier::from_error(From::from(err)),
-                    // }
-                    let unstable_span = self.allow_internal_unstable("?", e.span);
-
-                    // Carrier::translate(<expr>)
-                    let discr = {
-                        // expand <expr>
-                        let sub_expr = self.lower_expr(sub_expr);
-
-                        let path = &["ops", "Carrier", "translate"];
-                        let path = P(self.expr_std_path(unstable_span, path, ThinVec::new()));
-                        P(self.expr_call(e.span, path, hir_vec![sub_expr]))
-                    };
-
-                    // #[allow(unreachable_code)]
-                    let attr = {
-                        // allow(unreachable_code)
-                        let allow = {
-                            let allow_ident = self.str_to_ident("allow");
-                            let uc_ident = self.str_to_ident("unreachable_code");
-                            let uc_meta_item = attr::mk_spanned_word_item(e.span, uc_ident);
-                            let uc_nested = NestedMetaItemKind::MetaItem(uc_meta_item);
-                            let uc_spanned = respan(e.span, uc_nested);
-                            attr::mk_spanned_list_item(e.span, allow_ident, vec![uc_spanned])
-                        };
-                        attr::mk_spanned_attr_outer(e.span, attr::mk_attr_id(), allow)
-                    };
-                    let attrs = vec![attr];
-
-                    // Ok(val) => #[allow(unreachable_code)] val,
-                    let ok_arm = {
-                        let val_ident = self.str_to_ident("val");
-                        let val_pat = self.pat_ident(e.span, val_ident);
-                        let val_expr = P(self.expr_ident_with_attrs(e.span,
-                                                                    val_ident,
-                                                                    val_pat.id,
-                                                                    ThinVec::from(attrs.clone())));
-                        let ok_pat = self.pat_ok(e.span, val_pat);
-
-                        self.arm(hir_vec![ok_pat], val_expr)
-                    };
-
-                    // Err(err) => #[allow(unreachable_code)]
-                    //             return Carrier::from_error(From::from(err)),
-                    let err_arm = {
-                        let err_ident = self.str_to_ident("err");
-                        let err_local = self.pat_ident(e.span, err_ident);
-                        let from_expr = {
-                            let path = &["convert", "From", "from"];
-                            let from = P(self.expr_std_path(e.span, path, ThinVec::new()));
-                            let err_expr = self.expr_ident(e.span, err_ident, err_local.id);
-
-                            self.expr_call(e.span, from, hir_vec![err_expr])
-                        };
-                        let from_err_expr = {
-                            let path = &["ops", "Carrier", "from_error"];
-                            let from_err = P(self.expr_std_path(unstable_span, path,
-                                                                ThinVec::new()));
-                            P(self.expr_call(e.span, from_err, hir_vec![from_expr]))
-                        };
-
-                        let ret_expr = P(self.expr(e.span,
-                                                   hir::Expr_::ExprRet(Some(from_err_expr)),
-                                                                       ThinVec::from(attrs)));
-
-                        let err_pat = self.pat_err(e.span, err_local);
-                        self.arm(hir_vec![err_pat], ret_expr)
-                    };
-
-                    return self.expr_match(e.span, discr, hir_vec![err_arm, ok_arm],
-                                           hir::MatchSource::TryDesugar);
-                }
-
-                ExprKind::Mac(_) => panic!("Shouldn't exist here"),
-            },
-            span: e.span,
-            attrs: e.attrs.clone(),
+            ExprKind::Mac(_) => panic!("Shouldn't exist here"),
         }
     }
 
     fn lower_stmt(&mut self, s: &Stmt) -> SmallVector<hir::Stmt> {
+
         SmallVector::one(match s.node {
             StmtKind::Local(ref l) => Spanned {
                 node: hir::StmtDecl(P(Spanned {
                     node: hir::DeclLocal(self.lower_local(l)),
                     span: s.span,
-                }), s.id),
+                }), self.lower_node_id(s.id)),
                 span: s.span,
             },
             StmtKind::Item(ref it) => {
                 // Can only use the ID once.
-                let mut id = Some(s.id);
+                let mut id = Some(self.lower_node_id(s.id));
                 return self.lower_item_id(it).into_iter().map(|item_id| Spanned {
                     node: hir::StmtDecl(P(Spanned {
                         node: hir::DeclItem(item_id),
@@ -2047,13 +2258,13 @@ impl<'a> LoweringContext<'a> {
             }
             StmtKind::Expr(ref e) => {
                 Spanned {
-                    node: hir::StmtExpr(P(self.lower_expr(e)), s.id),
+                    node: hir::StmtExpr(P(self.lower_expr(e)), self.lower_node_id(s.id)),
                     span: s.span,
                 }
             }
             StmtKind::Semi(ref e) => {
                 Spanned {
-                    node: hir::StmtSemi(P(self.lower_expr(e)), s.id),
+                    node: hir::StmtSemi(P(self.lower_expr(e)), self.lower_node_id(s.id)),
                     span: s.span,
                 }
             }
@@ -2075,7 +2286,7 @@ impl<'a> LoweringContext<'a> {
             Visibility::Restricted { ref path, id } => {
                 hir::Visibility::Restricted {
                     path: P(self.lower_path(id, path, ParamMode::Explicit, true)),
-                    id: id
+                    id: self.lower_node_id(id),
                 }
             }
             Visibility::Inherited => hir::Inherited,
