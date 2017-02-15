@@ -1004,13 +1004,49 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for mir::Literal<'tcx>
 
 impl_stable_hash_for!(struct mir::Location { block, statement_index });
 
-impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::AdtDef {
+
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::AdtFlags {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          _: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        std_hash::Hash::hash(self, hasher);
+    }
+}
+
+impl_stable_hash_for!(struct ty::VariantDef {
+    did,
+    name,
+    disr_val,
+    fields,
+    ctor_kind
+});
+
+impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::FieldDef {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
-        self.did.hash_stable(hcx, hasher);
+        let ty::FieldDef {
+            did,
+            name,
+            vis
+        } = *self;
+
+        did.hash_stable(hcx, hasher);
+        name.hash_stable(hcx, hasher);
+        vis.hash_stable(hcx, hasher);
+
+        //variants.get().hash_stable(hcx, hasher);
+        // hcx.tcx.item_type(did).hash_stable(hcx, hasher);
     }
 }
+
+// impl_stable_hash_for!(struct ty::FieldDef {
+//     did,
+//     name,
+//     vis,
+// });
+
 
 impl_stable_hash_for!(enum ::middle::const_val::ConstVal {
     Float(const_float),
@@ -1167,7 +1203,11 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'a, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
-        (&**self).hash_stable(hcx, hasher);
+        // Do not hash length here
+        for attribute in self.iter() {
+            attribute.hash_stable(hcx, hasher);
+        }
+        // (&**self).hash_stable(hcx, hasher);
     }
 }
 

@@ -271,7 +271,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
               T: Encodable + HashStable<StableHashingContext<'b, 'tcx>> + Debug
     {
         let items: Vec<_> = iter.into_iter().collect();
-        items.len().hash_stable(&mut self.hcx, &mut self.hasher);
+        // items.len().hash_stable(&mut self.hcx, &mut self.hasher);
         for item in &items {
             item.hash_stable(&mut self.hcx, &mut self.hasher);
             debug!("state={:?} after hashing {:?}", self.hasher, item);
@@ -284,7 +284,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> EntryBuilder<'a, 'b, 'tcx> {
               T: 'x + Encodable + HashStable<StableHashingContext<'b, 'tcx>>  + Debug
     {
         let items: Vec<_> = iter.into_iter().collect();
-        items.len().hash_stable(&mut self.hcx, &mut self.hasher);
+        // items.len().hash_stable(&mut self.hcx, &mut self.hasher);
         for item in &items {
             item.hash_stable(&mut self.hcx, &mut self.hasher);
             debug!("state={:?} after hashing {:?}", self.hasher, item);

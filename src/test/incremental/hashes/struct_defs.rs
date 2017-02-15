@@ -252,9 +252,11 @@ mod tuple_struct_change_field_type_indirectly {
 
     #[rustc_dirty(label="Hir", cfg="cfail2")]
     #[rustc_clean(label="Hir", cfg="cfail3")]
-    #[rustc_metadata_dirty(cfg="cfail2")]
-    #[rustc_metadata_clean(cfg="cfail3")]
-    struct TupleStruct(FieldType);
+    struct TupleStruct(
+        #[rustc_metadata_dirty(cfg="cfail2")]
+        #[rustc_metadata_clean(cfg="cfail3")]
+        FieldType
+    );
 }
 
 
@@ -267,9 +269,9 @@ mod record_struct_change_field_type_indirectly {
 
     #[rustc_dirty(label="Hir", cfg="cfail2")]
     #[rustc_clean(label="Hir", cfg="cfail3")]
-    #[rustc_metadata_dirty(cfg="cfail2")]
-    #[rustc_metadata_clean(cfg="cfail3")]
     struct RecordStruct {
+        #[rustc_metadata_dirty(cfg="cfail2")]
+        #[rustc_metadata_clean(cfg="cfail3")]
         _x: FieldType
     }
 }
