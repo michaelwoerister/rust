@@ -168,9 +168,21 @@ impl<'a> LoweringContext<'a> {
                 let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
                 self.lctx.local_node_id_owner.push((def_index, 0));
                 let hir_item = self.lctx.lower_item(item);
+
+                if self.lctx.local_node_id_owner.len() != 2 {
+                    let stack = self.lctx
+                                    .local_node_id_owner
+                                    .clone()
+                                    .iter()
+                                    .map(|sid| sid.0)
+                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                                    .collect::<Vec<String>>();
+                    panic!("{:?}", stack);
+                }
+
+                self.lctx.local_node_id_owner.pop();
                 self.lctx.items.insert(item.id, hir_item);
                 visit::walk_item(self, item);
-                self.lctx.local_node_id_owner.pop();
             }
 
             fn visit_trait_item(&mut self, item: &'lcx TraitItem) {
@@ -179,9 +191,20 @@ impl<'a> LoweringContext<'a> {
                 self.lctx.local_node_id_owner.push((def_index, 0));
                 let id = hir::TraitItemId { node_id: item.id };
                 let hir_item = self.lctx.lower_trait_item(item);
+                if self.lctx.local_node_id_owner.len() != 2 {
+                    let stack = self.lctx
+                                    .local_node_id_owner
+                                    .clone()
+                                    .iter()
+                                    .map(|sid| sid.0)
+                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                                    .collect::<Vec<String>>();
+                    panic!("{:?}", stack);
+                }
+                self.lctx.local_node_id_owner.pop();
+
                 self.lctx.trait_items.insert(id, hir_item);
                 visit::walk_trait_item(self, item);
-                self.lctx.local_node_id_owner.pop();
             }
 
             fn visit_impl_item(&mut self, item: &'lcx ImplItem) {
@@ -190,19 +213,48 @@ impl<'a> LoweringContext<'a> {
                 self.lctx.local_node_id_owner.push((def_index, 0));
                 let id = hir::ImplItemId { node_id: item.id };
                 let hir_item = self.lctx.lower_impl_item(item);
+
+                if self.lctx.local_node_id_owner.len() != 2 {
+                    let stack = self.lctx
+                                    .local_node_id_owner
+                                    .clone()
+                                    .iter()
+                                    .map(|sid| sid.0)
+                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                                    .collect::<Vec<String>>();
+                    panic!("{:?}", stack);
+                }
+
+                self.lctx.local_node_id_owner.pop();
+
+
                 self.lctx.impl_items.insert(id, hir_item);
                 visit::walk_impl_item(self, item);
-                self.lctx.local_node_id_owner.pop();
             }
         }
 
+        self.lower_node_id(CRATE_NODE_ID);
         visit::walk_crate(&mut MiscCollector { lctx: &mut self }, c);
         visit::walk_crate(&mut ItemLowerer { lctx: &mut self }, c);
 
-        self.lower_node_id(CRATE_NODE_ID);
         let module = self.lower_mod(&c.module);
         let attrs = self.lower_attrs(&c.attrs);
         let exported_macros = c.exported_macros.iter().map(|m| self.lower_macro_def(m)).collect();
+
+        for item in self.items.values() {
+            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
+            hir::intravisit::Visitor::visit_item(&mut visitor, item);
+        }
+
+        for item in self.trait_items.values() {
+            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
+            hir::intravisit::Visitor::visit_trait_item(&mut visitor, item);
+        }
+
+        for item in self.impl_items.values() {
+            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
+            hir::intravisit::Visitor::visit_impl_item(&mut visitor, item);
+        }
 
         self.resolver.definitions().register_ast_id_to_stable_id_mapping(self.ast_id_to_hir_id);
 
@@ -232,14 +284,14 @@ impl<'a> LoweringContext<'a> {
         if self.ast_id_to_hir_id[ast_node_id] == hir::DUMMY_NODE_ID {
             // Generate a new stable ID
             let hir_node_id = {
-                let &mut (def_index, ref mut local_id) = self//.lctx
-                                                             .local_node_id_owner
-                                                             .last_mut()
-                                                             .unwrap();
-                *local_id += 1;
+                let &mut (def_index, ref mut local_id_counter) = self.local_node_id_owner
+                                                                     .last_mut()
+                                                                     .unwrap();
+                let local_id = *local_id_counter;
+                *local_id_counter += 1;
                 hir::StableNodeId {
                     owner: def_index,
-                    local_id: *local_id,
+                    local_id: local_id,
                 }
             };
 
@@ -1001,15 +1053,33 @@ impl<'a> LoweringContext<'a> {
                             let mut path = self.lower_path_extra(import.id, path, suffix,
                                                                  ParamMode::Explicit, true);
                             path.span = span;
+
+                            let def_index = self.resolver.definitions().opt_def_index(import.id).unwrap();
+                            self.local_node_id_owner.push((def_index, 0));
+
                             self.lower_node_id(import.id);
+                            let vis = match *vis {
+                                hir::Visibility::Public => hir::Visibility::Public,
+                                hir::Visibility::Crate => hir::Visibility::Crate,
+                                hir::Visibility::Inherited => hir::Visibility::Inherited,
+                                hir::Visibility::Restricted { ref path, id: _ } => {
+                                    hir::Visibility::Restricted {
+                                        path: path.clone(),
+                                        id: self.next_id(),
+                                    }
+                                }
+                            };
                             self.items.insert(import.id, hir::Item {
                                 id: import.id,
                                 name: import.rename.unwrap_or(ident).name,
                                 attrs: attrs.clone(),
                                 node: hir::ItemUse(P(path), hir::UseKind::Single),
-                                vis: vis.clone(),
+                                // vis: vis.clone(),
+                                vis: vis,
                                 span: span,
                             });
+
+                            self.local_node_id_owner.pop();
                         }
                         path
                     }
@@ -2617,5 +2687,97 @@ impl<'a> LoweringContext<'a> {
             span: span,
             name: keywords::Invalid.name()
         }
+    }
+}
+
+struct StableNodeIdSanityCheck<'a> {
+    definitions: &'a Definitions,
+    ast_to_stable_id: &'a [hir::StableNodeId],
+    owner_def_index: Option<DefIndex>,
+    stable_ids_seen: BTreeMap<hir::StableNodeId, NodeId>,
+
+}
+
+impl<'a> StableNodeIdSanityCheck<'a> {
+
+    fn new<'b>(ast_to_stable_id: &'b [hir::StableNodeId],
+               definitions: &'b Definitions)
+               -> StableNodeIdSanityCheck<'b> {
+        StableNodeIdSanityCheck {
+            definitions: definitions,
+            ast_to_stable_id: ast_to_stable_id,
+            owner_def_index: None,
+            stable_ids_seen: BTreeMap::new(),
+        }
+    }
+
+    fn check<F: FnOnce(&mut StableNodeIdSanityCheck)>(&mut self,
+                                                      node_id: NodeId,
+                                                      walk: F) {
+        assert!(self.owner_def_index.is_none());
+        let owner_def_index = self.definitions.local_def_id(node_id).index;
+        self.owner_def_index = Some(owner_def_index);
+        walk(self);
+
+        if owner_def_index == CRATE_DEF_INDEX {
+            return
+        }
+
+        // There's always at least one entry for the owning item itself
+        let max = self.stable_ids_seen
+                      .keys()
+                      .map(|stable_id| stable_id.local_id)
+                      .max()
+                      .unwrap();
+
+        if max as usize != self.stable_ids_seen.len() - 1 {
+            use std::iter::FromIterator;
+            println!("Local node IDs not assigned densely in {}: {:?}",
+                   self.definitions.def_path(owner_def_index).to_string_no_crate(),
+                   Vec::from_iter(self.stable_ids_seen.keys()));
+        }
+    }
+}
+
+impl<'hir, 'a> hir::intravisit::Visitor<'hir> for StableNodeIdSanityCheck<'a> {
+
+    fn nested_visit_map<'this>(&'this mut self) -> hir::intravisit::NestedVisitorMap<'this, 'hir> {
+        hir::intravisit::NestedVisitorMap::None
+    }
+
+    fn visit_id(&mut self, node_id: NodeId) {
+        let owner = self.owner_def_index.unwrap();
+        let stable_id = self.ast_to_stable_id[node_id.as_usize()];
+
+        if stable_id == hir::DUMMY_NODE_ID {
+            panic!("No StableNodeId assigned for NodeId {}", node_id);
+        }
+
+        if owner != stable_id.owner {
+            panic!("StableNodeIdSanityCheck: The recorded owner of {} is {} instead of {}",
+                node_id,
+                self.definitions.def_path(stable_id.owner).to_string_no_crate(),
+                self.definitions.def_path(owner).to_string_no_crate());
+        }
+
+        if let Some(prev) = self.stable_ids_seen.insert(stable_id, node_id) {
+            panic!("Same StableNodeId {}/{} assigned for nodes {} and {}",
+                self.definitions.def_path(stable_id.owner).to_string_no_crate(),
+                stable_id.local_id,
+                prev,
+                node_id);
+        }
+    }
+
+    fn visit_item(&mut self, i: &'hir hir::Item) {
+        self.check(i.id, |this| hir::intravisit::walk_item(this, i));
+    }
+
+    fn visit_trait_item(&mut self, ti: &'hir hir::TraitItem) {
+        self.check(ti.id, |this| hir::intravisit::walk_trait_item(this, ti));
+    }
+
+    fn visit_impl_item(&mut self, ii: &'hir hir::ImplItem) {
+        self.check(ii.id, |this| hir::intravisit::walk_impl_item(this, ii));
     }
 }

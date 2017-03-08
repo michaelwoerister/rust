@@ -219,6 +219,20 @@ impl DefPath {
         tcx.crate_disambiguator(self.krate).as_str().hash(state);
         self.data.hash(state);
     }
+
+    pub fn to_string_no_crate(&self) -> String {
+        let mut s = String::with_capacity(self.data.len() * 16);
+
+        for component in &self.data {
+            write!(s,
+                   "::{}[{}]",
+                   component.data.as_interned_str(),
+                   component.disambiguator)
+                .unwrap();
+        }
+
+        s
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
