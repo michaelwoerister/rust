@@ -181,7 +181,7 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
                 match stmt.node {
                     // Avoid wasting a node id on a trailing expression statement,
                     // which shares a HIR node with the expression itself.
-                    ast::StmtKind::Expr(ref expr) if remaining_stmts == 0 => stmt.id = expr.id,
+                    // ast::StmtKind::Expr(ref expr) if remaining_stmts == 0 => stmt.id = expr.id,
 
                     _ if self.monotonic => {
                         assert_eq!(stmt.id, ast::DUMMY_NODE_ID);

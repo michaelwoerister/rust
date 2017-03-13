@@ -50,6 +50,7 @@ use util::nodemap::{DefIdMap, NodeMap, FxHashMap};
 
 use std::collections::BTreeMap;
 use std::iter;
+use std::fmt::Debug;
 
 use syntax::attr;
 use syntax::ast::*;
@@ -61,6 +62,8 @@ use syntax::symbol::{Symbol, keywords};
 use syntax::util::small_vector::SmallVector;
 use syntax::visit::{self, Visitor};
 use syntax_pos::Span;
+
+const STABLE_COUNTER_ID_LOCKED: u32 = 0xFFFFFFFF;
 
 pub struct LoweringContext<'a> {
     crate_root: Option<&'static str>,
@@ -83,6 +86,8 @@ pub struct LoweringContext<'a> {
 
     local_node_id_owner: Vec<(DefIndex, u32)>,
     ast_id_to_hir_id: Vec<hir::StableNodeId>,
+
+    stable_node_id_counters: NodeMap<u32>,
 }
 
 pub trait Resolver {
@@ -118,6 +123,7 @@ pub fn lower_crate(sess: &Session,
         type_def_lifetime_params: DefIdMap(),
         local_node_id_owner: vec![(CRATE_DEF_INDEX, 1)],
         ast_id_to_hir_id: vec![],
+        stable_node_id_counters: NodeMap(),
     }.lower_crate(krate)
 }
 
@@ -142,6 +148,8 @@ impl<'a> LoweringContext<'a> {
 
         impl<'lcx, 'interner> Visitor<'lcx> for MiscCollector<'lcx, 'interner> {
             fn visit_item(&mut self, item: &'lcx Item) {
+                self.lctx.allocate_hir_node_id_counter(item.id, item);
+
                 match item.node {
                     ItemKind::Struct(_, ref generics) |
                     ItemKind::Union(_, ref generics) |
@@ -156,6 +164,16 @@ impl<'a> LoweringContext<'a> {
                 }
                 visit::walk_item(self, item);
             }
+
+            fn visit_trait_item(&mut self, item: &'lcx TraitItem) {
+                self.lctx.allocate_hir_node_id_counter(item.id, item);
+                visit::walk_trait_item(self, item);
+            }
+
+            fn visit_impl_item(&mut self, item: &'lcx ImplItem) {
+                self.lctx.allocate_hir_node_id_counter(item.id, item);
+                visit::walk_impl_item(self, item);
+            }
         }
 
         struct ItemLowerer<'lcx, 'interner: 'lcx> {
@@ -165,70 +183,88 @@ impl<'a> LoweringContext<'a> {
         impl<'lcx, 'interner> Visitor<'lcx> for ItemLowerer<'lcx, 'interner> {
             fn visit_item(&mut self, item: &'lcx Item) {
                 // println!("lowering item {:?}", item);
-                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
-                self.lctx.local_node_id_owner.push((def_index, 0));
-                let hir_item = self.lctx.lower_item(item);
+                // let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                // self.lctx.local_node_id_owner.push((def_index, 0));
+                // let hir_item = self.lctx.lower_item(item);
 
-                if self.lctx.local_node_id_owner.len() != 2 {
-                    let stack = self.lctx
-                                    .local_node_id_owner
-                                    .clone()
-                                    .iter()
-                                    .map(|sid| sid.0)
-                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
-                                    .collect::<Vec<String>>();
-                    panic!("{:?}", stack);
-                }
+                // if self.lctx.local_node_id_owner.len() != 2 {
+                //     let stack = self.lctx
+                //                     .local_node_id_owner
+                //                     .clone()
+                //                     .iter()
+                //                     .map(|sid| sid.0)
+                //                     .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                //                     .collect::<Vec<String>>();
+                //     panic!("{:?}", stack);
+                // }
 
-                self.lctx.local_node_id_owner.pop();
-                self.lctx.items.insert(item.id, hir_item);
+                // self.lctx.local_node_id_owner.pop();
+
+                self.lctx.with_stable_node_id_owner(item.id, |lctx| {
+                    let hir_item = lctx.lower_item(item);
+                    lctx.items.insert(item.id, hir_item);
+                });
+
                 visit::walk_item(self, item);
             }
 
             fn visit_trait_item(&mut self, item: &'lcx TraitItem) {
-                // println!("lowering trait item {:?}", item);
-                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
-                self.lctx.local_node_id_owner.push((def_index, 0));
-                let id = hir::TraitItemId { node_id: item.id };
-                let hir_item = self.lctx.lower_trait_item(item);
-                if self.lctx.local_node_id_owner.len() != 2 {
-                    let stack = self.lctx
-                                    .local_node_id_owner
-                                    .clone()
-                                    .iter()
-                                    .map(|sid| sid.0)
-                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
-                                    .collect::<Vec<String>>();
-                    panic!("{:?}", stack);
-                }
-                self.lctx.local_node_id_owner.pop();
+                // // println!("lowering trait item {:?}", item);
+                // let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                // self.lctx.local_node_id_owner.push((def_index, 0));
+                // let id = hir::TraitItemId { node_id: item.id };
+                // let hir_item = self.lctx.lower_trait_item(item);
+                // if self.lctx.local_node_id_owner.len() != 2 {
+                //     let stack = self.lctx
+                //                     .local_node_id_owner
+                //                     .clone()
+                //                     .iter()
+                //                     .map(|sid| sid.0)
+                //                     .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                //                     .collect::<Vec<String>>();
+                //     panic!("{:?}", stack);
+                // }
+                // self.lctx.local_node_id_owner.pop();
 
-                self.lctx.trait_items.insert(id, hir_item);
+                // self.lctx.trait_items.insert(id, hir_item);
+
+                self.lctx.with_stable_node_id_owner(item.id, |lctx| {
+                    let hir_item = lctx.lower_trait_item(item);
+                    let id = hir::TraitItemId { node_id: item.id };
+                    lctx.trait_items.insert(id, hir_item);
+                });
                 visit::walk_trait_item(self, item);
             }
 
             fn visit_impl_item(&mut self, item: &'lcx ImplItem) {
                 // println!("lowering impl item {:?}", item);
-                let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
-                self.lctx.local_node_id_owner.push((def_index, 0));
-                let id = hir::ImplItemId { node_id: item.id };
-                let hir_item = self.lctx.lower_impl_item(item);
+                // let def_index = self.lctx.resolver.definitions().opt_def_index(item.id).unwrap();
+                // self.lctx.local_node_id_owner.push((def_index, 0));
+                // let id = hir::ImplItemId { node_id: item.id };
+                // let hir_item = self.lctx.lower_impl_item(item);
 
-                if self.lctx.local_node_id_owner.len() != 2 {
-                    let stack = self.lctx
-                                    .local_node_id_owner
-                                    .clone()
-                                    .iter()
-                                    .map(|sid| sid.0)
-                                    .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
-                                    .collect::<Vec<String>>();
-                    panic!("{:?}", stack);
-                }
+                // if self.lctx.local_node_id_owner.len() != 2 {
+                //     let stack = self.lctx
+                //                     .local_node_id_owner
+                //                     .clone()
+                //                     .iter()
+                //                     .map(|sid| sid.0)
+                //                     .map(|di| self.lctx.resolver.definitions().def_path(di).to_string_no_crate())
+                //                     .collect::<Vec<String>>();
+                //     panic!("{:?}", stack);
+                // }
 
-                self.lctx.local_node_id_owner.pop();
+                // self.lctx.local_node_id_owner.pop();
 
 
-                self.lctx.impl_items.insert(id, hir_item);
+                // self.lctx.impl_items.insert(id, hir_item);
+
+                self.lctx.with_stable_node_id_owner(item.id, |lctx| {
+                    let hir_item = lctx.lower_impl_item(item);
+                    let id = hir::ImplItemId { node_id: item.id };
+                    lctx.impl_items.insert(id, hir_item);
+                });
+
                 visit::walk_impl_item(self, item);
             }
         }
@@ -240,21 +276,6 @@ impl<'a> LoweringContext<'a> {
         let module = self.lower_mod(&c.module);
         let attrs = self.lower_attrs(&c.attrs);
         let exported_macros = c.exported_macros.iter().map(|m| self.lower_macro_def(m)).collect();
-
-        for item in self.items.values() {
-            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
-            hir::intravisit::Visitor::visit_item(&mut visitor, item);
-        }
-
-        for item in self.trait_items.values() {
-            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
-            hir::intravisit::Visitor::visit_trait_item(&mut visitor, item);
-        }
-
-        for item in self.impl_items.values() {
-            let mut visitor = StableNodeIdSanityCheck::new(&self.ast_id_to_hir_id, self.resolver.definitions());
-            hir::intravisit::Visitor::visit_impl_item(&mut visitor, item);
-        }
 
         self.resolver.definitions().register_ast_id_to_stable_id_mapping(self.ast_id_to_hir_id);
 
@@ -270,7 +291,23 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    fn lower_node_id(&mut self, ast_node_id: NodeId) -> NodeId {
+    fn allocate_hir_node_id_counter<T: Debug>(&mut self,
+                                              owner: NodeId,
+                                              debug: &T) {
+        if self.stable_node_id_counters.insert(owner, 0).is_some() {
+            bug!("Tried to allocate stable_node_id_counter for {:?} twice",
+                 debug);
+        }
+        // Always allocate the first stable id for the owner itself
+        self.lower_node_id_with_owner(owner, owner);
+    }
+
+    fn lower_node_id_generic<F>(&mut self,
+                                ast_node_id: NodeId,
+                                alloc_stable_node_id: F)
+                                -> NodeId
+        where F: FnOnce(&mut Self) -> hir::StableNodeId
+    {
         if ast_node_id == DUMMY_NODE_ID {
             return ast_node_id;
         }
@@ -283,22 +320,67 @@ impl<'a> LoweringContext<'a> {
 
         if self.ast_id_to_hir_id[ast_node_id] == hir::DUMMY_NODE_ID {
             // Generate a new stable ID
-            let hir_node_id = {
-                let &mut (def_index, ref mut local_id_counter) = self.local_node_id_owner
-                                                                     .last_mut()
-                                                                     .unwrap();
-                let local_id = *local_id_counter;
-                *local_id_counter += 1;
-                hir::StableNodeId {
-                    owner: def_index,
-                    local_id: local_id,
-                }
-            };
-
-            self.ast_id_to_hir_id[ast_node_id] = hir_node_id;
+            self.ast_id_to_hir_id[ast_node_id] = alloc_stable_node_id(self);
         }
 
         NodeId::new(ast_node_id)
+    }
+
+    fn with_stable_node_id_owner<F>(&mut self, owner: NodeId, f: F)
+        where F: FnOnce(&mut Self)
+    {
+        let counter = self.stable_node_id_counters
+                          .insert(owner, STABLE_COUNTER_ID_LOCKED)
+                          .unwrap();
+        let def_index = self.resolver.definitions().opt_def_index(owner).unwrap();
+        self.local_node_id_owner.push((def_index, counter));
+        f(self);
+        let (new_def_index, new_counter) = self.local_node_id_owner.pop().unwrap();
+
+        debug_assert!(def_index == new_def_index);
+        debug_assert!(new_counter >= counter);
+
+        let prev = self.stable_node_id_counters.insert(owner, new_counter).unwrap();
+        debug_assert!(prev == STABLE_COUNTER_ID_LOCKED);
+    }
+
+    fn lower_node_id_with_owner(&mut self,
+                                ast_node_id: NodeId,
+                                owner: NodeId)
+                                -> NodeId {
+        self.lower_node_id_generic(ast_node_id, |this| {
+            let local_id_counter = this.stable_node_id_counters
+                                       .get_mut(&owner)
+                                       .unwrap();
+            let local_id = *local_id_counter;
+
+            // We want to be sure not to modify the counter in the map while it
+            // is also on the stack. Otherwise we'll get lost updates when writing
+            // back from the stack to the map.
+            debug_assert!(local_id != STABLE_COUNTER_ID_LOCKED);
+
+            *local_id_counter += 1;
+            let def_index = this.resolver.definitions().opt_def_index(owner).unwrap();
+
+            hir::StableNodeId {
+                owner: def_index,
+                local_id: local_id,
+            }
+        })
+    }
+
+    fn lower_node_id(&mut self, ast_node_id: NodeId) -> NodeId {
+        self.lower_node_id_generic(ast_node_id, |this| {
+            let &mut (def_index, ref mut local_id_counter) = this.local_node_id_owner
+                                                                 .last_mut()
+                                                                 .unwrap();
+            let local_id = *local_id_counter;
+            *local_id_counter += 1;
+            hir::StableNodeId {
+                owner: def_index,
+                local_id: local_id,
+            }
+        })
     }
 
     fn record_body(&mut self, value: hir::Expr, decl: Option<&FnDecl>)
@@ -410,84 +492,168 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_ty(&mut self, t: &Ty) -> P<hir::Ty> {
+        let kind = match t.node {
+            TyKind::Infer => hir::TyInfer,
+            TyKind::Slice(ref ty) => hir::TySlice(self.lower_ty(ty)),
+            TyKind::Ptr(ref mt) => hir::TyPtr(self.lower_mt(mt)),
+            TyKind::Rptr(ref region, ref mt) => {
+                let span = Span { hi: t.span.lo, ..t.span };
+                let lifetime = match *region {
+                    Some(ref lt) => self.lower_lifetime(lt),
+                    None => self.elided_lifetime(span)
+                };
+                hir::TyRptr(lifetime, self.lower_mt(mt))
+            }
+            TyKind::BareFn(ref f) => {
+                hir::TyBareFn(P(hir::BareFnTy {
+                    lifetimes: self.lower_lifetime_defs(&f.lifetimes),
+                    unsafety: self.lower_unsafety(f.unsafety),
+                    abi: f.abi,
+                    decl: self.lower_fn_decl(&f.decl),
+                }))
+            }
+            TyKind::Never => hir::TyNever,
+            TyKind::Tup(ref tys) => {
+                hir::TyTup(tys.iter().map(|ty| self.lower_ty(ty)).collect())
+            }
+            TyKind::Paren(ref ty) => {
+                return self.lower_ty(ty);
+            }
+            TyKind::Path(ref qself, ref path) => {
+                let id = self.lower_node_id(t.id);
+                let qpath = self.lower_qpath(t.id, qself, path, ParamMode::Explicit);
+                return self.ty_path(id, t.span, qpath);
+            }
+            TyKind::ImplicitSelf => {
+                hir::TyPath(hir::QPath::Resolved(None, P(hir::Path {
+                    def: self.expect_full_def(t.id),
+                    segments: hir_vec![hir::PathSegment {
+                        name: keywords::SelfType.name(),
+                        parameters: hir::PathParameters::none()
+                    }],
+                    span: t.span,
+                })))
+            }
+            TyKind::Array(ref ty, ref length) => {
+                let length = self.lower_expr(length);
+                hir::TyArray(self.lower_ty(ty),
+                             self.record_body(length, None))
+            }
+            TyKind::Typeof(ref expr) => {
+                let expr = self.lower_expr(expr);
+                hir::TyTypeof(self.record_body(expr, None))
+            }
+            TyKind::TraitObject(ref bounds) => {
+                let mut lifetime_bound = None;
+                let bounds = bounds.iter().filter_map(|bound| {
+                    match *bound {
+                        TraitTyParamBound(ref ty, TraitBoundModifier::None) => {
+                            Some(self.lower_poly_trait_ref(ty))
+                        }
+                        TraitTyParamBound(_, TraitBoundModifier::Maybe) => None,
+                        RegionTyParamBound(ref lifetime) => {
+                            lifetime_bound = Some(self.lower_lifetime(lifetime));
+                            None
+                        }
+                    }
+                }).collect();
+                let lifetime_bound = lifetime_bound.unwrap_or_else(|| {
+                    self.elided_lifetime(t.span)
+                });
+                hir::TyTraitObject(bounds, lifetime_bound)
+            }
+            TyKind::ImplTrait(ref bounds) => {
+                hir::TyImplTrait(self.lower_bounds(bounds))
+            }
+            TyKind::Mac(_) => panic!("TyMac should have been expanded by now."),
+        };
+
         P(hir::Ty {
             id: self.lower_node_id(t.id),
-            node: match t.node {
-                TyKind::Infer => hir::TyInfer,
-                TyKind::Slice(ref ty) => hir::TySlice(self.lower_ty(ty)),
-                TyKind::Ptr(ref mt) => hir::TyPtr(self.lower_mt(mt)),
-                TyKind::Rptr(ref region, ref mt) => {
-                    let span = Span { hi: t.span.lo, ..t.span };
-                    let lifetime = match *region {
-                        Some(ref lt) => self.lower_lifetime(lt),
-                        None => self.elided_lifetime(span)
-                    };
-                    hir::TyRptr(lifetime, self.lower_mt(mt))
-                }
-                TyKind::BareFn(ref f) => {
-                    hir::TyBareFn(P(hir::BareFnTy {
-                        lifetimes: self.lower_lifetime_defs(&f.lifetimes),
-                        unsafety: self.lower_unsafety(f.unsafety),
-                        abi: f.abi,
-                        decl: self.lower_fn_decl(&f.decl),
-                    }))
-                }
-                TyKind::Never => hir::TyNever,
-                TyKind::Tup(ref tys) => {
-                    hir::TyTup(tys.iter().map(|ty| self.lower_ty(ty)).collect())
-                }
-                TyKind::Paren(ref ty) => {
-                    return self.lower_ty(ty);
-                }
-                TyKind::Path(ref qself, ref path) => {
-                    let qpath = self.lower_qpath(t.id, qself, path, ParamMode::Explicit);
-                    return self.ty_path(t.id, t.span, qpath);
-                }
-                TyKind::ImplicitSelf => {
-                    hir::TyPath(hir::QPath::Resolved(None, P(hir::Path {
-                        def: self.expect_full_def(t.id),
-                        segments: hir_vec![hir::PathSegment {
-                            name: keywords::SelfType.name(),
-                            parameters: hir::PathParameters::none()
-                        }],
-                        span: t.span,
-                    })))
-                }
-                TyKind::Array(ref ty, ref length) => {
-                    let length = self.lower_expr(length);
-                    hir::TyArray(self.lower_ty(ty),
-                                 self.record_body(length, None))
-                }
-                TyKind::Typeof(ref expr) => {
-                    let expr = self.lower_expr(expr);
-                    hir::TyTypeof(self.record_body(expr, None))
-                }
-                TyKind::TraitObject(ref bounds) => {
-                    let mut lifetime_bound = None;
-                    let bounds = bounds.iter().filter_map(|bound| {
-                        match *bound {
-                            TraitTyParamBound(ref ty, TraitBoundModifier::None) => {
-                                Some(self.lower_poly_trait_ref(ty))
-                            }
-                            TraitTyParamBound(_, TraitBoundModifier::Maybe) => None,
-                            RegionTyParamBound(ref lifetime) => {
-                                lifetime_bound = Some(self.lower_lifetime(lifetime));
-                                None
-                            }
-                        }
-                    }).collect();
-                    let lifetime_bound = lifetime_bound.unwrap_or_else(|| {
-                        self.elided_lifetime(t.span)
-                    });
-                    hir::TyTraitObject(bounds, lifetime_bound)
-                }
-                TyKind::ImplTrait(ref bounds) => {
-                    hir::TyImplTrait(self.lower_bounds(bounds))
-                }
-                TyKind::Mac(_) => panic!("TyMac should have been expanded by now."),
-            },
             span: t.span,
+            node: kind,
         })
+
+
+
+        // P(hir::Ty {
+        //     id: self.lower_node_id(t.id),
+        //     node: match t.node {
+        //         TyKind::Infer => hir::TyInfer,
+        //         TyKind::Slice(ref ty) => hir::TySlice(self.lower_ty(ty)),
+        //         TyKind::Ptr(ref mt) => hir::TyPtr(self.lower_mt(mt)),
+        //         TyKind::Rptr(ref region, ref mt) => {
+        //             let span = Span { hi: t.span.lo, ..t.span };
+        //             let lifetime = match *region {
+        //                 Some(ref lt) => self.lower_lifetime(lt),
+        //                 None => self.elided_lifetime(span)
+        //             };
+        //             hir::TyRptr(lifetime, self.lower_mt(mt))
+        //         }
+        //         TyKind::BareFn(ref f) => {
+        //             hir::TyBareFn(P(hir::BareFnTy {
+        //                 lifetimes: self.lower_lifetime_defs(&f.lifetimes),
+        //                 unsafety: self.lower_unsafety(f.unsafety),
+        //                 abi: f.abi,
+        //                 decl: self.lower_fn_decl(&f.decl),
+        //             }))
+        //         }
+        //         TyKind::Never => hir::TyNever,
+        //         TyKind::Tup(ref tys) => {
+        //             hir::TyTup(tys.iter().map(|ty| self.lower_ty(ty)).collect())
+        //         }
+        //         TyKind::Paren(ref ty) => {
+        //             return self.lower_ty(ty);
+        //         }
+        //         TyKind::Path(ref qself, ref path) => {
+        //             let qpath = self.lower_qpath(t.id, qself, path, ParamMode::Explicit);
+        //             return self.ty_path(t.id, t.span, qpath);
+        //         }
+        //         TyKind::ImplicitSelf => {
+        //             hir::TyPath(hir::QPath::Resolved(None, P(hir::Path {
+        //                 def: self.expect_full_def(t.id),
+        //                 segments: hir_vec![hir::PathSegment {
+        //                     name: keywords::SelfType.name(),
+        //                     parameters: hir::PathParameters::none()
+        //                 }],
+        //                 span: t.span,
+        //             })))
+        //         }
+        //         TyKind::Array(ref ty, ref length) => {
+        //             let length = self.lower_expr(length);
+        //             hir::TyArray(self.lower_ty(ty),
+        //                          self.record_body(length, None))
+        //         }
+        //         TyKind::Typeof(ref expr) => {
+        //             let expr = self.lower_expr(expr);
+        //             hir::TyTypeof(self.record_body(expr, None))
+        //         }
+        //         TyKind::TraitObject(ref bounds) => {
+        //             let mut lifetime_bound = None;
+        //             let bounds = bounds.iter().filter_map(|bound| {
+        //                 match *bound {
+        //                     TraitTyParamBound(ref ty, TraitBoundModifier::None) => {
+        //                         Some(self.lower_poly_trait_ref(ty))
+        //                     }
+        //                     TraitTyParamBound(_, TraitBoundModifier::Maybe) => None,
+        //                     RegionTyParamBound(ref lifetime) => {
+        //                         lifetime_bound = Some(self.lower_lifetime(lifetime));
+        //                         None
+        //                     }
+        //                 }
+        //             }).collect();
+        //             let lifetime_bound = lifetime_bound.unwrap_or_else(|| {
+        //                 self.elided_lifetime(t.span)
+        //             });
+        //             hir::TyTraitObject(bounds, lifetime_bound)
+        //         }
+        //         TyKind::ImplTrait(ref bounds) => {
+        //             hir::TyImplTrait(self.lower_bounds(bounds))
+        //         }
+        //         TyKind::Mac(_) => panic!("TyMac should have been expanded by now."),
+        //     },
+        //     span: t.span,
+        // })
     }
 
     fn lower_foreign_mod(&mut self, fm: &ForeignMod) -> hir::ForeignMod {
@@ -975,7 +1141,7 @@ impl<'a> LoweringContext<'a> {
             span: f.span,
             id: self.lower_node_id(f.id),
             name: f.ident.map(|ident| ident.name).unwrap_or(Symbol::intern(&index.to_string())),
-            vis: self.lower_visibility(&f.vis),
+            vis: self.lower_visibility(&f.vis, None),
             ty: self.lower_ty(&f.ty),
             attrs: self.lower_attrs(&f.attrs),
         }
@@ -1005,12 +1171,26 @@ impl<'a> LoweringContext<'a> {
 
         let mut expr = None;
 
-        let mut stmts = b.stmts.iter().flat_map(|s| self.lower_stmt(s)).collect::<Vec<_>>();
-        if let Some(last) = stmts.pop() {
-            if let hir::StmtExpr(e, _) = last.node {
-                expr = Some(e);
+        // let mut stmts = b.stmts.iter().flat_map(|s| self.lower_stmt(s)).collect::<Vec<_>>();
+        // if let Some(last) = stmts.pop() {
+        //     if let hir::StmtExpr(e, _) = last.node {
+        //         expr = Some(e);
+        //     } else {
+        //         stmts.push(last);
+        //     }
+        // }
+
+        let mut stmts = vec![];
+
+        for (index, stmt) in b.stmts.iter().enumerate() {
+            if index == b.stmts.len() - 1 {
+                if let StmtKind::Expr(ref e) = stmt.node {
+                    expr = Some(P(self.lower_expr(e)));
+                } else {
+                    stmts.extend(self.lower_stmt(stmt));
+                }
             } else {
-                stmts.push(last);
+                stmts.extend(self.lower_stmt(stmt));
             }
         }
 
@@ -1243,7 +1423,7 @@ impl<'a> LoweringContext<'a> {
                 id: this.lower_node_id(i.id),
                 name: i.ident.name,
                 attrs: this.lower_attrs(&i.attrs),
-                vis: this.lower_visibility(&i.vis),
+                vis: this.lower_visibility(&i.vis, None),
                 defaultness: this.lower_defaultness(i.defaultness, true /* [1] */),
                 node: match i.node {
                     ImplItemKind::Const(ref ty, ref expr) => {
@@ -1272,7 +1452,7 @@ impl<'a> LoweringContext<'a> {
             id: hir::ImplItemId { node_id: i.id },
             name: i.ident.name,
             span: i.span,
-            vis: self.lower_visibility(&i.vis),
+            vis: self.lower_visibility(&i.vis, Some(i.id)),
             defaultness: self.lower_defaultness(i.defaultness, true /* [1] */),
             kind: match i.node {
                 ImplItemKind::Const(..) => hir::AssociatedItemKind::Const,
@@ -1318,7 +1498,7 @@ impl<'a> LoweringContext<'a> {
     pub fn lower_item(&mut self, i: &Item) -> hir::Item {
         let mut name = i.ident.name;
         let attrs = self.lower_attrs(&i.attrs);
-        let mut vis = self.lower_visibility(&i.vis);
+        let mut vis = self.lower_visibility(&i.vis, None);
         let node = self.with_parent_def(i.id, |this| {
             this.lower_item_kind(i.id, &mut name, &attrs, &mut vis, &i.node)
         });
@@ -1349,7 +1529,7 @@ impl<'a> LoweringContext<'a> {
                         hir::ForeignItemStatic(this.lower_ty(t), m)
                     }
                 },
-                vis: this.lower_visibility(&i.vis),
+                vis: this.lower_visibility(&i.vis, None),
                 span: i.span,
             }
         })
@@ -2004,70 +2184,191 @@ impl<'a> LoweringContext<'a> {
                     self.arm(hir_vec![pat], body_expr)
                 };
 
-                // `[_ if <else_opt_if_cond> => <else_opt_if_body>,]`
-                let mut else_opt = else_opt.as_ref().map(|e| P(self.lower_expr(e)));
-                let else_if_arms = {
-                    let mut arms = vec![];
+                let mut else_arms = vec![];
+
+                // if let Some(else_expr) = else_opt.as_ref() {
+                //     let mut current = else_expr;
+                //     let mut else_exprs = vec![current];
+
+                //     // while let ExprKind::If(_, _, ref else_expr_opt) = current.node {
+                //     //     if let &Some(ref else_expr) = else_expr_opt {
+                //     //         else_exprs.push(else_expr);
+                //     //         current = else_expr;
+                //     //     } else {
+                //     //         break
+                //     //     }
+                //     // }
+                //     loop {
+                //         if let ExprKind::If(_, _, ref else_expr_opt) = current.node {
+                //             if let Some(ref else_expr) = *else_expr_opt {
+
+                //             }
+                //         } else {
+                //             break
+                //         }
+
+                //         if let &Some(ref else_expr) = else_expr_opt {
+                //             else_exprs.push(else_expr);
+                //             current = else_expr;
+                //         } else {
+                //             break
+                //         }
+                //     }
+
+                //     for else_expr in else_exprs {
+                //         let (guard, body) = if let ExprKind::If(ref cond, ref then, _) = else_expr.node {
+                //             (Some(cond), self.expr_block(self.lower_block(then), ThinVec::new()))
+                //         } else {
+                //             // This is the last one, just push it without guard
+                //             (None, self.lower_expr(else_expr))
+                //         };
+
+                //         else_arms.push(hir::Arm {
+                //             attrs: hir_vec![],
+                //             pats: hir_vec![self.pat_wild(e.span)],
+                //             guard: guard.map(|e| P(self.lower_expr(e))),
+                //             body: P(body),
+                //         });
+                //     }
+                // }
+
+                {
+                    let mut current: Option<&Expr> = else_opt.as_ref().map(|p| &**p);
+                    let mut else_exprs: Vec<Option<&Expr>> = vec![current];
+
                     loop {
-                        let else_opt_continue = else_opt.and_then(|els| {
-                            els.and_then(|els| {
-                                match els.node {
-                                    // else if
-                                    hir::ExprIf(cond, then, else_opt) => {
-                                        let pat_under = self.pat_wild(e.span);
-                                        arms.push(hir::Arm {
-                                            attrs: hir_vec![],
-                                            pats: hir_vec![pat_under],
-                                            guard: Some(cond),
-                                            body: P(self.expr_block(then, ThinVec::new())),
-                                        });
-                                        else_opt.map(|else_opt| (else_opt, true))
-                                    }
-                                    _ => Some((P(els), false)),
-                                }
-                            })
-                        });
-                        match else_opt_continue {
-                            Some((e, true)) => {
-                                else_opt = Some(e);
+                        if let Some(e) = current {
+                            // There is an else branch at this level
+                            if let ExprKind::If(_, _, ref else_opt) = e.node {
+                                // The else branch is again an if-expr
+                                current = else_opt.as_ref().map(|p| &**p);
+                                else_exprs.push(current);
+                            } else {
+                                // The last item in the list is not an if-expr,
+                                // stop here
+                                break
                             }
-                            Some((e, false)) => {
-                                else_opt = Some(e);
-                                break;
-                            }
-                            None => {
-                                else_opt = None;
-                                break;
-                            }
+                        } else {
+                            // We have no more else branch
+                            break
                         }
                     }
-                    arms
-                };
+
+                    for else_expr in else_exprs {
+                        if let Some(else_expr) = else_expr {
+                            let (guard, body) = if let ExprKind::If(ref cond,
+                                                                    ref then,
+                                                                    _) = else_expr.node {
+                                let then = self.lower_block(then);
+                                (Some(cond),
+                                 self.expr_block(then, ThinVec::new()))
+                            } else {
+                                // This is the last one, just push it without guard
+                                (None,
+                                 self.lower_expr(else_expr))
+                            };
+
+                            else_arms.push(hir::Arm {
+                                attrs: hir_vec![],
+                                pats: hir_vec![self.pat_wild(e.span)],
+                                guard: guard.map(|e| P(self.lower_expr(e))),
+                                body: P(body),
+                            });
+                        } else {
+                            let pat_under = self.pat_wild(e.span);
+                            let unit = self.expr_tuple(e.span, hir_vec![]);
+                            else_arms.push(self.arm(hir_vec![pat_under], unit));
+                        }
+                    }
+                }
+
+                // // `[_ if <else_opt_if_cond> => <else_opt_if_body>,]`
+                // let mut else_opt = else_opt.as_ref().map(|e| P(self.lower_expr(e)));
+                // let else_if_arms = {
+                //     let mut arms = vec![];
+                //     loop {
+                //         let else_opt_continue = else_opt.and_then(|els| {
+                //             els.and_then(|els| {
+                //                 match els.node {
+                //                     // else if
+                //                     hir::ExprIf(cond, then, else_opt) => {
+                //                         let pat_under = self.pat_wild(e.span);
+                //                         arms.push(hir::Arm {
+                //                             attrs: hir_vec![],
+                //                             pats: hir_vec![pat_under],
+                //                             guard: Some(cond),
+                //                             body: P(self.expr_block(then, ThinVec::new())),
+                //                         });
+                //                         else_opt.map(|else_opt| (else_opt, true))
+                //                     }
+                //                     _ => Some((P(els), false)),
+                //                 }
+                //             })
+                //         });
+                //         match else_opt_continue {
+                //             Some((e, true)) => {
+                //                 else_opt = Some(e);
+                //             }
+                //             Some((e, false)) => {
+                //                 else_opt = Some(e);
+                //                 break;
+                //             }
+                //             None => {
+                //                 else_opt = None;
+                //                 break;
+                //             }
+                //         }
+                //     }
+                //     arms
+                // };
 
                 let contains_else_clause = else_opt.is_some();
 
-                // `_ => [<else_opt> | ()]`
-                let else_arm = {
-                    let pat_under = self.pat_wild(e.span);
-                    let else_expr =
-                        else_opt.unwrap_or_else(|| self.expr_tuple(e.span, hir_vec![]));
-                    self.arm(hir_vec![pat_under], else_expr)
-                };
+                // // `_ => [<else_opt> | ()]`
+                // let else_arm = {
+                //     let pat_under = self.pat_wild(e.span);
+                //     // let else_expr =
+                //     //     else_opt.map(|e| P(self.lower_expr(e)))
+                //     //             .unwrap_or_else(|| self.expr_tuple(e.span, hir_vec![]));
+                //     let else_expr = if let &Some(ref else_expr) = else_opt {
+                //         P(self.lower_expr(else_expr))
+                //     } else {
+                //         self.expr_tuple(e.span, hir_vec![])
+                //     };
 
-                let mut arms = Vec::with_capacity(else_if_arms.len() + 2);
-                arms.push(pat_arm);
-                arms.extend(else_if_arms);
-                arms.push(else_arm);
+                //     self.arm(hir_vec![pat_under], else_expr)
+                // };
+
+                // // let mut arms = Vec::with_capacity(else_if_arms.len() + 2);
+                // let mut arms = Vec::with_capacity(2);
+                // arms.push(pat_arm);
+                // // arms.extend(else_if_arms);
+                // arms.push(else_arm);
 
                 let sub_expr = P(self.lower_expr(sub_expr));
                 // add attributes to the outer returned expr node
-                return self.expr(e.span,
-                                 hir::ExprMatch(sub_expr,
-                                                arms.into(),
-                                                hir::MatchSource::IfLetDesugar {
-                                                    contains_else_clause: contains_else_clause,
-                                                }),
-                                 e.attrs.clone());
+                // return self.expr(e.span,
+                //                  hir::ExprMatch(sub_expr,
+                //                                 arms.into(),
+                //                                 hir::MatchSource::IfLetDesugar {
+                //                                     contains_else_clause: contains_else_clause,
+                //                                 }),
+                //                  e.attrs.clone());
+
+
+                else_arms.insert(0, pat_arm);
+
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprMatch(
+                        sub_expr,
+                        else_arms.into(),
+                        hir::MatchSource::IfLetDesugar {
+                            contains_else_clause: contains_else_clause,
+                        })
+                }
             }
 
             // Desugar ExprWhileLet
@@ -2297,8 +2598,18 @@ impl<'a> LoweringContext<'a> {
                     self.arm(hir_vec![err_pat], ret_expr)
                 };
 
-                return self.expr_match(e.span, discr, hir_vec![err_arm, ok_arm],
-                                       hir::MatchSource::TryDesugar);
+                // return self.expr_match(e.span, discr, hir_vec![err_arm, ok_arm],
+                //                        hir::MatchSource::TryDesugar);
+
+                hir::Expr {
+                    id: self.lower_node_id(e.id),
+                    span: e.span,
+                    attrs: e.attrs.clone(),
+                    node: hir::ExprMatch(
+                        discr,
+                        hir_vec![err_arm, ok_arm],
+                        hir::MatchSource::TryDesugar)
+                }
             }
 
             ExprKind::Mac(_) => panic!("Shouldn't exist here"),
@@ -2349,14 +2660,26 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    fn lower_visibility(&mut self, v: &Visibility) -> hir::Visibility {
+    // If an explicit_owner is given, this method allocates the StableNodeId in
+    // the address space of that item instead of the item currently being
+    // lowered. This can happen during lower_impl_item_ref() where we need to
+    // the Visibility value although we haven't lowered the owning ImplItem in
+    // question yet.
+    fn lower_visibility(&mut self,
+                        v: &Visibility,
+                        explicit_owner: Option<NodeId>)
+                        -> hir::Visibility {
         match *v {
             Visibility::Public => hir::Public,
             Visibility::Crate(_) => hir::Visibility::Crate,
             Visibility::Restricted { ref path, id } => {
                 hir::Visibility::Restricted {
                     path: P(self.lower_path(id, path, ParamMode::Explicit, true)),
-                    id: self.lower_node_id(id),
+                    id: if let Some(owner) = explicit_owner {
+                        self.lower_node_id_with_owner(id, owner)
+                    } else {
+                        self.lower_node_id(id)
+                    }
                 }
             }
             Visibility::Inherited => hir::Inherited,
@@ -2690,94 +3013,94 @@ impl<'a> LoweringContext<'a> {
     }
 }
 
-struct StableNodeIdSanityCheck<'a> {
-    definitions: &'a Definitions,
-    ast_to_stable_id: &'a [hir::StableNodeId],
-    owner_def_index: Option<DefIndex>,
-    stable_ids_seen: BTreeMap<hir::StableNodeId, NodeId>,
+// struct StableNodeIdSanityCheck<'a> {
+//     definitions: &'a Definitions,
+//     ast_to_stable_id: &'a [hir::StableNodeId],
+//     owner_def_index: Option<DefIndex>,
+//     stable_ids_seen: BTreeMap<hir::StableNodeId, NodeId>,
 
-}
+// }
 
-impl<'a> StableNodeIdSanityCheck<'a> {
+// impl<'a> StableNodeIdSanityCheck<'a> {
 
-    fn new<'b>(ast_to_stable_id: &'b [hir::StableNodeId],
-               definitions: &'b Definitions)
-               -> StableNodeIdSanityCheck<'b> {
-        StableNodeIdSanityCheck {
-            definitions: definitions,
-            ast_to_stable_id: ast_to_stable_id,
-            owner_def_index: None,
-            stable_ids_seen: BTreeMap::new(),
-        }
-    }
+//     fn new<'b>(ast_to_stable_id: &'b [hir::StableNodeId],
+//                definitions: &'b Definitions)
+//                -> StableNodeIdSanityCheck<'b> {
+//         StableNodeIdSanityCheck {
+//             definitions: definitions,
+//             ast_to_stable_id: ast_to_stable_id,
+//             owner_def_index: None,
+//             stable_ids_seen: BTreeMap::new(),
+//         }
+//     }
 
-    fn check<F: FnOnce(&mut StableNodeIdSanityCheck)>(&mut self,
-                                                      node_id: NodeId,
-                                                      walk: F) {
-        assert!(self.owner_def_index.is_none());
-        let owner_def_index = self.definitions.local_def_id(node_id).index;
-        self.owner_def_index = Some(owner_def_index);
-        walk(self);
+//     fn check<F: FnOnce(&mut StableNodeIdSanityCheck)>(&mut self,
+//                                                       node_id: NodeId,
+//                                                       walk: F) {
+//         assert!(self.owner_def_index.is_none());
+//         let owner_def_index = self.definitions.local_def_id(node_id).index;
+//         self.owner_def_index = Some(owner_def_index);
+//         walk(self);
 
-        if owner_def_index == CRATE_DEF_INDEX {
-            return
-        }
+//         if owner_def_index == CRATE_DEF_INDEX {
+//             return
+//         }
 
-        // There's always at least one entry for the owning item itself
-        let max = self.stable_ids_seen
-                      .keys()
-                      .map(|stable_id| stable_id.local_id)
-                      .max()
-                      .unwrap();
+//         // There's always at least one entry for the owning item itself
+//         let max = self.stable_ids_seen
+//                       .keys()
+//                       .map(|stable_id| stable_id.local_id)
+//                       .max()
+//                       .unwrap();
 
-        if max as usize != self.stable_ids_seen.len() - 1 {
-            use std::iter::FromIterator;
-            println!("Local node IDs not assigned densely in {}: {:?}",
-                   self.definitions.def_path(owner_def_index).to_string_no_crate(),
-                   Vec::from_iter(self.stable_ids_seen.keys()));
-        }
-    }
-}
+//         if max as usize != self.stable_ids_seen.len() - 1 {
+//             use std::iter::FromIterator;
+//             println!("Local node IDs not assigned densely in {}: {:?}",
+//                    self.definitions.def_path(owner_def_index).to_string_no_crate(),
+//                    Vec::from_iter(self.stable_ids_seen.keys()));
+//         }
+//     }
+// }
 
-impl<'hir, 'a> hir::intravisit::Visitor<'hir> for StableNodeIdSanityCheck<'a> {
+// impl<'hir, 'a> hir::intravisit::Visitor<'hir> for StableNodeIdSanityCheck<'a> {
 
-    fn nested_visit_map<'this>(&'this mut self) -> hir::intravisit::NestedVisitorMap<'this, 'hir> {
-        hir::intravisit::NestedVisitorMap::None
-    }
+//     fn nested_visit_map<'this>(&'this mut self) -> hir::intravisit::NestedVisitorMap<'this, 'hir> {
+//         hir::intravisit::NestedVisitorMap::None
+//     }
 
-    fn visit_id(&mut self, node_id: NodeId) {
-        let owner = self.owner_def_index.unwrap();
-        let stable_id = self.ast_to_stable_id[node_id.as_usize()];
+//     fn visit_id(&mut self, node_id: NodeId) {
+//         let owner = self.owner_def_index.unwrap();
+//         let stable_id = self.ast_to_stable_id[node_id.as_usize()];
 
-        if stable_id == hir::DUMMY_NODE_ID {
-            panic!("No StableNodeId assigned for NodeId {}", node_id);
-        }
+//         if stable_id == hir::DUMMY_NODE_ID {
+//             panic!("No StableNodeId assigned for NodeId {}", node_id);
+//         }
 
-        if owner != stable_id.owner {
-            panic!("StableNodeIdSanityCheck: The recorded owner of {} is {} instead of {}",
-                node_id,
-                self.definitions.def_path(stable_id.owner).to_string_no_crate(),
-                self.definitions.def_path(owner).to_string_no_crate());
-        }
+//         if owner != stable_id.owner {
+//             panic!("StableNodeIdSanityCheck: The recorded owner of {} is {} instead of {}",
+//                 node_id,
+//                 self.definitions.def_path(stable_id.owner).to_string_no_crate(),
+//                 self.definitions.def_path(owner).to_string_no_crate());
+//         }
 
-        if let Some(prev) = self.stable_ids_seen.insert(stable_id, node_id) {
-            panic!("Same StableNodeId {}/{} assigned for nodes {} and {}",
-                self.definitions.def_path(stable_id.owner).to_string_no_crate(),
-                stable_id.local_id,
-                prev,
-                node_id);
-        }
-    }
+//         if let Some(prev) = self.stable_ids_seen.insert(stable_id, node_id) {
+//             panic!("Same StableNodeId {}/{} assigned for nodes {} and {}",
+//                 self.definitions.def_path(stable_id.owner).to_string_no_crate(),
+//                 stable_id.local_id,
+//                 prev,
+//                 node_id);
+//         }
+//     }
 
-    fn visit_item(&mut self, i: &'hir hir::Item) {
-        self.check(i.id, |this| hir::intravisit::walk_item(this, i));
-    }
+//     fn visit_item(&mut self, i: &'hir hir::Item) {
+//         self.check(i.id, |this| hir::intravisit::walk_item(this, i));
+//     }
 
-    fn visit_trait_item(&mut self, ti: &'hir hir::TraitItem) {
-        self.check(ti.id, |this| hir::intravisit::walk_trait_item(this, ti));
-    }
+//     fn visit_trait_item(&mut self, ti: &'hir hir::TraitItem) {
+//         self.check(ti.id, |this| hir::intravisit::walk_trait_item(this, ti));
+//     }
 
-    fn visit_impl_item(&mut self, ii: &'hir hir::ImplItem) {
-        self.check(ii.id, |this| hir::intravisit::walk_impl_item(this, ii));
-    }
-}
+//     fn visit_impl_item(&mut self, ii: &'hir hir::ImplItem) {
+//         self.check(ii.id, |this| hir::intravisit::walk_impl_item(this, ii));
+//     }
+// }

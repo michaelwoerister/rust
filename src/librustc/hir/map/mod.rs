@@ -36,6 +36,7 @@ pub mod blocks;
 mod collector;
 mod def_collector;
 pub mod definitions;
+mod stable_id_validator;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Node<'hir> {
@@ -940,13 +941,17 @@ pub fn map_crate<'hir>(forest: &'hir mut Forest,
               entries, vector_length, (entries as f64 / vector_length as f64) * 100.);
     }
 
-    Map {
+    let map = Map {
         forest: forest,
         dep_graph: forest.dep_graph.clone(),
         map: map,
         definitions: definitions,
         inlined_bodies: RefCell::new(DefIdMap()),
-    }
+    };
+
+    stable_id_validator::check_crate(&map);
+
+    map
 }
 
 /// Identical to the `PpAnn` implementation for `hir::Crate`,
