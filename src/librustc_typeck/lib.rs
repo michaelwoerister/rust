@@ -78,6 +78,7 @@ This API is completely unstable and subject to change.
 #![feature(box_syntax)]
 #![feature(conservative_impl_trait)]
 #![feature(loop_break_value)]
+#![feature(never_type)]
 #![feature(quote)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(rustc_private)]
