@@ -23,6 +23,7 @@
 #![feature(staged_api)]
 #![feature(rand)]
 #![feature(conservative_impl_trait)]
+#![feature(sort_unstable)]
 #![cfg_attr(stage0,feature(field_init_shorthand))]
 #![cfg_attr(stage0, feature(pub_restricted))]
 
