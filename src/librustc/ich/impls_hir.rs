@@ -344,7 +344,7 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for hir::Block {
             id,
             rules,
             span,
-            break_to_expr_id,
+            targeted_by_break,
         } = *self;
 
         let non_item_stmts = || stmts.iter().filter(|stmt| {
@@ -378,10 +378,7 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for hir::Block {
         id.hash_stable(hcx, hasher);
         rules.hash_stable(hcx, hasher);
         span.hash_stable(hcx, hasher);
-
-        hcx.with_node_id_hashing_mode(NodeIdHashingMode::HashDefPath, |hcx| {
-            break_to_expr_id.hash_stable(hcx, hasher);
-        });
+        targeted_by_break.hash_stable(hcx, hasher);
     }
 }
 
