@@ -16,6 +16,7 @@ use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
                                            StableHasherResult};
 use std::hash as std_hash;
 use std::mem;
+use syntax_pos::symbol::InternedString;
 use ty;
 
 impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for ty::TyS<'tcx> {
@@ -288,9 +289,14 @@ for ::middle::const_val::ConstVal<'tcx> {
                 def_id.hash_stable(hcx, hasher);
                 substs.hash_stable(hcx, hasher);
             }
-            ConstVal::Struct(ref _name_value_map) => {
-                // BTreeMap<ast::Name, ConstVal<'tcx>>),
-                panic!("Ordering still unstable")
+            ConstVal::Struct(ref name_value_map) => {
+                let mut values: Vec<(InternedString, &ConstVal)> =
+                    name_value_map.iter()
+                                  .map(|(name, val)| (name.as_str(), val))
+                                  .collect();
+
+                values.sort_unstable_by_key(|&(ref name, _)| name.clone());
+                values.hash_stable(hcx, hasher);
             }
             ConstVal::Tuple(ref value) => {
                 value.hash_stable(hcx, hasher);
