@@ -40,12 +40,64 @@ fn write_signed_leb128_to_buf(buf: &mut [u8; 16], value: i64) -> usize {
 /// This hasher currently always uses the stable Blake2b algorithm
 /// and allows for variable output lengths through its type
 /// parameter.
-#[derive(Debug)]
 pub struct StableHasher<W> {
     state: Blake2bHasher,
     bytes_hashed: u64,
     width: PhantomData<W>,
+
+    debug: Debug,
 }
+
+#[cfg(debug_assertions)]
+struct Debug {
+    fnv_hash: u64,
+}
+
+#[cfg(debug_assertions)]
+impl Debug {
+    fn new() -> Debug {
+        Debug {
+            fnv_hash: 0xcbf29ce484222325
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        const MAGIC_PRIME: u64 = 0x00000100000001b3;
+
+        for &byte in bytes {
+            self.fnv_hash = (self.fnv_hash ^ byte as u64).wrapping_mul(MAGIC_PRIME);
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl<W: StableHasherResult> ::std::fmt::Debug for StableHasher<W> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "{:x}", self.debug.fnv_hash)
+    }
+}
+
+#[cfg(not(debug_assertions))]
+struct Debug;
+
+#[cfg(not(debug_assertions))]
+impl Debug {
+    fn new() -> Debug {
+        Debug
+    }
+
+    fn write(&mut self, _: &[u8]) {
+        // Do nothing
+    }
+}
+
+#[cfg(not(debug_assertions))]
+impl<W: StableHasherResult> ::std::fmt::Debug for StableHasher<W> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "Enable debug_assertions() for more info.")
+    }
+}
+
 
 pub trait StableHasherResult: Sized {
     fn finish(hasher: StableHasher<Self>) -> Self;
@@ -57,6 +109,7 @@ impl<W: StableHasherResult> StableHasher<W> {
             state: Blake2bHasher::new(mem::size_of::<W>(), &[]),
             bytes_hashed: 0,
             width: PhantomData,
+            debug: Debug::new(),
         }
     }
 
@@ -96,6 +149,7 @@ impl<W> StableHasher<W> {
         let mut buf = [0; 16];
         let len = write_unsigned_leb128_to_buf(&mut buf, value);
         self.state.write(&buf[..len]);
+        self.debug.write(&buf[..len]);
         self.bytes_hashed += len as u64;
     }
 
@@ -104,6 +158,7 @@ impl<W> StableHasher<W> {
         let mut buf = [0; 16];
         let len = write_signed_leb128_to_buf(&mut buf, value);
         self.state.write(&buf[..len]);
+        self.debug.write(&buf[..len]);
         self.bytes_hashed += len as u64;
     }
 }
@@ -119,12 +174,14 @@ impl<W> Hasher for StableHasher<W> {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         self.state.write(bytes);
+        self.debug.write(bytes);
         self.bytes_hashed += bytes.len() as u64;
     }
 
     #[inline]
     fn write_u8(&mut self, i: u8) {
         self.state.write_u8(i);
+        self.debug.write(&[i]);
         self.bytes_hashed += 1;
     }
 
@@ -151,6 +208,7 @@ impl<W> Hasher for StableHasher<W> {
     #[inline]
     fn write_i8(&mut self, i: i8) {
         self.state.write_i8(i);
+        self.debug.write(&[i as u8]);
         self.bytes_hashed += 1;
     }
 

@@ -75,6 +75,22 @@ impl<'q> Predecessors<'q> {
                   .or_insert_with(|| hcx.hash(input).unwrap());
         }
 
+        if tcx.sess.opts.debugging_opts.query_dep_graph {
+            // Not all inputs might have been reachable from an output node,
+            // but we still want their hash for our unit tests.
+            let hir_nodes = query.graph.all_nodes().iter().filter_map(|node| {
+                match node.data {
+                    DepNode::Hir(_) => Some(&node.data),
+                    _ => None,
+                }
+            });
+
+            for node in hir_nodes {
+                hashes.entry(node)
+                      .or_insert_with(|| hcx.hash(node).unwrap());
+            }
+        }
+
         let bootstrap_outputs: Vec<&'q DepNode<DefId>> =
             (0 .. graph.len_nodes())
             .map(NodeIndex)
