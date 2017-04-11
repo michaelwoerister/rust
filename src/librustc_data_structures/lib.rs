@@ -65,6 +65,7 @@ pub mod graph;
 pub mod ivar;
 pub mod indexed_set;
 pub mod indexed_vec;
+pub mod metrohash128;
 pub mod obligation_forest;
 pub mod snapshot_map;
 pub mod snapshot_vec;

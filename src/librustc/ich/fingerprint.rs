@@ -88,9 +88,30 @@ impl ::std::fmt::Display for Fingerprint {
 
 
 impl stable_hasher::StableHasherResult for Fingerprint {
-    fn finish(mut hasher: stable_hasher::StableHasher<Self>) -> Self {
-        let mut fingerprint = Fingerprint::zero();
-        fingerprint.0.copy_from_slice(hasher.finalize());
-        fingerprint
+    fn finish(hasher: stable_hasher::StableHasher<Self>) -> Self {
+        // let mut fingerprint = Fingerprint::zero();
+        // fingerprint.0.copy_from_slice(hasher.finalize());
+        // fingerprint
+        let (one, two) = hasher.finish128();
+
+        Fingerprint([
+            ((one >>  0) as u8),
+            ((one >>  8) as u8),
+            ((one >> 16) as u8),
+            ((one >> 24) as u8),
+            ((one >> 32) as u8),
+            ((one >> 40) as u8),
+            ((one >> 48) as u8),
+            ((one >> 56) as u8),
+
+            ((two >>  0) as u8),
+            ((two >>  8) as u8),
+            ((two >> 16) as u8),
+            ((two >> 24) as u8),
+            ((two >> 32) as u8),
+            ((two >> 40) as u8),
+            ((two >> 48) as u8),
+            ((two >> 56) as u8),
+        ])
     }
 }
