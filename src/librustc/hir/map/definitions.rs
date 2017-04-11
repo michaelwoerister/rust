@@ -179,6 +179,7 @@ pub struct Definitions {
     node_to_def_index: NodeMap<DefIndex>,
     def_index_to_node: [Vec<ast::NodeId>; 2],
     pub(super) node_to_hir_id: IndexVec<ast::NodeId, hir::HirId>,
+    hir_to_node_id: Vec<IndexVec<hir::ItemLocalId, ast::NodeId>>,
 }
 
 // Unfortunately we have to provide a manual impl of Clone because of the
@@ -193,6 +194,7 @@ impl Clone for Definitions {
                 self.def_index_to_node[1].clone(),
             ],
             node_to_hir_id: self.node_to_hir_id.clone(),
+            hir_to_node_id: self.hir_to_node_id.clone(),
         }
     }
 }
@@ -378,6 +380,7 @@ impl Definitions {
             node_to_def_index: NodeMap(),
             def_index_to_node: [vec![], vec![]],
             node_to_hir_id: IndexVec::new(),
+            hir_to_node_id: Vec::new(),
         }
     }
 
@@ -435,8 +438,17 @@ impl Definitions {
         }
     }
 
+    #[inline]
+    pub fn as_hir_id(&self, def_id: DefId) -> Option<hir::HirId> {
+        self.as_local_node_id(def_id).map(|node_id| self.node_to_hir_id[node_id])
+    }
+
     pub fn node_to_hir_id(&self, node_id: ast::NodeId) -> hir::HirId {
         self.node_to_hir_id[node_id]
+    }
+
+    pub fn hir_to_node_id(&self, hir_id: hir::HirId) -> ast::NodeId {
+        self.hir_to_node_id[hir_id.owner.as_usize()][hir_id.local_id]
     }
 
     /// Add a definition with a parent definition.
@@ -522,6 +534,35 @@ impl Definitions {
                                           mapping: IndexVec<ast::NodeId, hir::HirId>) {
         assert!(self.node_to_hir_id.is_empty(),
                 "Trying initialize NodeId -> HirId mapping twice");
+
+        let max_owner_def_id = mapping.iter()
+                                      .map(|hir_id| hir_id.owner.as_usize())
+                                      .max()
+                                      .unwrap();
+        let num_owners = max_owner_def_id + 1;
+
+        debug_assert!(self.hir_to_node_id.is_empty());
+        self.hir_to_node_id.reserve_exact(num_owners);
+        self.hir_to_node_id.extend((0..num_owners).map(|_| IndexVec::new()));
+
+        for (index, &hir_id) in mapping.iter().enumerate().rev() {
+            debug_assert!(hir_id != hir::DUMMY_HIR_ID);
+            let node_id = ast::NodeId::new(index);
+            let map_for_this_owner = &mut self.hir_to_node_id[hir_id.owner.as_usize()];
+            let min_length = hir_id.local_id.as_usize() + 1;
+
+            if map_for_this_owner.len() < min_length {
+                map_for_this_owner.resize(min_length, ast::DUMMY_NODE_ID);
+            }
+
+            map_for_this_owner[hir_id.local_id] = node_id;
+        }
+
+        debug_assert!(self.hir_to_node_id.iter().all(|map| map.len() > 0));
+        debug_assert!(self.hir_to_node_id.iter()
+                                         .flat_map(|map| map.iter())
+                                         .all(|&id| id != ast::DUMMY_NODE_ID));
+
         self.node_to_hir_id = mapping;
     }
 }

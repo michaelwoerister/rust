@@ -389,6 +389,10 @@ impl<'hir> Map<'hir> {
         self.definitions.as_local_node_id(def_id)
     }
 
+    pub fn as_hir_id(&self, def_id: DefId) -> Option<HirId> {
+        self.definitions.as_hir_id(def_id)
+    }
+
     fn entry_count(&self) -> usize {
         self.map.len()
     }
