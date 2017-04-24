@@ -19,7 +19,7 @@
 
 // FIXME spec the JSON output properly.
 
-use codemap::CodeMap;
+use codemap::{CodeMap, PathMapper};
 use syntax_pos::{self, MacroBacktrace, Span, SpanLabel, MultiSpan};
 use errors::registry::Registry;
 use errors::{DiagnosticBuilder, SubDiagnostic, RenderSpan, CodeSuggestion, CodeMapper};
@@ -48,7 +48,7 @@ impl JsonEmitter {
     }
 
     pub fn basic() -> JsonEmitter {
-        JsonEmitter::stderr(None, Rc::new(CodeMap::new()))
+        JsonEmitter::stderr(None, Rc::new(CodeMap::new(PathMapper::empty())))
     }
 
     pub fn new(dst: Box<Write + Send>,

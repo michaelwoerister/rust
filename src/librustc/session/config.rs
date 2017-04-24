@@ -492,6 +492,14 @@ impl Options {
         self.incremental.is_none() ||
         self.cg.codegen_units == 1
     }
+
+    pub fn path_mapper(&self) -> ::syntax::codemap::PathMapper {
+        ::syntax::codemap::PathMapper::new(
+            self.debugging_opts.debug_prefix_map_from.iter().zip(
+                self.debugging_opts.debug_prefix_map_to.iter()
+            ).map(|(src, dst)| (src.clone(), dst.clone())).collect()
+        )
+    }
 }
 
 // The type of entry function, so
@@ -1323,7 +1331,7 @@ pub fn rustc_optgroups() -> Vec<RustcOptGroup> {
 // Convert strings provided as --cfg [cfgspec] into a crate_cfg
 pub fn parse_cfgspecs(cfgspecs: Vec<String> ) -> ast::CrateConfig {
     cfgspecs.into_iter().map(|s| {
-        let sess = parse::ParseSess::new();
+        let sess = parse::ParseSess::new(::syntax::codemap::PathMapper::empty());
         let mut parser =
             parse::new_parser_from_source_str(&sess, "cfgspec".to_string(), s.to_string());
 

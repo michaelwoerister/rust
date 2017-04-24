@@ -42,7 +42,7 @@ use util::nodemap::FxHashMap;
 
 use libc::{c_uint, c_longlong};
 use std::ffi::CString;
-use std::path::Path;
+// use std::path::Path;
 use std::ptr;
 use syntax::ast;
 use syntax::symbol::{Interner, InternedString};
@@ -668,76 +668,91 @@ pub fn file_metadata(cx: &CrateContext,
     let cache_key = (Symbol::intern(file_path), defining_crate);
 
     debug_context.created_files.borrow_mut().entry(cache_key).or_insert_with(|| {
-        let mapped_path = debug_context.map_prefix(file_path, defining_crate);
-        let mapped_compiler_working_dir =
-            debug_context.mapped_compiler_working_dir(defining_crate);
+        // let mapped_path = debug_context.map_prefix(file_path, defining_crate);
+        // let mapped_compiler_working_dir =
+        //     debug_context.mapped_compiler_working_dir(defining_crate);
 
-        // There is one case where we further want to manipulate the path, in
-        // all other cases we can pass the path as it is to LLVM. First, here's
-        // a list of the case where we don't need to do anything more:
-        //
-        // 1. If the compiler_working_dir or the file_path have been changed
-        //    by debug-prefix-mapping, we do NOT want to further process them
-        //    in any way because we assume the user has set things up they way
-        //    they want.
-        // 2. If we are cross-compiling to a target that has a different path
-        //    format than the host. The way to handle this by the user is to
-        //    to use debug-prefix-mapping.
-        // 3. If the path originates from the current crate. If it is absolute,
-        //    we are done anyway, if it is relative is will be relative to the
-        //    compiler_working_dir specified in the CGU, so we are fine.
-        // 4. If the path originates from an upstream crate but is absolute. In
-        //    this case it does not depend on the current compiler_working_dir,
-        //    and we can just pass it on.
-        //
-        // The one case where we want to adapt the path further is when we have
-        // a relative path but it is relative to something else than the current
-        // compiler_working_dir. These paths have to be made absolute. Otherwise
-        // the debugger would look in the wrong place.
+        // // There is one case where we further want to manipulate the path, in
+        // // all other cases we can pass the path as it is to LLVM. First, here's
+        // // a list of the case where we don't need to do anything more:
+        // //
+        // // 1. If the compiler_working_dir or the file_path have been changed
+        // //    by debug-prefix-mapping, we do NOT want to further process them
+        // //    in any way because we assume the user has set things up they way
+        // //    they want.
+        // // 2. If we are cross-compiling to a target that has a different path
+        // //    format than the host. The way to handle this by the user is to
+        // //    to use debug-prefix-mapping.
+        // // 3. If the path originates from the current crate. If it is absolute,
+        // //    we are done anyway, if it is relative is will be relative to the
+        // //    compiler_working_dir specified in the CGU, so we are fine.
+        // // 4. If the path originates from an upstream crate but is absolute. In
+        // //    this case it does not depend on the current compiler_working_dir,
+        // //    and we can just pass it on.
+        // //
+        // // The one case where we want to adapt the path further is when we have
+        // // a relative path but it is relative to something else than the current
+        // // compiler_working_dir. These paths have to be made absolute. Otherwise
+        // // the debugger would look in the wrong place.
 
-        if mapped_path.has_been_remapped ||
-           mapped_compiler_working_dir.has_been_remapped ||
-           !debug_context.target_paths_compatible_with_host ||
-           defining_crate == LOCAL_CRATE {
-            // This conforms to the conditions (1), (2), or (3)
+        // if mapped_path.has_been_remapped ||
+        //    mapped_compiler_working_dir.has_been_remapped ||
+        //    !debug_context.target_paths_compatible_with_host ||
+        //    defining_crate == LOCAL_CRATE {
+        //     // This conforms to the conditions (1), (2), or (3)
+        //     file_metadata_raw(cx,
+        //                       &mapped_compiler_working_dir.path,
+        //                       &mapped_path.path)
+        // } else {
+        //     assert_eq!(file_path, mapped_path.path);
+
+        //     // At this point we know that the path format is compatible with
+        //     // the one on the host, so we can safely convert the string into
+        //     // a std::Path.
+        //     let is_absolute = Path::new(file_path).is_absolute();
+        //     let current_compiler_working_dir =
+        //         debug_context.mapped_compiler_working_dir(LOCAL_CRATE);
+
+        //     if is_absolute ||
+        //        current_compiler_working_dir.path == mapped_compiler_working_dir.path {
+        //         // This conforms to the conditions (4), that is, the path is
+        //         // absolute or it is relative to the right thing.
+
+        //         let directory = if is_absolute {
+        //             ""
+        //         } else {
+        //             &mapped_compiler_working_dir.path
+        //         };
+
+        //         file_metadata_raw(cx,
+        //                           directory,
+        //                           &mapped_path.path)
+        //     } else {
+        //         // Finally, we have the case where we need to make the path
+        //         // absolute.
+        //         let full_path = Path::new(&mapped_compiler_working_dir.path)
+        //             .join(Path::new(file_path));
+
+        //         assert!(full_path.is_absolute());
+
+        //         file_metadata_raw(cx, "", &full_path.to_string_lossy())
+        //     }
+        // }
+
+        if defining_crate == LOCAL_CRATE {
+            let mapped_path = debug_context.map_prefix(file_path, defining_crate);
+            let mapped_compiler_working_dir =
+                 debug_context.mapped_compiler_working_dir(defining_crate);
+
             file_metadata_raw(cx,
-                              &mapped_compiler_working_dir.path,
-                              &mapped_path.path)
+                               &mapped_compiler_working_dir.path,
+                               &mapped_path.path)
         } else {
-            assert_eq!(file_path, mapped_path.path);
-
-            // At this point we know that the path format is compatible with
-            // the one on the host, so we can safely convert the string into
-            // a std::Path.
-            let is_absolute = Path::new(file_path).is_absolute();
-            let current_compiler_working_dir =
-                debug_context.mapped_compiler_working_dir(LOCAL_CRATE);
-
-            if is_absolute ||
-               current_compiler_working_dir.path == mapped_compiler_working_dir.path {
-                // This conforms to the conditions (4), that is, the path is
-                // absolute or it is relative to the right thing.
-
-                let directory = if is_absolute {
-                    ""
-                } else {
-                    &mapped_compiler_working_dir.path
-                };
-
-                file_metadata_raw(cx,
-                                  directory,
-                                  &mapped_path.path)
-            } else {
-                // Finally, we have the case where we need to make the path
-                // absolute.
-                let full_path = Path::new(&mapped_compiler_working_dir.path)
-                    .join(Path::new(file_path));
-
-                assert!(full_path.is_absolute());
-
-                file_metadata_raw(cx, "", &full_path.to_string_lossy())
-            }
+            file_metadata_raw(cx,
+                              "",
+                              file_path)
         }
+
     }).clone()
 }
 

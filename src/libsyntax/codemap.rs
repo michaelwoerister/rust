@@ -102,23 +102,79 @@ impl FileLoader for RealFileLoader {
 // CodeMap
 //
 
-pub struct CodeMap {
-    pub files: RefCell<Vec<Rc<FileMap>>>,
-    file_loader: Box<FileLoader>
+pub struct MappedFilePath {
+    pub path: String,
+    pub has_been_remapped: bool,
 }
 
-impl CodeMap {
-    pub fn new() -> CodeMap {
-        CodeMap {
-            files: RefCell::new(Vec::new()),
-            file_loader: Box::new(RealFileLoader)
+#[derive(Clone)]
+pub struct PathMapper {
+    mapping: Vec<(String, String)>,
+}
+
+impl PathMapper {
+    pub fn empty() -> PathMapper {
+        PathMapper {
+            mapping: vec![]
         }
     }
 
-    pub fn with_file_loader(file_loader: Box<FileLoader>) -> CodeMap {
+    pub fn new(mapping: Vec<(String, String)>) -> PathMapper {
+        PathMapper {
+            mapping: mapping
+        }
+    }
+
+    pub fn map_prefix(&self, path: &str) -> MappedFilePath {
+        // NOTE: We are iterating over the mapping entries from last to first
+        //       because entries specified later in the command line should
+        //       take precedence.
+        for &(ref from, ref to) in self.mapping.iter().rev() {
+            if path.starts_with(from) {
+                let mut mapped = String::with_capacity(path.len() + to.len() - from.len());
+                mapped.push_str(to);
+                mapped.push_str(&path[from.len()..]);
+
+                return MappedFilePath {
+                    path: mapped,
+                    has_been_remapped: true,
+                };
+            }
+        }
+
+        MappedFilePath {
+            path: path.to_string(),
+            has_been_remapped: false,
+        }
+    }
+}
+
+
+
+pub struct CodeMap {
+    pub files: RefCell<Vec<Rc<FileMap>>>,
+    file_loader: Box<FileLoader>,
+    path_mapper: PathMapper,
+}
+
+impl CodeMap {
+    pub fn path_mapper(&self) -> &PathMapper {
+        &self.path_mapper
+    }
+
+    pub fn new(path_mapper: PathMapper) -> CodeMap {
         CodeMap {
             files: RefCell::new(Vec::new()),
-            file_loader: file_loader
+            file_loader: Box::new(RealFileLoader),
+            path_mapper: path_mapper,
+        }
+    }
+
+    pub fn with_file_loader(file_loader: Box<FileLoader>, path_mapper: PathMapper) -> CodeMap {
+        CodeMap {
+            files: RefCell::new(Vec::new()),
+            file_loader: file_loader,
+            path_mapper: path_mapper,
         }
     }
 
@@ -154,8 +210,15 @@ impl CodeMap {
 
         let end_pos = start_pos + src.len();
 
+        let mapped_name = self.path_mapper.map_prefix(&filename);
+
         let filemap = Rc::new(FileMap {
-            name: filename,
+            name: mapped_name.path.clone(),
+            mapped_name: if mapped_name.has_been_remapped {
+                Some(mapped_name.path)
+            } else {
+                None
+            },
             src: Some(Rc::new(src)),
             start_pos: Pos::from_usize(start_pos),
             end_pos: Pos::from_usize(end_pos),
@@ -210,6 +273,7 @@ impl CodeMap {
 
         let filemap = Rc::new(FileMap {
             name: filename,
+            mapped_name: None,
             src: None,
             start_pos: start_pos,
             end_pos: end_pos,

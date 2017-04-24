@@ -25,7 +25,7 @@ use llvm::{ModuleRef, ContextRef, ValueRef};
 use llvm::debuginfo::{DIFile, DIType, DIScope, DIBuilderRef, DISubprogram, DIArray, DIFlags};
 use rustc::hir::def_id::{DefId, CrateNum, LOCAL_CRATE};
 use rustc::ty::subst::Substs;
-use rustc_back::target::Target;
+// use rustc_back::target::Target;
 
 use abi::Abi;
 use common::{self, CrateContext};
@@ -34,7 +34,8 @@ use monomorphize::Instance;
 use rustc::ty::{self, Ty};
 use rustc::mir;
 use session::config::{self, FullDebugInfo, LimitedDebugInfo, NoDebugInfo};
-use session::{self, Session};
+use session::{//self,
+ Session};
 use util::nodemap::{DefIdMap, FxHashMap, FxHashSet};
 
 use libc::c_uint;
@@ -47,6 +48,8 @@ use syntax_pos::symbol::Symbol;
 use syntax::ast;
 use rustc::ty::layout;
 use rustc_data_structures::indexed_vec::IndexVec;
+
+use rustc::util::common::{DebugPrefixMap, DebuginfoFilePath};
 
 pub mod gdb;
 mod utils;
@@ -83,7 +86,7 @@ pub struct CrateDebugContext<'tcx> {
 
     debug_prefix_map: DebugPrefixMap,
     mapped_compiler_working_dir: IndexVec<CrateNum, DebuginfoFilePath>,
-    target_paths_compatible_with_host: bool,
+    // target_paths_compatible_with_host: bool,
 }
 
 impl<'tcx> CrateDebugContext<'tcx> {
@@ -116,10 +119,10 @@ impl<'tcx> CrateDebugContext<'tcx> {
             mapped_compiler_working_dir
         };
 
-        let target = Target::search(&sess.opts.target_triple).unwrap();
-        let host = Target::search(session::config::host_triple()).unwrap();
-        let target_paths_compatible_with_host = target.options.is_like_windows ==
-                                                host.options.is_like_windows;
+        // let target = Target::search(&sess.opts.target_triple).unwrap();
+        // let host = Target::search(session::config::host_triple()).unwrap();
+        // let target_paths_compatible_with_host = target.options.is_like_windows ==
+        //                                         host.options.is_like_windows;
 
         CrateDebugContext {
             llcontext: llcontext,
@@ -131,7 +134,7 @@ impl<'tcx> CrateDebugContext<'tcx> {
             composite_types_completed: RefCell::new(FxHashSet()),
             debug_prefix_map: debug_prefix_map,
             mapped_compiler_working_dir: mapped_compiler_working_dir,
-            target_paths_compatible_with_host: target_paths_compatible_with_host,
+            // target_paths_compatible_with_host: target_paths_compatible_with_host,
         }
     }
 
@@ -195,72 +198,6 @@ pub enum VariableKind {
     CapturedVariable,
 }
 
-pub struct DebuginfoFilePath {
-    pub path: String,
-    pub has_been_remapped: bool,
-}
-
-struct DebugPrefixMap {
-    mapping: IndexVec<CrateNum, Vec<(String, String)>>,
-}
-
-impl DebugPrefixMap {
-    fn new(sess: &Session) -> DebugPrefixMap {
-        let mut extern_crates = sess.cstore.crates();
-        extern_crates.sort();
-
-        let mut debug_prefix_map = IndexVec::with_capacity(extern_crates.len() + 1);
-
-        debug_assert_eq!(LOCAL_CRATE.as_usize(), 0);
-        let local = sess.opts
-                        .debugging_opts
-                        .debug_prefix_map_from
-                        .iter()
-                        .cloned()
-                        .zip(sess.opts
-                                 .debugging_opts
-                                 .debug_prefix_map_to
-                                 .iter()
-                                 .cloned())
-                        .collect();
-        debug_prefix_map.push(local);
-
-        for cnum in extern_crates {
-            // Make sure we are inserting things at the expected index.
-            debug_assert_eq!(cnum.as_usize(), debug_prefix_map.len());
-            debug_prefix_map.push(sess.cstore.debug_prefix_map(cnum));
-        }
-
-        DebugPrefixMap {
-            mapping: debug_prefix_map
-        }
-    }
-
-    fn map_prefix(&self, path: &str, crate_of_origin: CrateNum) -> DebuginfoFilePath {
-        let mapping = &self.mapping[crate_of_origin];
-
-        // NOTE: We are iterating over the mapping entries from last to first
-        //       because entries specified later in the command line should
-        //       take precedence.
-        for &(ref from, ref to) in mapping.iter().rev() {
-            if path.starts_with(from) {
-                let mut mapped = String::with_capacity(path.len() + to.len() - from.len());
-                mapped.push_str(to);
-                mapped.push_str(&path[from.len()..]);
-
-                return DebuginfoFilePath {
-                    path: mapped,
-                    has_been_remapped: true,
-                };
-            }
-        }
-
-        DebuginfoFilePath {
-            path: path.to_string(),
-            has_been_remapped: false,
-        }
-    }
-}
 
 /// Create any deferred debug metadata nodes
 pub fn finalize(cx: &CrateContext) {
@@ -618,16 +555,16 @@ pub fn declare_local<'a, 'tcx>(bcx: &Builder<'a, 'tcx>,
     }
 }
 
-#[test]
-fn test_prefix_map_order() {
+// #[test]
+// fn test_prefix_map_order() {
 
-    let mut map = IndexVec::new();
-    map.push(vec![("abc", "qed"), ("abc/def", "xyz")]);
+//     let mut map = IndexVec::new();
+//     map.push(vec![("abc", "qed"), ("abc/def", "xyz")]);
 
-    let map = DebugPrefixMap {
-        mapping: map
-    };
+//     let map = DebugPrefixMap {
+//         mapping: map
+//     };
 
-    assert_eq!(map.map_prefix("abc/def/lib.rs", LOCAL_CRATE).path, "xyz/lib.rs");
-    assert_eq!(map.map_prefix("abc/ghi/lib.rs", LOCAL_CRATE).path, "qed/ghi/lib.rs");
-}
+//     assert_eq!(map.map_prefix("abc/def/lib.rs", LOCAL_CRATE).path, "xyz/lib.rs");
+//     assert_eq!(map.map_prefix("abc/ghi/lib.rs", LOCAL_CRATE).path, "qed/ghi/lib.rs");
+// }

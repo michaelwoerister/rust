@@ -21,7 +21,7 @@ use syntax::symbol::Symbol;
 use syntax_pos::DUMMY_SP;
 
 fn main() {
-    let ps = syntax::parse::ParseSess::new();
+    let ps = syntax::parse::ParseSess::new(syntax::codemap::PathMapper::empty());
     let mut resolver = syntax::ext::base::DummyResolver;
     let mut cx = syntax::ext::base::ExtCtxt::new(
         &ps,

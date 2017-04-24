@@ -11,7 +11,7 @@
 //! The main parser interface
 
 use ast::{self, CrateConfig};
-use codemap::CodeMap;
+use codemap::{CodeMap, PathMapper};
 use syntax_pos::{self, Span, FileMap, NO_EXPANSION};
 use errors::{Handler, ColorConfig, DiagnosticBuilder};
 use feature_gate::UnstableFeatures;
@@ -53,8 +53,8 @@ pub struct ParseSess {
 }
 
 impl ParseSess {
-    pub fn new() -> Self {
-        let cm = Rc::new(CodeMap::new());
+    pub fn new(path_mapper: PathMapper) -> Self {
+        let cm = Rc::new(CodeMap::new(path_mapper));
         let handler = Handler::with_tty_emitter(ColorConfig::Auto,
                                                 true,
                                                 false,

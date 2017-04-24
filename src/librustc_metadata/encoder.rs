@@ -1266,15 +1266,37 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
     }
 
     fn encode_codemap(&mut self) -> LazySeq<syntax_pos::FileMap> {
+        use std::path::{Path, PathBuf};
+
         let codemap = self.tcx.sess.codemap();
         let all_filemaps = codemap.files.borrow();
-        self.lazy_seq_ref(all_filemaps.iter()
+
+        let mapper = ::rustc::util::common::DebugPrefixMap::new(self.tcx.sess);
+        let cwd = mapper.map_prefix(&self.tcx.sess.working_dir.to_string_lossy(),
+                                    LOCAL_CRATE);
+
+        self.lazy_seq(all_filemaps.iter()
             .filter(|filemap| {
                 // No need to re-export imported filemaps, as any downstream
                 // crate will import them from their original source.
                 !filemap.is_imported()
             })
-            .map(|filemap| &**filemap))
+            .map(|filemap| {
+                let mut filemap = (**filemap).clone();
+
+                let original_path = PathBuf::from(&filemap.name);
+                let name = mapper.map_prefix(&filemap.name, LOCAL_CRATE);
+
+                if name.has_been_remapped ||
+                   (original_path.is_relative() && cwd.has_been_remapped) {
+                    // do nothing
+                } else {
+                    let abs_path = Path::new(&cwd.path).join(original_path);
+                    filemap.name = abs_path.to_string_lossy().into_owned();
+                }
+
+                filemap
+            }))
     }
 
     fn encode_def_path_table(&mut self) -> Lazy<DefPathTable> {

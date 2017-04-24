@@ -258,3 +258,75 @@ fn test_to_readable_str() {
     assert_eq!("1_000_000", to_readable_str(1_000_000));
     assert_eq!("1_234_567", to_readable_str(1_234_567));
 }
+
+
+use rustc_data_structures::indexed_vec::IndexVec;
+use hir::def_id::{CrateNum, LOCAL_CRATE};
+use session::Session;
+
+pub struct DebuginfoFilePath {
+    pub path: String,
+    pub has_been_remapped: bool,
+}
+
+pub struct DebugPrefixMap {
+    mapping: IndexVec<CrateNum, Vec<(String, String)>>,
+}
+
+impl DebugPrefixMap {
+    pub fn new(sess: &Session) -> DebugPrefixMap {
+        let mut extern_crates = sess.cstore.crates();
+        extern_crates.sort();
+
+        let mut debug_prefix_map = IndexVec::with_capacity(extern_crates.len() + 1);
+
+        debug_assert_eq!(LOCAL_CRATE.as_usize(), 0);
+        let local = sess.opts
+                        .debugging_opts
+                        .debug_prefix_map_from
+                        .iter()
+                        .cloned()
+                        .zip(sess.opts
+                                 .debugging_opts
+                                 .debug_prefix_map_to
+                                 .iter()
+                                 .cloned())
+                        .collect();
+        debug_prefix_map.push(local);
+
+        for cnum in extern_crates {
+            // Make sure we are inserting things at the expected index.
+            debug_assert_eq!(cnum.as_usize(), debug_prefix_map.len());
+            debug_prefix_map.push(sess.cstore.debug_prefix_map(cnum));
+        }
+
+        DebugPrefixMap {
+            mapping: debug_prefix_map
+        }
+    }
+
+    pub fn map_prefix(&self, path: &str, crate_of_origin: CrateNum) -> DebuginfoFilePath {
+        let mapping = &self.mapping[crate_of_origin];
+
+        // NOTE: We are iterating over the mapping entries from last to first
+        //       because entries specified later in the command line should
+        //       take precedence.
+        for &(ref from, ref to) in mapping.iter().rev() {
+            if path.starts_with(from) {
+                let mut mapped = String::with_capacity(path.len() + to.len() - from.len());
+                mapped.push_str(to);
+                mapped.push_str(&path[from.len()..]);
+
+                return DebuginfoFilePath {
+                    path: mapped,
+                    has_been_remapped: true,
+                };
+            }
+        }
+
+        DebuginfoFilePath {
+            path: path.to_string(),
+            has_been_remapped: false,
+        }
+    }
+}

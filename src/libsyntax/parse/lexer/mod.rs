@@ -10,7 +10,7 @@
 
 use ast::{self, Ident};
 use syntax_pos::{self, BytePos, CharPos, Pos, Span, NO_EXPANSION};
-use codemap::CodeMap;
+use codemap::{CodeMap, PathMapper};
 use errors::{FatalError, DiagnosticBuilder};
 use parse::{token, ParseSess};
 use str::char_at;
@@ -563,7 +563,7 @@ impl<'a> StringReader<'a> {
 
                 // I guess this is the only way to figure out if
                 // we're at the beginning of the file...
-                let cmap = CodeMap::new();
+                let cmap = CodeMap::new(PathMapper::empty());
                 cmap.files.borrow_mut().push(self.filemap.clone());
                 let loc = cmap.lookup_char_pos_adj(self.pos);
                 debug!("Skipping a shebang");

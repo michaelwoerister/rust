@@ -553,12 +553,14 @@ pub fn build_session(sopts: config::Options,
                      registry: errors::registry::Registry,
                      cstore: Rc<CrateStore>)
                      -> Session {
+    let path_mapper = sopts.path_mapper();
+
     build_session_with_codemap(sopts,
                                dep_graph,
                                local_crate_source_file,
                                registry,
                                cstore,
-                               Rc::new(codemap::CodeMap::new()),
+                               Rc::new(codemap::CodeMap::new(path_mapper)),
                                None)
 }
 
