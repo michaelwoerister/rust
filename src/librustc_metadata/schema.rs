@@ -221,6 +221,20 @@ impl<T> Tracked<T> {
     }
 }
 
+impl<'a, 'tcx, T> HashStable<StableHashingContext<'a, 'tcx>> for Tracked<T>
+    where T: HashStable<StableHashingContext<'a, 'tcx>>
+{
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let Tracked {
+            ref state
+        } = *self;
+
+        state.hash_stable(hcx, hasher);
+    }
+}
+
 
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct CrateRoot {
@@ -239,6 +253,7 @@ pub struct CrateRoot {
     pub native_libraries: Tracked<LazySeq<NativeLibrary>>,
     pub codemap: LazySeq<syntax_pos::FileMap>,
     pub def_path_table: Lazy<hir::map::definitions::DefPathTable>,
+    // pub impls: Tracked<LazySeq<TraitImpls>>,
     pub impls: Tracked<LazySeq<TraitImpls>>,
     pub exported_symbols: Tracked<LazySeq<DefIndex>>,
     pub index: LazySeq<index::Index>,
