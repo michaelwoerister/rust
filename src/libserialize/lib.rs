@@ -50,6 +50,7 @@ pub mod json;
 
 pub mod opaque;
 pub mod leb128;
+pub mod platform;
 
 mod rustc_serialize {
     pub use serialize::*;

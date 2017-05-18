@@ -20,6 +20,7 @@ use rustc::hir;
 use rustc::middle::cstore::LinkagePreference;
 use rustc::hir::def::{self, Def, CtorKind};
 use rustc::hir::def_id::{CrateNum, DefId, DefIndex, CRATE_DEF_INDEX, LOCAL_CRATE};
+use rustc::ich;
 use rustc::middle::lang_items;
 use rustc::session::Session;
 use rustc::ty::{self, Ty, TyCtxt};
@@ -1110,7 +1111,7 @@ impl<'a, 'tcx> CrateMetadata {
     }
 
     #[inline]
-    pub fn def_path_hash(&self, index: DefIndex) -> u64 {
+    pub fn def_path_hash(&self, index: DefIndex) -> ich::Fingerprint {
         self.def_path_table.def_path_hash(index)
     }
 

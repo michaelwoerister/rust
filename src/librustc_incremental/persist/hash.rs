@@ -16,7 +16,7 @@ use rustc::ty::TyCtxt;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::flock;
 use rustc_serialize::Decodable;
-use rustc_serialize::opaque::Decoder;
+use rustc_serialize::platform::Decoder;
 
 use IncrementalHashesMap;
 use super::data::*;

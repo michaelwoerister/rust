@@ -17,7 +17,7 @@ use rustc::session::Session;
 use rustc::ty::TyCtxt;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_serialize::Encodable as RustcEncodable;
-use rustc_serialize::opaque::Encoder;
+use rustc_serialize::platform::Encoder;
 use std::io::{self, Cursor, Write};
 use std::fs::{self, File};
 use std::path::PathBuf;

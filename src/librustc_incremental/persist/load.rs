@@ -18,7 +18,7 @@ use rustc::session::Session;
 use rustc::ty::TyCtxt;
 use rustc_data_structures::fx::{FxHashSet, FxHashMap};
 use rustc_serialize::Decodable as RustcDecodable;
-use rustc_serialize::opaque::Decoder;
+use rustc_serialize::platform::Decoder;
 use std::path::{Path};
 use std::sync::Arc;
 
