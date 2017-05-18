@@ -18,6 +18,7 @@ use rustc::middle::cstore::{CrateStore, CrateSource, LibSource, DepKind,
                             ExternCrate, NativeLibrary, LinkMeta,
                             LinkagePreference, LoadedMacro, EncodedMetadata};
 use rustc::hir::def;
+use rustc::ich;
 use rustc::middle::lang_items;
 use rustc::session::Session;
 use rustc::ty::{self, TyCtxt};
@@ -335,7 +336,7 @@ impl CrateStore for cstore::CStore {
         self.get_crate_data(def.krate).def_path(def.index)
     }
 
-    fn def_path_hash(&self, def: DefId) -> u64 {
+    fn def_path_hash(&self, def: DefId) -> ich::Fingerprint {
         self.get_crate_data(def.krate).def_path_hash(def.index)
     }
 
