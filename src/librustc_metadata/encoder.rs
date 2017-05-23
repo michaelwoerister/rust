@@ -307,8 +307,16 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                     // This path of this FileMap has been modified by
                     // path-remapping, so we use it verbatim (and avoid cloning
                     // the whole map in the process).
+                    println!("remapped filemap {}", filemap.name);
+                    filemap.clone()
+                } else if filemap.is_synthetic {
+                    println!("synth filemap {}", filemap.name);
+                    // This filemap does not correspond to a path, leave it as
+                    // it is.
                     filemap.clone()
                 } else {
+                    println!("normal filemap {}", filemap.name);
+
                     let mut adapted = (**filemap).clone();
                     let abs_path = Path::new(&working_dir).join(name)
                                                          .to_string_lossy()
@@ -318,12 +326,26 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 }
             });
 
+        println!("HASHED FILEMAPS:");
+
         let filemaps: Vec<_> = if self.compute_ich {
             adapted.inspect(|filemap| {
                 let mut hasher = StableHasher::new();
                 filemap.hash_stable(hcx, &mut hasher);
                 let fingerprint = hasher.finish();
-                let dep_node = DepNode::FileMap((), Arc::new(filemap.name.clone()));
+                let dep_node = if filemap.is_synthetic {
+                    let mut content_hasher = StableHasher::new();
+                    filemap.src.hash_stable(hcx, &mut content_hasher);
+                    let content_hash: Fingerprint = content_hasher.finish();
+                    // Append a hash of the filemap contents to the name. TODO: Docuemnt more
+                    let name = format!("{} ({})", filemap.name, content_hash);
+                    DepNode::FileMap((), Arc::new(name))
+                } else {
+                    DepNode::FileMap((), Arc::new(filemap.name.clone()))
+                };
+                println!(" - {:?}", dep_node);
+                assert!(self.metadata_hashes.global_hashes.iter().all(|&(ref d, _)| *d != dep_node));
+
                 self.metadata_hashes.global_hashes.push((dep_node, fingerprint));
             }).collect()
         } else {

@@ -378,6 +378,8 @@ pub struct FileMap {
     pub name: FileName,
     /// True if the `name` field above has been modified by -Zremap-path-prefix
     pub name_was_remapped: bool,
+    /// TODO:
+    pub is_synthetic: bool,
     /// Indicates which crate this FileMap was imported from.
     pub crate_of_origin: u32,
     /// The complete source code
@@ -397,9 +399,10 @@ impl Encodable for FileMap {
         s.emit_struct("FileMap", 6, |s| {
             s.emit_struct_field("name", 0, |s| self.name.encode(s))?;
             s.emit_struct_field("name_was_remapped", 1, |s| self.name_was_remapped.encode(s))?;
-            s.emit_struct_field("start_pos", 2, |s| self.start_pos.encode(s))?;
-            s.emit_struct_field("end_pos", 3, |s| self.end_pos.encode(s))?;
-            s.emit_struct_field("lines", 4, |s| {
+            s.emit_struct_field("is_synthetic", 2, |s| self.name_was_remapped.encode(s))?;
+            s.emit_struct_field("start_pos", 3, |s| self.start_pos.encode(s))?;
+            s.emit_struct_field("end_pos", 4, |s| self.end_pos.encode(s))?;
+            s.emit_struct_field("lines", 5, |s| {
                 let lines = self.lines.borrow();
                 // store the length
                 s.emit_u32(lines.len() as u32)?;
@@ -445,7 +448,7 @@ impl Encodable for FileMap {
 
                 Ok(())
             })?;
-            s.emit_struct_field("multibyte_chars", 5, |s| {
+            s.emit_struct_field("multibyte_chars", 6, |s| {
                 (*self.multibyte_chars.borrow()).encode(s)
             })
         })
@@ -459,9 +462,11 @@ impl Decodable for FileMap {
             let name: String = d.read_struct_field("name", 0, |d| Decodable::decode(d))?;
             let name_was_remapped: bool =
                 d.read_struct_field("name_was_remapped", 1, |d| Decodable::decode(d))?;
-            let start_pos: BytePos = d.read_struct_field("start_pos", 2, |d| Decodable::decode(d))?;
-            let end_pos: BytePos = d.read_struct_field("end_pos", 3, |d| Decodable::decode(d))?;
-            let lines: Vec<BytePos> = d.read_struct_field("lines", 4, |d| {
+            let is_synthetic: bool =
+                d.read_struct_field("is_synthetic", 2, |d| Decodable::decode(d))?;
+            let start_pos: BytePos = d.read_struct_field("start_pos", 3, |d| Decodable::decode(d))?;
+            let end_pos: BytePos = d.read_struct_field("end_pos", 4, |d| Decodable::decode(d))?;
+            let lines: Vec<BytePos> = d.read_struct_field("lines", 5, |d| {
                 let num_lines: u32 = Decodable::decode(d)?;
                 let mut lines = Vec::with_capacity(num_lines as usize);
 
@@ -490,10 +495,11 @@ impl Decodable for FileMap {
                 Ok(lines)
             })?;
             let multibyte_chars: Vec<MultiByteChar> =
-                d.read_struct_field("multibyte_chars", 5, |d| Decodable::decode(d))?;
+                d.read_struct_field("multibyte_chars", 6, |d| Decodable::decode(d))?;
             Ok(FileMap {
                 name: name,
                 name_was_remapped: name_was_remapped,
+                is_synthetic: is_synthetic,
                 // `crate_of_origin` has to be set by the importer.
                 // This value matches up with rustc::hir::def_id::INVALID_CRATE.
                 // That constant is not available here unfortunately :(
@@ -528,8 +534,15 @@ impl FileMap {
         // the new charpos must be > the last one (or it's the first one).
         let mut lines = self.lines.borrow_mut();
         let line_len = lines.len();
-        assert!(line_len == 0 || ((*lines)[line_len - 1] < pos));
-        lines.push(pos);
+        // assert!(line_len == 0 || ((*lines)[line_len - 1] < pos));
+        // lines.push(pos);
+
+        if line_len == 0 || ((*lines)[line_len - 1] < pos) {
+            lines.push(pos);
+        } else {
+            // assert!(self.is_synthetic); CHERCKTHIS
+            assert!(lines.binary_search(&pos).is_ok());
+        }
     }
 
     /// get a line from the list of pre-computed line-beginnings.

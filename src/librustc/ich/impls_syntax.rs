@@ -328,6 +328,7 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for FileMap {
         let FileMap {
             ref name,
             name_was_remapped,
+            is_synthetic,
             crate_of_origin,
             // Do not hash the source as it is not encoded
             src: _,
@@ -339,6 +340,7 @@ impl<'a, 'tcx> HashStable<StableHashingContext<'a, 'tcx>> for FileMap {
 
         name.hash_stable(hcx, hasher);
         name_was_remapped.hash_stable(hcx, hasher);
+        is_synthetic.hash_stable(hcx, hasher);
 
         DefId {
             krate: CrateNum::from_u32(crate_of_origin),

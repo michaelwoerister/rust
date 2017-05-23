@@ -30,6 +30,8 @@ use std::fs;
 use std::io::{self, Read};
 use errors::CodeMapper;
 
+use rustc_data_structures::fx::FxHashMap;
+
 /// Return the span itself if it doesn't come from a macro expansion,
 /// otherwise return the call site span up to the `enclosing_sp` by
 /// following the `expn_info` chain.
@@ -115,6 +117,8 @@ pub struct CodeMap {
     // graph becomes available later during the compilation process, it is
     // be replaced with something that notifies the dep-tracking system.
     dep_tracking_callback: RefCell<Box<Fn(&FileMap)>>,
+
+    files_dedup: RefCell<FxHashMap<(FileName, String), Rc<FileMap>>>,
 }
 
 impl CodeMap {
@@ -124,6 +128,7 @@ impl CodeMap {
             file_loader: Box::new(RealFileLoader),
             path_mapping: path_mapping,
             dep_tracking_callback: RefCell::new(Box::new(|_| {})),
+            files_dedup: RefCell::new(FxHashMap()),
         }
     }
 
@@ -135,6 +140,7 @@ impl CodeMap {
             file_loader: file_loader,
             path_mapping: path_mapping,
             dep_tracking_callback: RefCell::new(Box::new(|_| {})),
+            files_dedup: RefCell::new(FxHashMap()),
         }
     }
 
@@ -181,30 +187,53 @@ impl CodeMap {
     /// Creates a new filemap without setting its line information. If you don't
     /// intend to set the line information yourself, you should use new_filemap_and_lines.
     pub fn new_filemap(&self, filename: FileName, mut src: String) -> Rc<FileMap> {
-        let start_pos = self.next_start_pos();
-        let mut files = self.files.borrow_mut();
-
         // Remove utf-8 BOM if any.
         if src.starts_with("\u{feff}") {
             src.drain(..3);
         }
 
-        let end_pos = start_pos + src.len();
-
+        let is_synthetic = filename.starts_with("<") && filename.ends_with(">");
         let (filename, was_remapped) = self.path_mapping.map_prefix(filename);
 
-        let filemap = Rc::new(FileMap {
-            name: filename,
-            name_was_remapped: was_remapped,
-            crate_of_origin: 0,
-            src: Some(Rc::new(src)),
-            start_pos: Pos::from_usize(start_pos),
-            end_pos: Pos::from_usize(end_pos),
-            lines: RefCell::new(Vec::new()),
-            multibyte_chars: RefCell::new(Vec::new()),
-        });
+        let mut new_filemap_allocated = false;
 
-        files.push(filemap.clone());
+        let filemap = self
+            .files_dedup
+            .borrow_mut()
+            .entry((filename.clone(), src.clone()))
+            .or_insert_with(|| {
+                new_filemap_allocated = true;
+
+                let start_pos = self.next_start_pos();
+                let end_pos = start_pos + src.len();
+
+                Rc::new(FileMap {
+                    name: filename,
+                    name_was_remapped: was_remapped,
+                    is_synthetic,
+                    crate_of_origin: 0,
+                    src: Some(Rc::new(src)),
+                    start_pos: Pos::from_usize(start_pos),
+                    end_pos: Pos::from_usize(end_pos),
+                    lines: RefCell::new(Vec::new()),
+                    multibyte_chars: RefCell::new(Vec::new()),
+                })
+            })
+            .clone();
+        // let filemap = Rc::new(FileMap {
+        //     name: filename,
+        //     name_was_remapped: was_remapped,
+        //     crate_of_origin: 0,
+        //     src: Some(Rc::new(src)),
+        //     start_pos: Pos::from_usize(start_pos),
+        //     end_pos: Pos::from_usize(end_pos),
+        //     lines: RefCell::new(Vec::new()),
+        //     multibyte_chars: RefCell::new(Vec::new()),
+        // });
+
+        if new_filemap_allocated {
+            self.files.borrow_mut().push(filemap.clone());
+        }
 
         filemap
     }
@@ -231,6 +260,7 @@ impl CodeMap {
     pub fn new_imported_filemap(&self,
                                 filename: FileName,
                                 name_was_remapped: bool,
+                                is_synthetic: bool,
                                 crate_of_origin: u32,
                                 source_len: usize,
                                 mut file_local_lines: Vec<BytePos>,
@@ -253,6 +283,7 @@ impl CodeMap {
         let filemap = Rc::new(FileMap {
             name: filename,
             name_was_remapped: name_was_remapped,
+            is_synthetic: is_synthetic,
             crate_of_origin: crate_of_origin,
             src: None,
             start_pos: start_pos,

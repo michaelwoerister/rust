@@ -11,6 +11,8 @@
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
+use std::rc::Rc;
+use std::sync::Arc;
 use blake2b::Blake2bHasher;
 use rustc_serialize::leb128;
 
@@ -320,6 +322,28 @@ impl<T, CTX> HashStable<CTX> for Option<T>
 }
 
 impl<'a, T, CTX> HashStable<CTX> for &'a T
+    where T: HashStable<CTX>
+{
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        (**self).hash_stable(ctx, hasher);
+    }
+}
+
+impl<T, CTX> HashStable<CTX> for Rc<T>
+    where T: HashStable<CTX>
+{
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        (**self).hash_stable(ctx, hasher);
+    }
+}
+
+impl<T, CTX> HashStable<CTX> for Arc<T>
     where T: HashStable<CTX>
 {
     #[inline]
