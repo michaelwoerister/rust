@@ -12,7 +12,8 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 // use std::mem;
 // use blake2b::Blake2bHasher;
-use metrohash128::MetroHash128;
+// use metrohash128::MetroHash128;
+use sip128::SipHasher24;
 // use rustc_serialize::leb128;
 
 // fn write_unsigned_leb128_to_buf(buf: &mut [u8; 16], value: u64) -> usize {
@@ -43,7 +44,7 @@ use metrohash128::MetroHash128;
 /// parameter.
 pub struct StableHasher<W> {
     // state: Blake2bHasher,
-    state: MetroHash128,
+    state: SipHasher24,
     bytes_hashed: u64,
     width: PhantomData<W>,
 }
@@ -62,7 +63,7 @@ impl<W: StableHasherResult> StableHasher<W> {
     pub fn new() -> Self {
         StableHasher {
             // state: Blake2bHasher::new(mem::size_of::<W>(), &[]),
-            state: MetroHash128::new(),
+            state: SipHasher24::new(),
             bytes_hashed: 0,
             width: PhantomData,
         }
