@@ -95,8 +95,8 @@ impl DepGraphEdges {
 
         if let OpenTask::Regular {
             node,
+            reads,
             read_set: _,
-            reads
         } = popped_node {
             debug_assert_eq!(node, key);
 
@@ -121,7 +121,7 @@ impl DepGraphEdges {
             let mut fingerprint = Fingerprint::zero();
             let mut hasher = StableHasher::new();
 
-            for read in reads.iter() {
+            for &read in &reads {
                 mem::discriminant(&read.kind).hash(&mut hasher);
 
                 // Fingerprint::combine() is faster than sending Fingerprint
@@ -161,16 +161,18 @@ impl DepGraphEdges {
     /// state (and leaking data that you read into a tracked task).
     pub fn read(&mut self, v: DepNode) {
         match self.task_stack.last_mut() {
-            Some(&mut OpenTask::Regular {
-                node: _,
-                ref mut reads,
-                ref mut read_set,
-            }) => {
+            Some(&mut OpenTask::Regular { ref mut reads, ref mut read_set, node: _ }) => {
                 if read_set.insert(v) {
                     reads.push(v);
                 }
             }
-            _ => {
+            Some(&mut OpenTask::Anon { ref mut reads, ref mut read_set }) => {
+                if read_set.insert(v) {
+                    reads.push(v);
+                }
+            }
+            Some(&mut OpenTask::Ignore) |
+            None => {
                 // ignore
             }
         }

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use dep_graph::DepGraph;
+use dep_graph::{DepGraph, DepNode};
 use infer::{InferCtxt, InferOk};
 use ty::{self, Ty, TypeFoldable, ToPolyTraitRef, TyCtxt, ToPredicate};
 use ty::error::ExpectedFound;
@@ -16,7 +16,7 @@ use rustc_data_structures::obligation_forest::{ObligationForest, Error};
 use rustc_data_structures::obligation_forest::{ForestObligation, ObligationProcessor};
 use std::marker::PhantomData;
 use syntax::ast;
-use util::nodemap::{FxHashSet, NodeMap};
+use util::nodemap::{FxHashSet, FxHashMap, NodeMap};
 use hir::def_id::DefId;
 
 use super::CodeAmbiguity;
@@ -37,6 +37,23 @@ impl<'tcx> ForestObligation for PendingPredicateObligation<'tcx> {
 pub struct GlobalFulfilledPredicates<'tcx> {
     set: FxHashSet<ty::PolyTraitPredicate<'tcx>>,
     dep_graph: DepGraph,
+
+    // Hack(?):
+    // GlobalFulfilledPredicates caches whether some predicate from a the global
+    // type context has been proven somewhere already.
+    // When we query that cache, we need to create dep-edges to the things that
+    // where accessed in order to prove the cached thing (similar to a
+    // DepTrackingMap).
+    // When we cache something, we also add the anon dep-node that was created
+    // for the thing being cached.
+    // However, this seems to be different from DepTrackingMap in that doing a
+    // selection for the same trait predicate seems to generate different
+    // dependencies some of the time.
+    // Also, in some test cases (like the incremental/remapped_paths_cc) this
+    // anon-node-based approach seems to produce very different dependencies
+    // than the manual depnode approach, although it seems like it should be
+    // very similar.
+    pub dep_nodes: FxHashMap<ty::PolyTraitPredicate<'tcx>, FxHashSet<DepNode>>,
 }
 
 /// The fulfillment context is used to drive trait resolution.  It
@@ -607,10 +624,11 @@ impl<'a, 'gcx, 'tcx> GlobalFulfilledPredicates<'gcx> {
         GlobalFulfilledPredicates {
             set: FxHashSet(),
             dep_graph: dep_graph,
+            dep_nodes: FxHashMap(),
         }
     }
 
-    pub fn check_duplicate(&self, tcx: TyCtxt, key: &ty::Predicate<'tcx>) -> bool {
+    pub fn check_duplicate(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>, key: &ty::Predicate<'tcx>) -> bool {
         if let ty::Predicate::Trait(ref data) = *key {
             self.check_duplicate_trait(tcx, data)
         } else {
@@ -618,14 +636,19 @@ impl<'a, 'gcx, 'tcx> GlobalFulfilledPredicates<'gcx> {
         }
     }
 
-    pub fn check_duplicate_trait(&self, tcx: TyCtxt, data: &ty::PolyTraitPredicate<'tcx>) -> bool {
+    pub fn check_duplicate_trait(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>, data: &ty::PolyTraitPredicate<'tcx>) -> bool {
         // For the global predicate registry, when we find a match, it
         // may have been computed by some other task, so we want to
         // add a read from the node corresponding to the predicate
         // processing to make sure we get the transitive dependencies.
         if self.set.contains(data) {
             debug_assert!(data.is_global());
-            self.dep_graph.read(data.dep_node(tcx));
+
+            if let Some(data) = tcx.lift_to_global(data) {
+                for &dep_node in &self.dep_nodes[&data] {
+                    self.dep_graph.read(dep_node);
+                }
+            }
             debug!("check_duplicate: global predicate `{:?}` already proved elsewhere", data);
 
             true

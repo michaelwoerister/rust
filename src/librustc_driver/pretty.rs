@@ -814,7 +814,7 @@ pub fn print_after_parsing(sess: &Session,
                            krate: &ast::Crate,
                            ppm: PpMode,
                            ofile: Option<&Path>) {
-    let dep_graph = DepGraph::new(false);
+    let dep_graph = DepGraph::new(false, false);
     let _ignore = dep_graph.in_ignore();
 
     let (src, src_name) = get_source(input, sess);
@@ -857,7 +857,7 @@ pub fn print_after_hir_lowering<'tcx, 'a: 'tcx>(sess: &'a Session,
                                                 arenas: &'tcx GlobalArenas<'tcx>,
                                                 opt_uii: Option<UserIdentifiedItem>,
                                                 ofile: Option<&Path>) {
-    let dep_graph = DepGraph::new(false);
+    let dep_graph = DepGraph::new(false, false);
     let _ignore = dep_graph.in_ignore();
 
     if ppm.needs_analysis() {

@@ -196,7 +196,8 @@ pub fn run_compiler<'a>(args: &[String],
         },
     };
 
-    let dep_graph = DepGraph::new(sopts.build_dep_graph());
+    let dep_graph = DepGraph::new(sopts.build_dep_graph(),
+                                  sopts.enable_dep_node_debug_strs());
     let cstore = Rc::new(CStore::new(&dep_graph, box rustc_trans::LlvmMetadataLoader));
 
     let loader = file_loader.unwrap_or(box RealFileLoader);
@@ -402,7 +403,8 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                     describe_lints(&ls, false);
                     return None;
                 }
-                let dep_graph = DepGraph::new(sopts.build_dep_graph());
+                let dep_graph = DepGraph::new(sopts.build_dep_graph(),
+                                              sopts.enable_dep_node_debug_strs());
                 let cstore = Rc::new(CStore::new(&dep_graph, box rustc_trans::LlvmMetadataLoader));
                 let mut sess = build_session(sopts.clone(),
                     &dep_graph,

@@ -50,7 +50,8 @@ use std::rc::Rc;
 use syntax::abi::Abi;
 use hir;
 use lint;
-use util::nodemap::FxHashMap;
+use util::nodemap::{FxHashMap, FxHashSet};
+use dep_graph::DepKind;
 
 struct InferredObligationsSnapshotVecDelegate<'tcx> {
     phantom: PhantomData<&'tcx i32>,
@@ -381,61 +382,79 @@ impl<'cx, 'gcx, 'tcx> SelectionContext<'cx, 'gcx, 'tcx> {
         assert!(!obligation.predicate.has_escaping_regions());
 
         let tcx = self.tcx();
-        let dep_node = obligation.predicate.dep_node(tcx);
-        let _task = tcx.dep_graph.in_task(dep_node);
+        let (ret, dep_node) = tcx.dep_graph.with_anon_task(DepKind::TraitSelect, || {
+            let stack = self.push_stack(TraitObligationStackList::empty(), obligation);
+            let ret = match self.candidate_from_obligation(&stack)? {
+                None => None,
+                Some(candidate) => {
+                    let mut candidate = self.confirm_candidate(obligation, candidate)?;
+                    let inferred_obligations = (*self.inferred_obligations).into_iter().cloned();
+                    candidate.nested_obligations_mut().extend(inferred_obligations);
+                    Some(candidate)
+                },
+            };
 
-        let stack = self.push_stack(TraitObligationStackList::empty(), obligation);
-        let ret = match self.candidate_from_obligation(&stack)? {
-            None => None,
-            Some(candidate) => {
-                let mut candidate = self.confirm_candidate(obligation, candidate)?;
-                let inferred_obligations = (*self.inferred_obligations).into_iter().cloned();
-                candidate.nested_obligations_mut().extend(inferred_obligations);
-                Some(candidate)
-            },
-        };
-
-        // Test whether this is a `()` which was produced by defaulting a
-        // diverging type variable with `!` disabled. If so, we may need
-        // to raise a warning.
-        if obligation.predicate.skip_binder().self_ty().is_defaulted_unit() {
-            let mut raise_warning = true;
-            // Don't raise a warning if the trait is implemented for ! and only
-            // permits a trivial implementation for !. This stops us warning
-            // about (for example) `(): Clone` becoming `!: Clone` because such
-            // a switch can't cause code to stop compiling or execute
-            // differently.
-            let mut never_obligation = obligation.clone();
-            let def_id = never_obligation.predicate.skip_binder().trait_ref.def_id;
-            never_obligation.predicate = never_obligation.predicate.map_bound(|mut trait_pred| {
-                // Swap out () with ! so we can check if the trait is impld for !
-                {
-                    let mut trait_ref = &mut trait_pred.trait_ref;
-                    let unit_substs = trait_ref.substs;
-                    let mut never_substs = Vec::with_capacity(unit_substs.len());
-                    never_substs.push(From::from(tcx.types.never));
-                    never_substs.extend(&unit_substs[1..]);
-                    trait_ref.substs = tcx.intern_substs(&never_substs);
+            // Test whether this is a `()` which was produced by defaulting a
+            // diverging type variable with `!` disabled. If so, we may need
+            // to raise a warning.
+            if obligation.predicate.skip_binder().self_ty().is_defaulted_unit() {
+                let mut raise_warning = true;
+                // Don't raise a warning if the trait is implemented for ! and only
+                // permits a trivial implementation for !. This stops us warning
+                // about (for example) `(): Clone` becoming `!: Clone` because such
+                // a switch can't cause code to stop compiling or execute
+                // differently.
+                let mut never_obligation = obligation.clone();
+                let def_id = never_obligation.predicate.skip_binder().trait_ref.def_id;
+                never_obligation.predicate = never_obligation.predicate.map_bound(|mut trait_pred| {
+                    // Swap out () with ! so we can check if the trait is impld for !
+                    {
+                        let mut trait_ref = &mut trait_pred.trait_ref;
+                        let unit_substs = trait_ref.substs;
+                        let mut never_substs = Vec::with_capacity(unit_substs.len());
+                        never_substs.push(From::from(tcx.types.never));
+                        never_substs.extend(&unit_substs[1..]);
+                        trait_ref.substs = tcx.intern_substs(&never_substs);
+                    }
+                    trait_pred
+                });
+                if let Ok(Some(..)) = self.select(&never_obligation) {
+                    if !tcx.trait_relevant_for_never(def_id) {
+                        // The trait is also implemented for ! and the resulting
+                        // implementation cannot actually be invoked in any way.
+                        raise_warning = false;
+                    }
                 }
-                trait_pred
-            });
-            if let Ok(Some(..)) = self.select(&never_obligation) {
-                if !tcx.trait_relevant_for_never(def_id) {
-                    // The trait is also implemented for ! and the resulting
-                    // implementation cannot actually be invoked in any way.
-                    raise_warning = false;
+
+                if raise_warning {
+                    tcx.sess.add_lint(lint::builtin::RESOLVE_TRAIT_ON_DEFAULTED_UNIT,
+                                      obligation.cause.body_id,
+                                      obligation.cause.span,
+                                      format!("code relies on type inference rules which are likely \
+                                               to change"));
                 }
             }
 
-            if raise_warning {
-                tcx.sess.add_lint(lint::builtin::RESOLVE_TRAIT_ON_DEFAULTED_UNIT,
-                                  obligation.cause.body_id,
-                                  obligation.cause.span,
-                                  format!("code relies on type inference rules which are likely \
-                                           to change"));
+            Ok(ret)
+        }, || {
+            format!("{:?}", obligation.predicate)
+        });
+
+        tcx.dep_graph.read(dep_node);
+
+        if obligation.predicate.is_global() {
+            // Cache the DepNode for this predicate, so we can read that when
+            // querying the GlobalFulfilledPredicates.
+            if let Some(predicate) = tcx.lift_to_global(&obligation.predicate) {
+                tcx.fulfilled_predicates
+                   .borrow_mut()
+                   .dep_nodes.entry(predicate)
+                   .or_insert_with(|| FxHashSet())
+                   .insert(dep_node);
             }
         }
-        Ok(ret)
+
+        ret
     }
 
     ///////////////////////////////////////////////////////////////////////////

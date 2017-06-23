@@ -37,18 +37,22 @@ struct DepGraphData {
     /// Work-products that we generate in this run.
     work_products: RefCell<FxHashMap<WorkProductId, WorkProduct>>,
 
-    dep_node_debug: RefCell<FxHashMap<DepNode, String>>,
+    dep_node_debug: Option<RefCell<FxHashMap<DepNode, String>>>,
 }
 
 impl DepGraph {
-    pub fn new(enabled: bool) -> DepGraph {
+    pub fn new(enabled: bool, debug_strs_enabled: bool) -> DepGraph {
         DepGraph {
             data: if enabled {
                 Some(Rc::new(DepGraphData {
                     previous_work_products: RefCell::new(FxHashMap()),
                     work_products: RefCell::new(FxHashMap()),
                     edges: RefCell::new(DepGraphEdges::new()),
-                    dep_node_debug: RefCell::new(FxHashMap()),
+                    dep_node_debug: if debug_strs_enabled {
+                        Some(RefCell::new(FxHashMap()))
+                    } else {
+                        None
+                    }
                 }))
             } else {
                 None
@@ -117,13 +121,26 @@ impl DepGraph {
 
     /// Execute something within an "anonymous" task, that is, a task the
     /// DepNode of which is determined by the list of inputs it read from.
-    pub fn with_anon_task<OP,R>(&self, dep_kind: DepKind, op: OP) -> (R, DepNode)
-        where OP: FnOnce() -> R
+    pub fn with_anon_task<OP, F,R>(&self,
+                                   dep_kind: DepKind,
+                                   op: OP,
+                                   mk_debug_str: F)
+                                   -> (R, DepNode)
+        where OP: FnOnce() -> R,
+              F: FnOnce() -> String,
     {
         if let Some(ref data) = self.data {
             data.edges.borrow_mut().push_anon_task();
             let result = op();
             let dep_node = data.edges.borrow_mut().pop_anon_task(dep_kind);
+
+            if cfg!(debug_assertions) {
+                if let Some(ref dep_node_debug) = data.dep_node_debug {
+                    let debug_str = mk_debug_str();
+                    dep_node_debug.borrow_mut().insert(dep_node, debug_str);
+                }
+            }
+
             (result, dep_node)
         } else {
             (op(), DepNode::new_no_params(DepKind::Krate))
@@ -202,14 +219,25 @@ impl DepGraph {
                                           debug_str_gen: F)
         where F: FnOnce() -> String
     {
-        let mut dep_node_debug = self.data.as_ref().unwrap().dep_node_debug.borrow_mut();
+        let mut dep_node_debug = self.data
+                                     .as_ref()
+                                     .unwrap()
+                                     .dep_node_debug
+                                     .as_ref()
+                                     .unwrap()
+                                     .borrow_mut();
 
         dep_node_debug.entry(dep_node)
                       .or_insert_with(debug_str_gen);
     }
 
     pub(super) fn dep_node_debug_str(&self, dep_node: DepNode) -> Option<String> {
-        self.data.as_ref().unwrap().dep_node_debug.borrow().get(&dep_node).cloned()
+        if let Some(ref data) = self.data {
+            if let Some(ref dep_node_debug) = data.dep_node_debug {
+                return dep_node_debug.borrow().get(&dep_node).cloned();
+            }
+        }
+        None
     }
 
     pub fn dep_node_debug_strs(&self) -> FxHashMap<DepNode, String> {

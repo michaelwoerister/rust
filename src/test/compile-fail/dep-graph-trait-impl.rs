@@ -11,7 +11,8 @@
 // Test that when a trait impl changes, fns whose body uses that trait
 // must also be recompiled.
 
-// compile-flags: -Z query-dep-graph
+// compile-flags: -Z query-dep-graph -Zdump-dep-graph --cfg debug_assertions
+// rustc-env:RUST_LOG=rustc::traits::select=debug
 
 #![feature(rustc_attrs)]
 #![allow(warnings)]

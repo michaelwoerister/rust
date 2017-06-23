@@ -375,6 +375,7 @@ define_dep_nodes!(
     // Represents the MIR for a fn; also used as the task node for
     // things read/modify that MIR.
     Mir(DefId),
+
     MirShim(DefIdList),
 
     BorrowCheckKrate,
@@ -443,32 +444,7 @@ define_dep_nodes!(
     TraitItems(DefId),
     ReprHints(DefId),
 
-    // Trait selection cache is a little funny. Given a trait
-    // reference like `Foo: SomeTrait<Bar>`, there could be
-    // arbitrarily many def-ids to map on in there (e.g., `Foo`,
-    // `SomeTrait`, `Bar`). We could have a vector of them, but it
-    // requires heap-allocation, and trait sel in general can be a
-    // surprisingly hot path. So instead we pick two def-ids: the
-    // trait def-id, and the first def-id in the input types. If there
-    // is no def-id in the input types, then we use the trait def-id
-    // again. So for example:
-    //
-    // - `i32: Clone` -> `TraitSelect { trait_def_id: Clone, self_def_id: Clone }`
-    // - `u32: Clone` -> `TraitSelect { trait_def_id: Clone, self_def_id: Clone }`
-    // - `Clone: Clone` -> `TraitSelect { trait_def_id: Clone, self_def_id: Clone }`
-    // - `Vec<i32>: Clone` -> `TraitSelect { trait_def_id: Clone, self_def_id: Vec }`
-    // - `String: Clone` -> `TraitSelect { trait_def_id: Clone, self_def_id: String }`
-    // - `Foo: Trait<Bar>` -> `TraitSelect { trait_def_id: Trait, self_def_id: Foo }`
-    // - `Foo: Trait<i32>` -> `TraitSelect { trait_def_id: Trait, self_def_id: Foo }`
-    // - `(Foo, Bar): Trait` -> `TraitSelect { trait_def_id: Trait, self_def_id: Foo }`
-    // - `i32: Trait<Foo>` -> `TraitSelect { trait_def_id: Trait, self_def_id: Foo }`
-    //
-    // You can see that we map many trait refs to the same
-    // trait-select node.  This is not a problem, it just means
-    // imprecision in our dep-graph tracking.  The important thing is
-    // that for any given trait-ref, we always map to the **same**
-    // trait-select node.
-    TraitSelect { trait_def_id: DefId, input_def_id: DefId },
+    TraitSelect(Anonymous),
 
     // For proj. cache, we just keep a list of all def-ids, since it is
     // not a hotspot.
@@ -587,6 +563,21 @@ impl<'a, 'gcx: 'tcx + 'a, 'tcx: 'a> DepNodeParams<'a, 'gcx, 'tcx> for (DefIdList
         s
     }
 }
+
+pub struct Anonymous;
+
+impl<'a, 'gcx: 'tcx + 'a, 'tcx: 'a> DepNodeParams<'a, 'gcx, 'tcx> for (Anonymous,) {
+    const CAN_RECONSTRUCT_QUERY_KEY: bool = false;
+
+    fn to_fingerprint(&self, _: TyCtxt) -> Fingerprint {
+        panic!("Trying manually create anonymous DepNode")
+    }
+
+    default fn to_debug_str(&self, _: TyCtxt<'a, 'gcx, 'tcx>) -> String {
+        panic!("Trying manually create anonymous DepNode")
+    }
+}
+
 
 /// A "work product" corresponds to a `.o` (or other) file that we
 /// save in between runs. These ids do not have a DefId but rather

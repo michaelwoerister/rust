@@ -10,6 +10,7 @@
 
 use rustc_data_structures::fx::FxHashMap;
 use std::cell::RefCell;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use super::{DepNode, DepGraph, DepKind};
@@ -24,7 +25,7 @@ pub struct DepTrackingMap<M: DepTrackingMapConfig> {
 }
 
 pub trait DepTrackingMapConfig {
-    type Key: Eq + Hash + Clone;
+    type Key: Eq + Hash + Clone + Debug;
     type Value: Clone;
 
     /// A DepTrackingMap always creates anonymous DepNodes, but the DepKind of
@@ -67,7 +68,9 @@ impl<M: DepTrackingMapConfig> DepTrackingMap<M> {
             }
         }
 
-        let (result, dep_node) = self.graph.with_anon_task(M::DEP_KIND, op);
+        let (result, dep_node) = self.graph.with_anon_task(M::DEP_KIND, op, || {
+            format!("{:?}", key)
+        });
 
         self.graph.read(dep_node);
         self.map.borrow_mut().insert(key, (result.clone(), dep_node));

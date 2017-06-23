@@ -137,7 +137,7 @@ pub fn run_core(search_paths: SearchPaths,
                                                                false,
                                                                Some(codemap.clone()));
 
-    let dep_graph = DepGraph::new(false);
+    let dep_graph = DepGraph::new(false, false);
     let _ignore = dep_graph.in_ignore();
     let cstore = Rc::new(CStore::new(&dep_graph, box rustc_trans::LlvmMetadataLoader));
     let mut sess = session::build_session_(

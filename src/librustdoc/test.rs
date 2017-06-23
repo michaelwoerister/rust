@@ -80,7 +80,7 @@ pub fn run(input: &str,
     let handler =
         errors::Handler::with_tty_emitter(ColorConfig::Auto, true, false, Some(codemap.clone()));
 
-    let dep_graph = DepGraph::new(false);
+    let dep_graph = DepGraph::new(false, false);
     let _ignore = dep_graph.in_ignore();
     let cstore = Rc::new(CStore::new(&dep_graph, box rustc_trans::LlvmMetadataLoader));
     let mut sess = session::build_session_(
@@ -114,7 +114,7 @@ pub fn run(input: &str,
                                        render_type);
 
     {
-        let dep_graph = DepGraph::new(false);
+        let dep_graph = DepGraph::new(false, false);
         let _ignore = dep_graph.in_ignore();
         let map = hir::map::map_crate(&mut hir_forest, defs);
         let krate = map.krate();
@@ -230,7 +230,7 @@ fn runtest(test: &str, cratename: &str, cfgs: Vec<String>, libs: SearchPaths,
     // Compile the code
     let diagnostic_handler = errors::Handler::with_emitter(true, false, box emitter);
 
-    let dep_graph = DepGraph::new(false);
+    let dep_graph = DepGraph::new(false, false);
     let cstore = Rc::new(CStore::new(&dep_graph, box rustc_trans::LlvmMetadataLoader));
     let mut sess = session::build_session_(
         sessopts, &dep_graph, None, diagnostic_handler, codemap, cstore.clone(),
