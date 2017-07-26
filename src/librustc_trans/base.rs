@@ -1032,7 +1032,9 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let mut module_dispositions = tcx.sess.opts.incremental.as_ref().map(|_| Vec::new());
 
     for cgu in codegen_units.into_iter() {
+        ongoing_translation.wait_for_signal_to_translate_item();
         ongoing_translation.check_for_errors(tcx.sess);
+
         let dep_node = cgu.work_product_dep_node();
         let ((stats, module), _) =
             tcx.dep_graph.with_task(dep_node,
