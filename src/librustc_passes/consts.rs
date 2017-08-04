@@ -329,7 +329,7 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>, e: &hir::Expr, node
             }
         }
         hir::ExprPath(ref qpath) => {
-            let def = v.tables.qpath_def(qpath, e.id);
+            let def = v.tables.qpath_def(qpath, e.hir_id);
             match def {
                 Def::VariantCtor(..) | Def::StructCtor(..) |
                 Def::Fn(..) | Def::Method(..) => {}
@@ -365,7 +365,7 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>, e: &hir::Expr, node
             }
             // The callee is an arbitrary expression, it doesn't necessarily have a definition.
             let def = if let hir::ExprPath(ref qpath) = callee.node {
-                v.tables.qpath_def(qpath, callee.id)
+                v.tables.qpath_def(qpath, callee.hir_id)
             } else {
                 Def::Err
             };
@@ -387,7 +387,8 @@ fn check_expr<'a, 'tcx>(v: &mut CheckCrateVisitor<'a, 'tcx>, e: &hir::Expr, node
             }
         }
         hir::ExprMethodCall(..) => {
-            let def_id = v.tables.type_dependent_defs[&e.id].def_id();
+            v.tables.validate_hir_id(e.hir_id);
+            let def_id = v.tables.type_dependent_defs[&e.hir_id.local_id].def_id();
             match v.tcx.associated_item(def_id).container {
                 ty::ImplContainer(_) => v.handle_const_fn_call(def_id, node_ty),
                 ty::TraitContainer(_) => v.promotable = false

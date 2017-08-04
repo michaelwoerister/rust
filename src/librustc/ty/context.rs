@@ -41,7 +41,7 @@ use ty::inhabitedness::DefIdForest;
 use ty::maps;
 use ty::steal::Steal;
 use ty::BindingMode;
-use util::nodemap::{NodeMap, NodeSet, DefIdSet};
+use util::nodemap::{NodeMap, NodeSet, DefIdSet, ItemLocalMap};
 use util::nodemap::{FxHashMap, FxHashSet};
 use rustc_data_structures::accumulate_vec::AccumulateVec;
 
@@ -208,11 +208,11 @@ pub struct CommonTypes<'tcx> {
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct TypeckTables<'tcx> {
     /// The HirId::owner all ItemLocalIds in this table are relative to.
-    pub owner: DefId,
+    pub local_id_root: DefId,
 
     /// Resolved definitions for `<T>::X` associated paths and
     /// method calls, including those of overloaded operators.
-    pub type_dependent_defs: NodeMap<Def>,
+    pub type_dependent_defs: ItemLocalMap<Def>,
 
     /// Stores the types for various nodes in the AST.  Note that this table
     /// is not guaranteed to be populated until after typeck.  See
@@ -275,10 +275,10 @@ pub struct TypeckTables<'tcx> {
 }
 
 impl<'tcx> TypeckTables<'tcx> {
-    pub fn empty(owner: DefId) -> TypeckTables<'tcx> {
+    pub fn empty(local_id_root: DefId) -> TypeckTables<'tcx> {
         TypeckTables {
-            owner,
-            type_dependent_defs: NodeMap(),
+            local_id_root,
+            type_dependent_defs: ItemLocalMap(),
             node_types: FxHashMap(),
             node_substs: NodeMap(),
             adjustments: NodeMap(),
@@ -297,11 +297,12 @@ impl<'tcx> TypeckTables<'tcx> {
     }
 
     /// Returns the final resolution of a `QPath` in an `Expr` or `Pat` node.
-    pub fn qpath_def(&self, qpath: &hir::QPath, id: NodeId) -> Def {
+    pub fn qpath_def(&self, qpath: &hir::QPath, id: hir::HirId) -> Def {
         match *qpath {
             hir::QPath::Resolved(_, ref path) => path.def,
             hir::QPath::TypeRelative(..) => {
-                self.type_dependent_defs.get(&id).cloned().unwrap_or(Def::Err)
+                self.validate_hir_id(id);
+                self.type_dependent_defs.get(&id.local_id).cloned().unwrap_or(Def::Err)
             }
         }
     }
@@ -379,7 +380,8 @@ impl<'tcx> TypeckTables<'tcx> {
             return false;
         }
 
-        match self.type_dependent_defs.get(&expr.id) {
+        self.validate_hir_id(expr.hir_id);
+        match self.type_dependent_defs.get(&expr.hir_id.local_id) {
             Some(&Def::Method(_)) => true,
             _ => false
         }
@@ -392,12 +394,23 @@ impl<'tcx> TypeckTables<'tcx> {
     /// Validate that a NodeId can safely be converted to an ItemLocalId for
     /// this table.
     #[inline]
-    pub fn validate_node_id(&self, hir: &hir_map::Map<'tcx>, node_id: NodeId) {
+    pub fn validate_hir_id(&self, hir_id: hir::HirId) {
         #[cfg(debug_assertions)]
         {
-            if self.owner.is_local() {
-                let expected = hir.definitions().node_to_hir_id(node_id).owner;
-                assert_eq!(DefId::local(expected), self.owner);
+            if self.local_id_root.is_local() {
+                if hir_id.owner != self.local_id_root.index {
+                    ty::tls::with(|tcx| {
+                        let node_id = tcx.hir
+                                         .definitions()
+                                         .find_node_for_hir_id(hir_id);
+
+                        bug!("node {} with HirId::owner {:?} cannot be placed in \
+                              TypeckTables with local_id_root {:?}",
+                              tcx.hir.node_to_string(node_id),
+                              DefId::local(hir_id.owner),
+                              self.local_id_root)
+                    });
+                }
             }
         }
     }
