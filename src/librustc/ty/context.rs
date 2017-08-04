@@ -14,7 +14,7 @@ use dep_graph::DepGraph;
 use session::Session;
 use lint;
 use middle;
-use hir::TraitMap;
+use hir::{TraitMap};
 use hir::def::{Def, ExportMap};
 use hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use hir::map as hir_map;
@@ -207,6 +207,9 @@ pub struct CommonTypes<'tcx> {
 
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct TypeckTables<'tcx> {
+    /// The HirId::owner all ItemLocalIds in this table are relative to.
+    pub owner: DefId,
+
     /// Resolved definitions for `<T>::X` associated paths and
     /// method calls, including those of overloaded operators.
     pub type_dependent_defs: NodeMap<Def>,
@@ -272,8 +275,9 @@ pub struct TypeckTables<'tcx> {
 }
 
 impl<'tcx> TypeckTables<'tcx> {
-    pub fn empty() -> TypeckTables<'tcx> {
+    pub fn empty(owner: DefId) -> TypeckTables<'tcx> {
         TypeckTables {
+            owner,
             type_dependent_defs: NodeMap(),
             node_types: FxHashMap(),
             node_substs: NodeMap(),
@@ -383,6 +387,19 @@ impl<'tcx> TypeckTables<'tcx> {
 
     pub fn upvar_capture(&self, upvar_id: ty::UpvarId) -> ty::UpvarCapture<'tcx> {
         self.upvar_capture_map[&upvar_id]
+    }
+
+    /// Validate that a NodeId can safely be converted to an ItemLocalId for
+    /// this table.
+    #[inline]
+    pub fn validate_node_id(&self, hir: &hir_map::Map<'tcx>, node_id: NodeId) {
+        #[cfg(debug_assertions)]
+        {
+            if self.owner.is_local() {
+                let expected = hir.definitions().node_to_hir_id(node_id).owner;
+                assert_eq!(DefId::local(expected), self.owner);
+            }
+        }
     }
 }
 

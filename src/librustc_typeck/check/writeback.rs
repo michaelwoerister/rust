@@ -14,6 +14,7 @@
 
 use check::FnCtxt;
 use rustc::hir;
+use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
 use rustc::infer::{InferCtxt};
 use rustc::ty::{self, Ty, TyCtxt};
@@ -75,10 +76,13 @@ struct WritebackCx<'cx, 'gcx: 'cx+'tcx, 'tcx: 'cx> {
 
 impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
     fn new(fcx: &'cx FnCtxt<'cx, 'gcx, 'tcx>, body: &'gcx hir::Body)
-        -> WritebackCx<'cx, 'gcx, 'tcx> {
+        -> WritebackCx<'cx, 'gcx, 'tcx>
+    {
+        let owner = fcx.tcx.hir.definitions().node_to_hir_id(body.id().node_id);
+
         WritebackCx {
             fcx: fcx,
-            tables: ty::TypeckTables::empty(),
+            tables: ty::TypeckTables::empty(DefId::local(owner.owner)),
             body: body
         }
     }
@@ -90,6 +94,8 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
     fn write_ty_to_tables(&mut self, node_id: ast::NodeId, ty: Ty<'gcx>) {
         debug!("write_ty_to_tables({}, {:?})", node_id,  ty);
         assert!(!ty.needs_infer());
+        let tcx = self.fcx.tcx;
+        self.tables.validate_node_id(&tcx.hir, node_id);
         self.tables.node_types.insert(node_id, ty);
     }
 

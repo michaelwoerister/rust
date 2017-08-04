@@ -573,7 +573,7 @@ impl<'a, 'gcx, 'tcx> Inherited<'a, 'gcx, 'tcx> {
     pub fn build(tcx: TyCtxt<'a, 'gcx, 'gcx>, def_id: DefId)
                  -> InheritedBuilder<'a, 'gcx, 'tcx> {
         InheritedBuilder {
-            infcx: tcx.infer_ctxt().with_fresh_in_progress_tables(),
+            infcx: tcx.infer_ctxt().with_fresh_in_progress_tables(def_id),
             def_id,
         }
     }

@@ -612,6 +612,7 @@ for ty::TypeckTables<'tcx> {
                                           hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
                                           hasher: &mut StableHasher<W>) {
         let ty::TypeckTables {
+            owner: _,
             ref type_dependent_defs,
             ref node_types,
             ref node_substs,

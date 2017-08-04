@@ -119,6 +119,8 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
 
     fn handle_field_pattern_match(&mut self, lhs: &hir::Pat, def: Def,
                                   pats: &[codemap::Spanned<hir::FieldPat>]) {
+
+
         let variant = match self.tables.node_id_to_type(lhs.id).sty {
             ty::TyAdt(adt, _) => adt.variant_of_def(def),
             _ => span_bug!(lhs.span, "non-ADT in struct pattern")
@@ -399,7 +401,7 @@ fn find_live<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let mut symbol_visitor = MarkSymbolVisitor {
         worklist,
         tcx,
-        tables: &ty::TypeckTables::empty(),
+        tables: &ty::TypeckTables::empty(DefId::invalid()),
         live_symbols: box FxHashSet(),
         struct_has_extern_repr: false,
         ignore_non_const_paths: false,

@@ -1609,7 +1609,7 @@ fn privacy_access_levels<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // Check privacy of names not checked in previous compilation stages.
     let mut visitor = NamePrivacyVisitor {
         tcx: tcx,
-        tables: &ty::TypeckTables::empty(),
+        tables: &ty::TypeckTables::empty(DefId::invalid()),
         current_item: CRATE_NODE_ID,
     };
     intravisit::walk_crate(&mut visitor, krate);
@@ -1618,7 +1618,7 @@ fn privacy_access_levels<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // inferred types of expressions and patterns.
     let mut visitor = TypePrivacyVisitor {
         tcx: tcx,
-        tables: &ty::TypeckTables::empty(),
+        tables: &ty::TypeckTables::empty(DefId::invalid()),
         current_item: DefId::local(CRATE_DEF_INDEX),
         span: krate.span,
     };
