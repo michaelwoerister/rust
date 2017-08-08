@@ -251,7 +251,7 @@ pub struct TypeckTables<'tcx> {
     /// of the struct - this is needed because it is non-trivial to
     /// normalize while preserving regions. This table is used only in
     /// MIR construction and hence is not serialized to metadata.
-    pub fru_field_types: NodeMap<Vec<Ty<'tcx>>>,
+    pub fru_field_types: ItemLocalMap<Vec<Ty<'tcx>>>,
 
     /// Maps a cast expression to its kind. This is keyed on the
     /// *from* expression of the cast, not the cast itself.
@@ -287,7 +287,7 @@ impl<'tcx> TypeckTables<'tcx> {
             closure_tys: ItemLocalMap(),
             closure_kinds: ItemLocalMap(),
             liberated_fn_sigs: ItemLocalMap(),
-            fru_field_types: NodeMap(),
+            fru_field_types: ItemLocalMap(),
             cast_kinds: NodeMap(),
             lints: lint::LintTable::new(),
             used_trait_imports: DefIdSet(),
