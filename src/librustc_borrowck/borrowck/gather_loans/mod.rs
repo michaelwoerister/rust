@@ -439,9 +439,12 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
         //! from a local variable, mark the mutability decl as necessary.
 
         match loan_path.kind {
-            LpVar(local_id) |
-            LpUpvar(ty::UpvarId{ var_id: local_id, closure_expr_id: _ }) => {
+            LpVar(local_id) => {
                 self.tcx().used_mut_nodes.borrow_mut().insert(local_id);
+            }
+            LpUpvar(ty::UpvarId { var_id, closure_expr_id: _ }) => {
+                let var_node_id = self.tcx().hir.def_index_to_node_id(var_id);
+                self.tcx().used_mut_nodes.borrow_mut().insert(var_node_id);
             }
             LpDowncast(ref base, _) |
             LpExtend(ref base, mc::McInherited, _) |
