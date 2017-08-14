@@ -11,12 +11,13 @@
 //! This module contains `HashStable` implementations for various data types
 //! from rustc::ty in no particular order.
 
-use ich::StableHashingContext;
+use ich::{self, StableHashingContext, NodeIdHashingMode};
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
                                            StableHasherResult};
 use std::hash as std_hash;
 use std::mem;
 use syntax_pos::symbol::InternedString;
+use traits;
 use ty;
 
 impl<'a, 'gcx, 'tcx, T> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
@@ -297,7 +298,9 @@ for ::middle::const_val::ConstVal<'gcx> {
             }
             ConstVal::Function(def_id, substs) => {
                 def_id.hash_stable(hcx, hasher);
-                substs.hash_stable(hcx, hasher);
+                hcx.with_node_id_hashing_mode(NodeIdHashingMode::HashDefPath, |hcx| {
+                    substs.hash_stable(hcx, hasher);
+                });
             }
             ConstVal::Struct(ref name_value_map) => {
                 let mut values: Vec<(InternedString, &ConstVal)> =
@@ -317,6 +320,58 @@ for ::middle::const_val::ConstVal<'gcx> {
             ConstVal::Repeat(ref value, times) => {
                 value.hash_stable(hcx, hasher);
                 times.hash_stable(hcx, hasher);
+            }
+        }
+    }
+}
+
+impl_stable_hash_for!(struct ::middle::const_val::ConstEvalErr<'tcx> {
+    span,
+    kind
+});
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+for ::middle::const_val::ErrKind<'gcx> {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        use middle::const_val::ErrKind::*;
+
+        mem::discriminant(self).hash_stable(hcx, hasher);
+
+        match *self {
+            CannotCast |
+            MissingStructField |
+            NonConstPath |
+            ExpectedConstTuple |
+            ExpectedConstStruct |
+            IndexedNonVec |
+            IndexNotUsize |
+            MiscBinaryOp |
+            MiscCatchAll |
+            IndexOpFeatureGated |
+            TypeckError => {
+                // nothing to do
+            }
+            NegateOn(ref const_val) |
+            NotOn(ref const_val) => {
+                const_val.hash_stable(hcx, hasher);
+            }
+            UnimplementedConstVal(s) => {
+                s.hash_stable(hcx, hasher);
+            }
+            IndexOutOfBounds { len, index } => {
+                len.hash_stable(hcx, hasher);
+                index.hash_stable(hcx, hasher);
+            }
+            Math(ref const_math_err) => {
+                const_math_err.hash_stable(hcx, hasher);
+            }
+            LayoutError(ref layout_error) => {
+                layout_error.hash_stable(hcx, hasher);
+            }
+            ErroneousReferencedConstant(ref const_val) => {
+                const_val.hash_stable(hcx, hasher);
             }
         }
     }
@@ -396,7 +451,6 @@ impl_stable_hash_for!(struct ty::TypeParameterDef {
     pure_wrt_drop
 });
 
-
 impl<'a, 'gcx, 'tcx, T> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
 for ::middle::resolve_lifetime::Set1<T>
     where T: HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
@@ -454,19 +508,21 @@ for ::middle::region::CodeExtent
         use middle::region::CodeExtent;
 
         mem::discriminant(self).hash_stable(hcx, hasher);
-        match *self {
-            CodeExtent::Misc(node_id) |
-            CodeExtent::DestructionScope(node_id) => {
-                node_id.hash_stable(hcx, hasher);
+        hcx.with_node_id_hashing_mode(NodeIdHashingMode::HashDefPath, |hcx| {
+            match *self {
+                CodeExtent::Misc(node_id) |
+                CodeExtent::DestructionScope(node_id) => {
+                    node_id.hash_stable(hcx, hasher);
+                }
+                CodeExtent::CallSiteScope(body_id) |
+                CodeExtent::ParameterScope(body_id) => {
+                    body_id.hash_stable(hcx, hasher);
+                }
+                CodeExtent::Remainder(block_remainder) => {
+                    block_remainder.hash_stable(hcx, hasher);
+                }
             }
-            CodeExtent::CallSiteScope(body_id) |
-            CodeExtent::ParameterScope(body_id) => {
-                body_id.hash_stable(hcx, hasher);
-            }
-            CodeExtent::Remainder(block_remainder) => {
-                block_remainder.hash_stable(hcx, hasher);
-            }
-        }
+        });
     }
 }
 
@@ -504,6 +560,7 @@ for ty::TypeVariants<'gcx>
             TyBool  |
             TyChar  |
             TyStr   |
+            TyError |
             TyNever => {
                 // Nothing more to hash.
             }
@@ -563,10 +620,8 @@ for ty::TypeVariants<'gcx>
             TyParam(param_ty) => {
                 param_ty.hash_stable(hcx, hasher);
             }
-
-            TyError     |
             TyInfer(..) => {
-                bug!("ty::TypeVariants::hash_stable() - Unexpected variant.")
+                bug!("ty::TypeVariants::hash_stable() - Unexpected variant {:?}.", *self)
             }
         }
     }
@@ -667,6 +722,152 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::In
                 t.hash_stable(hcx, hasher);
             }
         }
+    }
+}
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::TraitDef {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ty::TraitDef {
+            // We already have the def_path_hash below, no need to hash it twice
+            def_id: _,
+            unsafety,
+            paren_sugar,
+            has_default_impl,
+            def_path_hash,
+        } = *self;
+
+        unsafety.hash_stable(hcx, hasher);
+        paren_sugar.hash_stable(hcx, hasher);
+        has_default_impl.hash_stable(hcx, hasher);
+        def_path_hash.hash_stable(hcx, hasher);
+    }
+}
+
+impl_stable_hash_for!(struct ty::Destructor {
+    did
+});
+
+impl_stable_hash_for!(struct ty::DtorckConstraint<'tcx> {
+    outlives,
+    dtorck_types
+});
+
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ty::CrateVariancesMap {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ty::CrateVariancesMap {
+            ref dependencies,
+            ref variances,
+            // This is just an irrelevant helper value.
+            empty_variance: _,
+        } = *self;
+
+        dependencies.hash_stable(hcx, hasher);
+
+        ich::hash_stable_hashmap(hcx, hasher, variances, |hcx, def_id| {
+            hcx.def_path_hash(*def_id)
+        });
+    }
+}
+
+impl_stable_hash_for!(struct ty::AssociatedItem {
+    def_id,
+    name,
+    kind,
+    vis,
+    defaultness,
+    container,
+    method_has_self_argument
+});
+
+impl_stable_hash_for!(enum ty::AssociatedKind {
+    Const,
+    Method,
+    Type
+});
+
+impl_stable_hash_for!(enum ty::AssociatedItemContainer {
+    TraitContainer(def_id),
+    ImplContainer(def_id)
+});
+
+
+impl<'a, 'gcx, 'tcx, T> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+for ty::steal::Steal<T>
+    where T: HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+{
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        self.borrow().hash_stable(hcx, hasher);
+    }
+}
+
+impl_stable_hash_for!(struct ty::ParamEnv<'tcx> {
+    caller_bounds,
+    reveal
+});
+
+impl_stable_hash_for!(enum traits::Reveal {
+    UserFacing,
+    All
+});
+
+impl_stable_hash_for!(enum ::middle::privacy::AccessLevel {
+    Reachable,
+    Exported,
+    Public
+});
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+for ::middle::privacy::AccessLevels {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        hcx.with_node_id_hashing_mode(NodeIdHashingMode::HashDefPath, |hcx| {
+            let ::middle::privacy::AccessLevels {
+                ref map
+            } = *self;
+
+            ich::hash_stable_nodemap(hcx, hasher, map);
+        });
+    }
+}
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+for ty::CrateInherentImpls {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ty::CrateInherentImpls {
+            ref inherent_impls,
+        } = *self;
+
+        ich::hash_stable_hashmap(hcx, hasher, inherent_impls, |hcx, def_id| {
+            hcx.def_path_hash(*def_id)
+        });
+    }
+}
+
+impl_stable_hash_for!(enum ::session::CompileIncomplete {
+    Stopped,
+    Errored(error_reported)
+});
+
+impl_stable_hash_for!(struct ::util::common::ErrorReported {});
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
+for ::middle::reachable::ReachableSet {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let ::middle::reachable::ReachableSet(ref reachable_set) = *self;
+
+        ich::hash_stable_nodeset(hcx, hasher, reachable_set);
     }
 }
 
