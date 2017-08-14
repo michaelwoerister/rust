@@ -13,13 +13,15 @@
 
 use hir;
 use hir::def_id::{DefId, CrateNum, CRATE_DEF_INDEX};
-use ich::{StableHashingContext, NodeIdHashingMode};
+use ich::{self, StableHashingContext, NodeIdHashingMode};
 use std::mem;
 
 use syntax::ast;
 
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
                                            StableHasherResult};
+use rustc_data_structures::fx::FxHashSet;
+
 
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for DefId {
     #[inline]
@@ -30,6 +32,16 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for DefId 
     }
 }
 
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for FxHashSet<DefId>
+{
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        ich::hash_stable_hashset(hcx, hasher, self, |hcx, def_id| {
+            hcx.def_path_hash(*def_id)
+        });
+    }
+}
 
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for hir::HirId {
     #[inline]

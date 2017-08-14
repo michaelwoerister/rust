@@ -56,6 +56,11 @@ impl TraitImpls {
     }
 }
 
+impl_stable_hash_for!(struct ::ty::trait_def::TraitImpls {
+    blanket_impls,
+    non_blanket_impls
+});
+
 #[derive(Clone)]
 pub struct TraitImplsIter {
     blanket_impls: Rc<Vec<DefId>>,

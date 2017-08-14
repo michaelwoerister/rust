@@ -12,9 +12,11 @@ use dep_graph::{DepConstructor, DepNode, DepNodeIndex};
 use hir::def_id::{CrateNum, CRATE_DEF_INDEX, DefId, LOCAL_CRATE};
 use hir::def::Def;
 use hir;
+use ich::{Fingerprint, StableHashingContext};
 use middle::const_val;
 use middle::cstore::{ExternCrate, LinkagePreference};
 use middle::privacy::AccessLevels;
+use middle::reachable::ReachableSet;
 use middle::region::RegionMaps;
 use mir;
 use mir::transform::{MirSuite, MirPassIndex};
@@ -26,10 +28,10 @@ use ty::item_path;
 use ty::steal::Steal;
 use ty::subst::Substs;
 use ty::fast_reject::SimplifiedType;
-use util::nodemap::{DefIdSet, NodeSet};
-
+use util::nodemap::DefIdSet;
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use std::cell::{RefCell, RefMut};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -614,6 +616,15 @@ macro_rules! define_maps {
 
                 tcx.dep_graph.read_index(dep_node_index);
 
+                if tcx.sess.opts.incremental.is_some() {
+                    let mut hcx = StableHashingContext::new(tcx);
+                    let mut hasher = StableHasher::new();
+
+                    result.hash_stable(&mut hcx, &mut hasher);
+
+                    let _: Fingerprint = hasher.finish();
+                }
+
                 Ok(f(&tcx.maps
                          .$name
                          .borrow_mut()
@@ -941,7 +952,7 @@ define_maps! { <'tcx>
     /// Performs the privacy check and computes "access levels".
     [] privacy_access_levels: PrivacyAccessLevels(CrateNum) -> Rc<AccessLevels>,
 
-    [] reachable_set: reachability_dep_node(CrateNum) -> Rc<NodeSet>,
+    [] reachable_set: reachability_dep_node(CrateNum) -> ReachableSet,
 
     /// Per-function `RegionMaps`. The `DefId` should be the owner-def-id for the fn body;
     /// in the case of closures or "inline" expressions, this will be redirected to the enclosing

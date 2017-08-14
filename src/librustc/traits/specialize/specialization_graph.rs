@@ -10,13 +10,18 @@
 
 use super::{OverlapError, specializes};
 
+use syntax::ast;
 use hir::def_id::DefId;
+use hir::map::definitions::DefPathHash;
+use ich::{self, StableHashingContext};
 use traits;
 use ty::{self, TyCtxt, TypeFoldable};
 use ty::fast_reject::{self, SimplifiedType};
 use std::rc::Rc;
 use syntax::ast::Name;
 use util::nodemap::{DefIdMap, FxHashMap};
+use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
+                                           StableHasherResult};
 
 /// A per-trait graph of impls in specialization order. At the moment, this
 /// graph forms a tree rooted with the trait itself, with all other nodes
@@ -362,5 +367,112 @@ pub fn ancestors(tcx: TyCtxt,
         trait_def_id,
         specialization_graph,
         current_source: Some(Node::Impl(start_from_impl)),
+    }
+}
+
+
+
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone)]
+enum StableSimplifiedType {
+    BoolSimplifiedType,
+    CharSimplifiedType,
+    IntSimplifiedType(ast::IntTy),
+    UintSimplifiedType(ast::UintTy),
+    FloatSimplifiedType(ast::FloatTy),
+    AdtSimplifiedType(DefPathHash),
+    StrSimplifiedType,
+    ArraySimplifiedType,
+    PtrSimplifiedType,
+    NeverSimplifiedType,
+    TupleSimplifiedType(usize),
+    TraitSimplifiedType(DefPathHash),
+    ClosureSimplifiedType(DefPathHash),
+    AnonSimplifiedType(DefPathHash),
+    FunctionSimplifiedType(usize),
+    ParameterSimplifiedType,
+}
+
+impl_stable_hash_for!(enum ::traits::specialize::specialization_graph::StableSimplifiedType {
+    BoolSimplifiedType,
+    CharSimplifiedType,
+    IntSimplifiedType(t),
+    UintSimplifiedType(t),
+    FloatSimplifiedType(t),
+    AdtSimplifiedType(def),
+    StrSimplifiedType,
+    ArraySimplifiedType,
+    PtrSimplifiedType,
+    NeverSimplifiedType,
+    TupleSimplifiedType(n),
+    TraitSimplifiedType(def),
+    ClosureSimplifiedType(def),
+    AnonSimplifiedType(def),
+    FunctionSimplifiedType(n),
+    ParameterSimplifiedType
+});
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for Children {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        use ty::fast_reject::SimplifiedType::*;
+
+        let Children {
+            ref nonblanket_impls,
+            ref blanket_impls,
+        } = *self;
+
+
+
+        ich::hash_stable_hashmap(hcx, hasher, nonblanket_impls, |hcx, simplified| {
+            match *simplified {
+                BoolSimplifiedType => StableSimplifiedType::BoolSimplifiedType,
+                CharSimplifiedType => StableSimplifiedType::CharSimplifiedType,
+                IntSimplifiedType(t) => StableSimplifiedType::IntSimplifiedType(t),
+                UintSimplifiedType(t) => StableSimplifiedType::UintSimplifiedType(t),
+                FloatSimplifiedType(t) => StableSimplifiedType::FloatSimplifiedType(t),
+                AdtSimplifiedType(def_id) => {
+                    StableSimplifiedType::AdtSimplifiedType(hcx.def_path_hash(def_id))
+                }
+                StrSimplifiedType => StableSimplifiedType::StrSimplifiedType,
+                ArraySimplifiedType => StableSimplifiedType::ArraySimplifiedType,
+                PtrSimplifiedType => StableSimplifiedType::PtrSimplifiedType,
+                NeverSimplifiedType => StableSimplifiedType::NeverSimplifiedType,
+                TupleSimplifiedType(n) => StableSimplifiedType::TupleSimplifiedType(n),
+                TraitSimplifiedType(def_id) => {
+                    StableSimplifiedType::TraitSimplifiedType(hcx.def_path_hash(def_id))
+                }
+                ClosureSimplifiedType(def_id) => {
+                    StableSimplifiedType::ClosureSimplifiedType(hcx.def_path_hash(def_id))
+                }
+                AnonSimplifiedType(def_id) => {
+                    StableSimplifiedType::AnonSimplifiedType(hcx.def_path_hash(def_id))
+                }
+                FunctionSimplifiedType(n) => StableSimplifiedType::FunctionSimplifiedType(n),
+                ParameterSimplifiedType => StableSimplifiedType::ParameterSimplifiedType,
+            }
+        });
+
+        // Do we need to sort this?
+        blanket_impls.hash_stable(hcx, hasher);
+    }
+}
+
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for Graph {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let Graph {
+            ref parent,
+            ref children,
+        } = *self;
+
+        ich::hash_stable_hashmap(hcx, hasher, parent, |hcx, def_id| {
+            hcx.def_path_hash(*def_id)
+        });
+        ich::hash_stable_hashmap(hcx, hasher, children, |hcx, def_id| {
+            hcx.def_path_hash(*def_id)
+        });
     }
 }

@@ -14,7 +14,7 @@ use hir::map::DefPathHash;
 use ich::{self, CachingCodemapView};
 use session::config::DebugInfoLevel::NoDebugInfo;
 use ty;
-use util::nodemap::NodeMap;
+use util::nodemap::{NodeMap, NodeSet};
 
 use std::hash as std_hash;
 use std::collections::{HashMap, HashSet, BTreeMap};
@@ -205,7 +205,7 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ast::N
                 // corresponding entry in the `trait_map` we need to hash that.
                 // Make sure we don't ignore too much by checking that there is
                 // no entry in a debug_assert!().
-                debug_assert!(hcx.tcx.trait_map.get(self).is_none());
+                // debug_assert!(hcx.tcx.trait_map.get(self).is_none());
             }
             NodeIdHashingMode::HashDefPath => {
                 hcx.tcx.hir.definitions().node_to_hir_id(*self).hash_stable(hcx, hasher);
@@ -354,10 +354,22 @@ pub fn hash_stable_nodemap<'a, 'tcx, 'gcx, V, W>(
           W: StableHasherResult,
 {
     hash_stable_hashmap(hcx, hasher, map, |hcx, node_id| {
+        // TODO: review this, only valid when node ids from single item
         hcx.tcx.hir.definitions().node_to_hir_id(*node_id).local_id
     });
 }
 
+pub fn hash_stable_nodeset<'a, 'tcx, 'gcx, W>(
+    hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+    hasher: &mut StableHasher<W>,
+    set: &NodeSet)
+    where W: StableHasherResult,
+{
+    hash_stable_hashset(hcx, hasher, set, |hcx, node_id| {
+        // TODO: review this, only valid when node ids from single item
+        hcx.tcx.hir.definitions().node_to_hir_id(*node_id).local_id
+    });
+}
 
 pub fn hash_stable_btreemap<'a, 'tcx, 'gcx, K, V, SK, F, W>(
     hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,

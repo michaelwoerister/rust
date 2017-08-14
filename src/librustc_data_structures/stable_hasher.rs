@@ -356,6 +356,22 @@ impl<T, CTX> HashStable<CTX> for Option<T>
     }
 }
 
+impl<T1, T2, CTX> HashStable<CTX> for Result<T1, T2>
+    where T1: HashStable<CTX>,
+          T2: HashStable<CTX>,
+{
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          ctx: &mut CTX,
+                                          hasher: &mut StableHasher<W>) {
+        mem::discriminant(self).hash_stable(ctx, hasher);
+        match *self {
+            Ok(ref x) => x.hash_stable(ctx, hasher),
+            Err(ref x) => x.hash_stable(ctx, hasher),
+        }
+    }
+}
+
 impl<'a, T, CTX> HashStable<CTX> for &'a T
     where T: HashStable<CTX>
 {
