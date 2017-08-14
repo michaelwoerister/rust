@@ -17,6 +17,7 @@
 //! `middle/infer/region_inference/README.md`
 
 use hir::map as hir_map;
+use ich::{self, StableHashingContext, NodeIdHashingMode};
 use util::nodemap::{FxHashMap, NodeMap, NodeSet};
 use ty;
 
@@ -33,6 +34,8 @@ use hir::def_id::DefId;
 use hir::intravisit::{self, Visitor, NestedVisitorMap};
 use hir::{Block, Arm, Pat, PatKind, Stmt, Expr, Local};
 use mir::transform::MirSource;
+use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
+                                           StableHasherResult};
 
 /// CodeExtent represents a statically-describable extent that can be
 /// used to bound the lifetime/region for values.
@@ -1171,4 +1174,37 @@ pub fn provide(providers: &mut Providers) {
         region_maps,
         ..*providers
     };
+}
+
+impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for RegionMaps {
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let RegionMaps {
+            root_body,
+            root_parent,
+            ref scope_map,
+            ref var_map,
+            ref destruction_scopes,
+            ref rvalue_scopes,
+            ref fn_tree,
+        } = *self;
+
+        hcx.with_node_id_hashing_mode(NodeIdHashingMode::HashDefPath, |hcx| {
+            root_body.map(|body_id| body_id.node_id).hash_stable(hcx, hasher);
+            root_parent.hash_stable(hcx, hasher);
+        });
+
+        ich::hash_stable_hashmap(hcx, hasher, scope_map, |hcx, code_extent| {
+            let mut hasher = StableHasher::new();
+            code_extent.hash_stable(hcx, &mut hasher);
+            let stable: u64 = hasher.finish();
+            stable
+        });
+
+        ich::hash_stable_nodemap(hcx, hasher, var_map);
+        ich::hash_stable_nodemap(hcx, hasher, destruction_scopes);
+        ich::hash_stable_nodemap(hcx, hasher, rvalue_scopes);
+        ich::hash_stable_nodemap(hcx, hasher, fn_tree);
+    }
 }
