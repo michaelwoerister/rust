@@ -13,9 +13,10 @@ use hir::def_id::DefId;
 use hir::map::DefPathHash;
 use ich::{self, CachingCodemapView};
 use session::config::DebugInfoLevel::NoDebugInfo;
-use ty;
-use util::nodemap::{NodeMap, ItemLocalMap};
+use ty::{self, fast_reject};
+use util::nodemap::{NodeMap, NodeSet, ItemLocalMap};
 
+use std::cmp::Ord;
 use std::hash as std_hash;
 use std::collections::{HashMap, HashSet, BTreeMap};
 
@@ -205,7 +206,7 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ast::N
                 // corresponding entry in the `trait_map` we need to hash that.
                 // Make sure we don't ignore too much by checking that there is
                 // no entry in a debug_assert!().
-                debug_assert!(hcx.tcx.trait_map.get(self).is_none());
+                // debug_assert!(hcx.tcx.trait_map.get(self).is_none());
             }
             NodeIdHashingMode::HashDefPath => {
                 hcx.tcx.hir.definitions().node_to_hir_id(*self).hash_stable(hcx, hasher);
@@ -320,7 +321,7 @@ pub fn hash_stable_hashmap<'a, 'gcx, 'tcx, K, V, R, SK, F, W>(
     let mut keys: Vec<_> = map.keys()
                               .map(|k| (extract_stable_key(hcx, k), k))
                               .collect();
-    keys.sort_unstable_by_key(|&(ref stable_key, _)| stable_key.clone());
+    keys.sort_unstable_by(|&(ref sk1, _), &(ref sk2, _)| sk1.cmp(sk2));
     keys.len().hash_stable(hcx, hasher);
     for (stable_key, key) in keys {
         stable_key.hash_stable(hcx, hasher);
@@ -353,8 +354,25 @@ pub fn hash_stable_nodemap<'a, 'tcx, 'gcx, V, W>(
     where V: HashStable<StableHashingContext<'a, 'gcx, 'tcx>>,
           W: StableHasherResult,
 {
-    hash_stable_hashmap(hcx, hasher, map, |hcx, node_id| {
-        hcx.tcx.hir.definitions().node_to_hir_id(*node_id).local_id
+    let definitions = hcx.tcx.hir.definitions();
+    hash_stable_hashmap(hcx, hasher, map, |_, node_id| {
+        let hir_id = definitions.node_to_hir_id(*node_id);
+        let owner_def_path_hash = definitions.def_path_hash(hir_id.owner);
+        (owner_def_path_hash, hir_id.local_id)
+    });
+}
+
+pub fn hash_stable_nodeset<'a, 'tcx, 'gcx, W>(
+    hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+    hasher: &mut StableHasher<W>,
+    map: &NodeSet)
+    where W: StableHasherResult,
+{
+    let definitions = hcx.tcx.hir.definitions();
+    hash_stable_hashset(hcx, hasher, map, |_, node_id| {
+        let hir_id = definitions.node_to_hir_id(*node_id);
+        let owner_def_path_hash = definitions.def_path_hash(hir_id.owner);
+        (owner_def_path_hash, hir_id.local_id)
     });
 }
 
@@ -385,10 +403,56 @@ pub fn hash_stable_btreemap<'a, 'tcx, 'gcx, K, V, SK, F, W>(
     let mut keys: Vec<_> = map.keys()
                               .map(|k| (extract_stable_key(hcx, k), k))
                               .collect();
-    keys.sort_unstable_by_key(|&(ref stable_key, _)| stable_key.clone());
+    keys.sort_unstable_by(|&(ref sk1, _), &(ref sk2, _)| sk1.cmp(sk2));
     keys.len().hash_stable(hcx, hasher);
     for (stable_key, key) in keys {
         stable_key.hash_stable(hcx, hasher);
         map[key].hash_stable(hcx, hasher);
     }
 }
+
+pub fn hash_stable_trait_impls<'a, 'tcx, 'gcx, W, R>(
+    hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+    hasher: &mut StableHasher<W>,
+    blanket_impls: &Vec<DefId>,
+    non_blanket_impls: &HashMap<fast_reject::SimplifiedType, Vec<DefId>, R>)
+    where W: StableHasherResult,
+          R: std_hash::BuildHasher,
+{
+    {
+        let mut blanket_impls: AccumulateVec<[_; 8]> = blanket_impls
+            .iter()
+            .map(|&def_id| hcx.def_path_hash(def_id))
+            .collect();
+
+        if blanket_impls.len() > 1 {
+            blanket_impls.sort_unstable();
+        }
+
+        blanket_impls.hash_stable(hcx, hasher);
+    }
+
+    {
+        let tcx = hcx.tcx();
+        let mut keys: AccumulateVec<[_; 8]> =
+            non_blanket_impls.keys()
+                             .map(|k| (k, fast_reject::StableSimplifiedType::new(k, tcx)))
+                             .collect();
+        keys.sort_unstable_by(|&(_, ref k1), &(_, ref k2)| k1.cmp(k2));
+        keys.len().hash_stable(hcx, hasher);
+        for (key, ref stable_key) in keys {
+            stable_key.hash_stable(hcx, hasher);
+            let mut impls : AccumulateVec<[_; 8]> = non_blanket_impls[key]
+                .iter()
+                .map(|&impl_id| hcx.def_path_hash(impl_id))
+                .collect();
+
+            if impls.len() > 1 {
+                impls.sort_unstable();
+            }
+
+            impls.hash_stable(hcx, hasher);
+        }
+    }
+}
+

@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use hir::def_id::DefId;
+use hir::map::DefPathHash;
 use ty::{self, Ty, TyCtxt};
 use syntax::ast;
 
@@ -95,5 +96,77 @@ pub fn simplify_type<'a, 'gcx, 'tcx>(tcx: TyCtxt<'a, 'gcx, 'tcx>,
             Some(AnonSimplifiedType(def_id))
         }
         ty::TyInfer(_) | ty::TyError => None,
+    }
+}
+
+// A version of fast_reject::SimplifiedType that allows for stable hashing and
+// especially can act as a stable sorting key.
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone)]
+pub enum StableSimplifiedType {
+    BoolSimplifiedType,
+    CharSimplifiedType,
+    IntSimplifiedType(ast::IntTy),
+    UintSimplifiedType(ast::UintTy),
+    FloatSimplifiedType(ast::FloatTy),
+    AdtSimplifiedType(DefPathHash),
+    StrSimplifiedType,
+    ArraySimplifiedType,
+    PtrSimplifiedType,
+    NeverSimplifiedType,
+    TupleSimplifiedType(usize),
+    TraitSimplifiedType(DefPathHash),
+    ClosureSimplifiedType(DefPathHash),
+    AnonSimplifiedType(DefPathHash),
+    FunctionSimplifiedType(usize),
+    ParameterSimplifiedType,
+}
+
+impl_stable_hash_for!(enum self::StableSimplifiedType {
+    BoolSimplifiedType,
+    CharSimplifiedType,
+    IntSimplifiedType(t),
+    UintSimplifiedType(t),
+    FloatSimplifiedType(t),
+    AdtSimplifiedType(def),
+    StrSimplifiedType,
+    ArraySimplifiedType,
+    PtrSimplifiedType,
+    NeverSimplifiedType,
+    TupleSimplifiedType(n),
+    TraitSimplifiedType(def),
+    ClosureSimplifiedType(def),
+    AnonSimplifiedType(def),
+    FunctionSimplifiedType(n),
+    ParameterSimplifiedType
+});
+
+impl StableSimplifiedType {
+    pub fn new(t: &SimplifiedType, tcx: TyCtxt) -> StableSimplifiedType {
+        match *t {
+            BoolSimplifiedType => StableSimplifiedType::BoolSimplifiedType,
+            CharSimplifiedType => StableSimplifiedType::CharSimplifiedType,
+            IntSimplifiedType(t) => StableSimplifiedType::IntSimplifiedType(t),
+            UintSimplifiedType(t) => StableSimplifiedType::UintSimplifiedType(t),
+            FloatSimplifiedType(t) => StableSimplifiedType::FloatSimplifiedType(t),
+            AdtSimplifiedType(def_id) => {
+                StableSimplifiedType::AdtSimplifiedType(tcx.def_path_hash(def_id))
+            }
+            StrSimplifiedType => StableSimplifiedType::StrSimplifiedType,
+            ArraySimplifiedType => StableSimplifiedType::ArraySimplifiedType,
+            PtrSimplifiedType => StableSimplifiedType::PtrSimplifiedType,
+            NeverSimplifiedType => StableSimplifiedType::NeverSimplifiedType,
+            TupleSimplifiedType(n) => StableSimplifiedType::TupleSimplifiedType(n),
+            TraitSimplifiedType(def_id) => {
+                StableSimplifiedType::TraitSimplifiedType(tcx.def_path_hash(def_id))
+            }
+            ClosureSimplifiedType(def_id) => {
+                StableSimplifiedType::ClosureSimplifiedType(tcx.def_path_hash(def_id))
+            }
+            AnonSimplifiedType(def_id) => {
+                StableSimplifiedType::AnonSimplifiedType(tcx.def_path_hash(def_id))
+            }
+            FunctionSimplifiedType(n) => StableSimplifiedType::FunctionSimplifiedType(n),
+            ParameterSimplifiedType => StableSimplifiedType::ParameterSimplifiedType,
+        }
     }
 }
