@@ -654,3 +654,49 @@ impl<'tcx> TypeVisitor<'tcx> for LateBoundRegionsCollector {
         false
     }
 }
+
+///////////////////////////////////////////////////////////////////////////
+// ReScope Anonymizer
+
+impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
+
+    /// Transforms RegionKind::ReScope values into equivalent
+    /// RegionKind::ReScopeAnon values. This should be done before exporting to
+    /// crate metadata (as long as we can't use erase_regions() on everything
+    /// that is exported).
+    pub fn anonymize_scope_regions<T>(self, value: &T) -> T
+        where T : TypeFoldable<'tcx>
+    {
+        use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
+        use ich::{StableHashingContext, Fingerprint};
+
+        let hcx = StableHashingContext::new(self);
+
+        return value.fold_with(&mut AnonReScopes {
+            tcx: self,
+            hcx,
+        });
+
+        struct AnonReScopes<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
+            tcx: TyCtxt<'a, 'gcx, 'tcx>,
+            hcx: StableHashingContext<'a, 'gcx, 'tcx>,
+        }
+
+        impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for AnonReScopes<'a, 'gcx, 'tcx> {
+
+            fn tcx<'b>(&'b self) -> TyCtxt<'b, 'gcx, 'tcx> { self.tcx }
+
+            fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
+                match *r {
+                    ty::ReScope(code_extent) => {
+                        let mut hasher = StableHasher::new();
+                        code_extent.hash_stable(&mut self.hcx, &mut hasher);
+                        let code_extent_fingerprint: Fingerprint = hasher.finish();
+                        self.tcx.mk_region(ty::ReScopeAnon(code_extent_fingerprint))
+                    },
+                    _ => r,
+                }
+            }
+        }
+    }
+}

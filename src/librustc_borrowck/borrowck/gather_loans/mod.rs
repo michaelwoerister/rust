@@ -367,6 +367,7 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
                     ty::ReLateBound(..) |
                     ty::ReVar(..) |
                     ty::ReSkolemized(..) |
+                    ty::ReScopeAnon(..) |
                     ty::ReErased => {
                         span_bug!(
                             cmt.span,

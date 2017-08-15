@@ -29,6 +29,7 @@ use util::nodemap::FxHashMap;
 use serialize;
 
 use hir;
+use ich;
 
 use self::InferTy::*;
 use self::TypeVariants::*;
@@ -784,6 +785,13 @@ pub enum RegionKind {
     /// (e.g. an expression or sequence of statements) within the
     /// current function.
     ReScope(region::CodeExtent),
+
+    /// The same as ReScope but with the CodeExtent transformed into a opaque,
+    /// stable representation. Any ReScope that gets exported to crate metadata
+    /// should be transformed into such a ReScopeAnon in order to avoid mixing
+    /// NodeIds from different crates. Note that ReScopeAnon values can still
+    /// safely be hashed and compared for equality.
+    ReScopeAnon(ich::Fingerprint),
 
     /// Static data that has an "infinite" lifetime. Top in the region lattice.
     ReStatic,

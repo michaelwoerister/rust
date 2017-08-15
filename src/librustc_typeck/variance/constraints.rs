@@ -455,6 +455,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
 
             ty::ReFree(..) |
             ty::ReScope(..) |
+            ty::ReScopeAnon(..) |
             ty::ReVar(..) |
             ty::ReSkolemized(..) |
             ty::ReEmpty |

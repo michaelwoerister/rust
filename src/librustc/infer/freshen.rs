@@ -94,6 +94,7 @@ impl<'a, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for TypeFreshener<'a, 'gcx, 'tcx> {
             ty::ReEarlyBound(..) |
             ty::ReFree(_) |
             ty::ReScope(_) |
+            ty::ReScopeAnon(_) |
             ty::ReVar(_) |
             ty::ReSkolemized(..) |
             ty::ReEmpty |
