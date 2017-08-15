@@ -481,6 +481,10 @@ impl fmt::Debug for ty::RegionKind {
                 write!(f, "ReScope({:?})", id)
             }
 
+            ty::ReScopeAnon(fingerprint) => {
+                write!(f, "ReScopeAnon({:?})", fingerprint)
+            }
+
             ty::ReStatic => write!(f, "ReStatic"),
 
             ty::ReVar(ref vid) => {
@@ -543,6 +547,7 @@ impl fmt::Display for ty::RegionKind {
                 write!(f, "'{}rv", region_vid.index)
             }
             ty::ReScope(_) |
+            ty::ReScopeAnon(_) |
             ty::ReVar(_) |
             ty::ReErased => Ok(()),
             ty::ReStatic => write!(f, "'static"),

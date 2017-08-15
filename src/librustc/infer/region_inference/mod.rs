@@ -26,7 +26,7 @@ use middle::free_region::RegionRelations;
 use ty::{self, Ty, TyCtxt};
 use ty::{Region, RegionVid};
 use ty::{ReEmpty, ReStatic, ReFree, ReEarlyBound, ReErased};
-use ty::{ReLateBound, ReScope, ReVar, ReSkolemized, BrFresh};
+use ty::{ReLateBound, ReScope, ReScopeAnon, ReVar, ReSkolemized, BrFresh};
 
 use std::cell::{Cell, RefCell};
 use std::fmt;
@@ -905,6 +905,8 @@ impl<'a, 'gcx, 'tcx> RegionVarBindings<'a, 'gcx, 'tcx> {
         match (a, b) {
             (&ReLateBound(..), _) |
             (_, &ReLateBound(..)) |
+            (&ReScopeAnon(..), _) |
+            (_, &ReScopeAnon(..)) |
             (&ReErased, _) |
             (_, &ReErased) => {
                 bug!("cannot relate region: LUB({:?}, {:?})", a, b);

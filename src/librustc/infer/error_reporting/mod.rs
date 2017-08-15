@@ -244,6 +244,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
             ty::ReSkolemized(..) |
             ty::ReVar(_) |
             ty::ReLateBound(..) |
+            ty::ReScopeAnon(..) |
             ty::ReErased => {
                 (format!("lifetime {:?}", region), None)
             }

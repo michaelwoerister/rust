@@ -482,7 +482,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
 
     fn encode_item_type(&mut self, def_id: DefId) -> Lazy<Ty<'tcx>> {
         let tcx = self.tcx;
-        let ty = tcx.type_of(def_id);
+        let ty = tcx.anonymize_scope_regions(&tcx.type_of(def_id));
         debug!("IsolatedEncoder::encode_item_type({:?}) => {:?}", def_id, ty);
         self.lazy(&ty)
     }
@@ -506,7 +506,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
             discr: variant.discr,
             struct_ctor: None,
             ctor_sig: if variant.ctor_kind == CtorKind::Fn {
-                Some(self.lazy(&tcx.fn_sig(def_id)))
+                Some(self.encode_fn_sig(def_id))
             } else {
                 None
             }
@@ -633,7 +633,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
             discr: variant.discr,
             struct_ctor: Some(def_id.index),
             ctor_sig: if variant.ctor_kind == CtorKind::Fn {
-                Some(self.lazy(&tcx.fn_sig(def_id)))
+                Some(self.encode_fn_sig(def_id))
             } else {
                 None
             }
@@ -683,7 +683,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
     fn encode_predicates(&mut self, def_id: DefId) -> Lazy<ty::GenericPredicates<'tcx>> {
         debug!("IsolatedEncoder::encode_predicates({:?})", def_id);
         let tcx = self.tcx;
-        self.lazy(&tcx.predicates_of(def_id))
+        self.lazy(&tcx.anonymize_scope_regions(&tcx.predicates_of(def_id)))
+    }
+
+    fn encode_fn_sig(&mut self, def_id: DefId) -> Lazy<ty::PolyFnSig<'tcx>> {
+        debug!("IsolatedEncoder::encode_fn_sig({:?})", def_id);
+        let tcx = self.tcx;
+        self.lazy(&tcx.anonymize_scope_regions(&tcx.fn_sig(def_id)))
     }
 
     fn encode_info_for_trait_item(&mut self, def_id: DefId) -> Entry<'tcx> {
@@ -720,7 +726,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
                     FnData {
                         constness: hir::Constness::NotConst,
                         arg_names,
-                        sig: self.lazy(&tcx.fn_sig(def_id)),
+                        sig: self.encode_fn_sig(def_id),
                     }
                 } else {
                     bug!()
@@ -776,7 +782,6 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
 
     fn encode_info_for_impl_item(&mut self, def_id: DefId) -> Entry<'tcx> {
         debug!("IsolatedEncoder::encode_info_for_impl_item({:?})", def_id);
-        let tcx = self.tcx;
 
         let node_id = self.tcx.hir.as_local_node_id(def_id).unwrap();
         let ast_item = self.tcx.hir.expect_impl_item(node_id);
@@ -799,7 +804,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
                     FnData {
                         constness: sig.constness,
                         arg_names: self.encode_fn_arg_names_for_body(body),
-                        sig: self.lazy(&tcx.fn_sig(def_id)),
+                        sig: self.encode_fn_sig(def_id),
                     }
                 } else {
                     bug!()
@@ -917,7 +922,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
                 let data = FnData {
                     constness,
                     arg_names: self.encode_fn_arg_names_for_body(body),
-                    sig: self.lazy(&tcx.fn_sig(def_id)),
+                    sig: self.encode_fn_sig(def_id),
                 };
 
                 EntryKind::Fn(self.lazy(&data))
@@ -1013,7 +1018,9 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
                     unsafety: trait_def.unsafety,
                     paren_sugar: trait_def.paren_sugar,
                     has_default_impl: tcx.trait_has_default_impl(def_id),
-                    super_predicates: self.lazy(&tcx.super_predicates_of(def_id)),
+                    super_predicates: self.lazy(
+                        &tcx.anonymize_scope_regions(&tcx.super_predicates_of(def_id))
+                    ),
                 };
 
                 EntryKind::Trait(self.lazy(&data))
@@ -1215,7 +1222,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
 
         let data = ClosureData {
             kind: tcx.closure_kind(def_id),
-            sig: self.lazy(&tcx.fn_sig(def_id)),
+            sig: self.encode_fn_sig(def_id),
         };
 
         Entry {
@@ -1403,7 +1410,7 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
                 let data = FnData {
                     constness: hir::Constness::NotConst,
                     arg_names: self.encode_fn_arg_names(names),
-                    sig: self.lazy(&tcx.fn_sig(def_id)),
+                    sig: self.encode_fn_sig(def_id),
                 };
                 EntryKind::ForeignFn(self.lazy(&data))
             }

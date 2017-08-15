@@ -68,6 +68,9 @@ for ty::RegionKind {
             ty::ReScope(code_extent) => {
                 code_extent.hash_stable(hcx, hasher);
             }
+            ty::ReScopeAnon(ref fingerprint) => {
+                fingerprint.hash_stable(hcx, hasher);
+            }
             ty::ReFree(ref free_region) => {
                 free_region.hash_stable(hcx, hasher);
             }

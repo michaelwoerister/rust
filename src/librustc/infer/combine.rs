@@ -453,6 +453,7 @@ impl<'cx, 'gcx, 'tcx> TypeRelation<'cx, 'gcx, 'tcx> for Generalizer<'cx, 'gcx, '
             ty::ReEmpty |
             ty::ReStatic |
             ty::ReScope(..) |
+            ty::ReScopeAnon(..) |
             ty::ReVar(..) |
             ty::ReEarlyBound(..) |
             ty::ReFree(..) => {

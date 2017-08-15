@@ -289,6 +289,7 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
                     ty::ReFree(_) |
                     ty::ReLateBound(..) |
                     ty::ReScope(_) |
+                    ty::ReScopeAnon(_) |
                     ty::ReSkolemized(..) => {
                         let span = node_id.to_span(&self.fcx.tcx);
                         span_err!(self.tcx().sess, span, E0564,
