@@ -1805,7 +1805,8 @@ impl Clean<Type> for hir::Ty {
                         if let Some(lt) = provided_params.lifetimes().get(i).cloned()
                                                                             .cloned() {
                             if !lt.is_elided() {
-                                lt_substs.insert(lt_param.lifetime.id, lt.clean(cx));
+                                let lt_def_id = cx.tcx.hir.local_def_id(lt_param.lifetime.id);
+                                lt_substs.insert(lt_def_id, lt.clean(cx));
                             }
                         }
                     }
