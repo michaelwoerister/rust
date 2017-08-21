@@ -27,6 +27,7 @@ pub(super) struct NodeCollector<'a, 'hir> {
 
     current_dep_node_owner: DefIndex,
     current_dep_node_index: DepNodeIndex,
+    already_in_body_dep_node: bool,
 
     dep_graph: &'a DepGraph,
     definitions: &'a definitions::Definitions,
@@ -47,6 +48,7 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
             parent_node: CRATE_NODE_ID,
             current_dep_node_index: root_mod_dep_node_index,
             current_dep_node_owner: CRATE_DEF_INDEX,
+            already_in_body_dep_node: false,
             dep_graph,
             definitions,
         };
@@ -117,7 +119,6 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
         }
 
         self.insert_entry(id, entry);
-
     }
 
     fn with_parent<F: FnOnce(&mut Self)>(&mut self, parent_id: NodeId, f: F) {
@@ -132,7 +133,7 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
                                                  f: F) {
         let prev_owner = self.current_dep_node_owner;
         let prev_index = self.current_dep_node_index;
-
+        let prev_already_in_body_dep_node = self.already_in_body_dep_node;
         // When we enter a new owner (item, impl item, or trait item), we always
         // start out again with DepKind::Hir.
         let new_dep_node = self.definitions
@@ -140,7 +141,9 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
                                .to_dep_node(DepKind::Hir);
         self.current_dep_node_index = self.dep_graph.alloc_input_node(new_dep_node);
         self.current_dep_node_owner = dep_node_owner;
+        self.already_in_body_dep_node = false;
         f(self);
+        self.already_in_body_dep_node = prev_already_in_body_dep_node;
         self.current_dep_node_index = prev_index;
         self.current_dep_node_owner = prev_owner;
     }
@@ -170,15 +173,19 @@ impl<'a, 'hir> Visitor<'hir> for NodeCollector<'a, 'hir> {
 
     fn visit_nested_body(&mut self, id: BodyId) {
         // When we enter a body, we switch to DepKind::HirBody.
-        // Note that current_dep_node_index might already be DepKind::HirBody,
-        // e.g. when entering the body of a closure that is already part of a
-        // surrounding body. That's expected and not a problem.
         let prev_index = self.current_dep_node_index;
-        let new_dep_node = self.definitions
-                               .def_path_hash(self.current_dep_node_owner)
-                               .to_dep_node(DepKind::HirBody);
-        self.current_dep_node_index = self.dep_graph.alloc_input_node(new_dep_node);
+        let prev_already_in_body_dep_node = self.already_in_body_dep_node;
+
+        if !self.already_in_body_dep_node {
+            let new_dep_node = self.definitions
+                                   .def_path_hash(self.current_dep_node_owner)
+                                   .to_dep_node(DepKind::HirBody);
+            self.current_dep_node_index = self.dep_graph.alloc_input_node(new_dep_node);
+            self.already_in_body_dep_node = true;
+        }
+
         self.visit_body(self.krate.body(id));
+        self.already_in_body_dep_node = prev_already_in_body_dep_node;
         self.current_dep_node_index = prev_index;
     }
 
