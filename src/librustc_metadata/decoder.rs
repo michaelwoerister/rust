@@ -877,6 +877,7 @@ impl<'a, 'tcx> CrateMetadata {
         }
 
         let dep_node = self.def_path_hash(node_id).to_dep_node(DepKind::MetaData);
+        dep_graph.maybe_alloc_input_dep_node(dep_node);
         dep_graph.read(dep_node);
 
         if let Some(&Some(ref val)) =

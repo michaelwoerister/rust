@@ -51,7 +51,7 @@ macro_rules! provide {
 
                 let def_path_hash = $tcx.def_path_hash($def_id);
                 let dep_node = def_path_hash.to_dep_node(::rustc::dep_graph::DepKind::MetaData);
-
+                $tcx.dep_graph.maybe_alloc_input_dep_node(dep_node);
                 $tcx.dep_graph.read(dep_node);
 
                 let $cdata = $tcx.sess.cstore.crate_data_as_rc_any($def_id.krate);
@@ -217,6 +217,7 @@ impl CrateStore for cstore::CStore {
     {
         let data = self.get_crate_data(cnum);
         let dep_node = data.metadata_dep_node(GlobalMetaDataKind::CrateDeps);
+        self.dep_graph.maybe_alloc_input_dep_node(dep_node);
         self.dep_graph.read(dep_node);
         data.dep_kind.get()
     }
@@ -224,7 +225,7 @@ impl CrateStore for cstore::CStore {
     fn export_macros(&self, cnum: CrateNum) {
         let data = self.get_crate_data(cnum);
         let dep_node = data.metadata_dep_node(GlobalMetaDataKind::CrateDeps);
-
+        self.dep_graph.maybe_alloc_input_dep_node(dep_node);
         self.dep_graph.read(dep_node);
         if data.dep_kind.get() == DepKind::UnexportedMacrosOnly {
             data.dep_kind.set(DepKind::MacrosOnly)

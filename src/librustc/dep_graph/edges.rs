@@ -35,22 +35,32 @@ pub struct DepNodeIndex {
     index: u32
 }
 
+impl ::rustc_data_structures::indexed_vec::Idx for DepNodeIndex {
+    fn new(idx: usize) -> Self {
+        DepNodeIndex::new(idx)
+    }
+    fn index(self) -> usize {
+        self.index()
+    }
+}
+
+
 impl DepNodeIndex {
 
     pub const INVALID: DepNodeIndex = DepNodeIndex { index: ::std::u32::MAX };
 
-    fn new(v: usize) -> DepNodeIndex {
+    pub fn new(v: usize) -> DepNodeIndex {
         assert!((v & 0xFFFF_FFFF) == v);
         DepNodeIndex { index: v as u32 }
     }
 
-    fn index(self) -> usize {
+    pub fn index(self) -> usize {
         self.index as usize
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum OpenTask {
+pub enum OpenTask {
     Regular {
         node: DepNode,
         reads: Vec<DepNode>,

@@ -8,16 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use rustc_data_structures::fx::FxHashMap;
+use ich::Fingerprint;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
+use rustc_data_structures::indexed_vec::IndexVec;
+use rustc_data_structures::stable_hasher::StableHasher;
 use session::config::OutputType;
 use std::cell::{Ref, RefCell};
+use std::hash::Hash;
 use std::rc::Rc;
 
 use super::dep_node::{DepNode, DepKind, WorkProductId};
 use super::query::DepGraphQuery;
 use super::raii;
 use super::safe::DepGraphSafe;
-use super::edges::{DepGraphEdges, DepNodeIndex};
+use super::edges::{DepGraphEdges, DepNodeIndex, OpenTask};
 
 #[derive(Clone)]
 pub struct DepGraph {
@@ -38,6 +42,9 @@ struct DepGraphData {
     work_products: RefCell<FxHashMap<WorkProductId, WorkProduct>>,
 
     dep_node_debug: RefCell<FxHashMap<DepNode, String>>,
+
+
+    current: RefCell<CurrentDepGraph>,
 }
 
 impl DepGraph {
@@ -49,6 +56,7 @@ impl DepGraph {
                     work_products: RefCell::new(FxHashMap()),
                     edges: RefCell::new(DepGraphEdges::new()),
                     dep_node_debug: RefCell::new(FxHashMap()),
+                    current: RefCell::new(CurrentDepGraph::new()),
                 }))
             } else {
                 None
@@ -67,11 +75,14 @@ impl DepGraph {
     }
 
     pub fn in_ignore<'graph>(&'graph self) -> Option<raii::IgnoreTask<'graph>> {
-        self.data.as_ref().map(|data| raii::IgnoreTask::new(&data.edges))
+        self.data.as_ref().map(|data| raii::IgnoreTask::new(&data.edges,
+                                                            &data.current))
     }
 
     pub fn in_task<'graph>(&'graph self, key: DepNode) -> Option<raii::DepTask<'graph>> {
-        self.data.as_ref().map(|data| raii::DepTask::new(&data.edges, key))
+        self.data.as_ref().map(|data| raii::DepTask::new(&data.edges,
+                                                         &data.current,
+                                                         key))
     }
 
     pub fn with_ignore<OP,R>(&self, op: OP) -> R
@@ -118,8 +129,10 @@ impl DepGraph {
     {
         if let Some(ref data) = self.data {
             data.edges.borrow_mut().push_task(key);
+            data.current.borrow_mut().push_task(key);
             let result = task(cx, arg);
             let dep_node_index = data.edges.borrow_mut().pop_task(key);
+            let _dep_node_index = data.current.borrow_mut().pop_task(key);
             (result, dep_node_index)
         } else {
             (task(cx, arg), DepNodeIndex::INVALID)
@@ -133,8 +146,10 @@ impl DepGraph {
     {
         if let Some(ref data) = self.data {
             data.edges.borrow_mut().push_anon_task();
+            data.current.borrow_mut().push_anon_task();
             let result = op();
             let dep_node = data.edges.borrow_mut().pop_anon_task(dep_kind);
+            let _dep_node_index = data.current.borrow_mut().pop_anon_task(dep_kind);
             (result, dep_node)
         } else {
             (op(), DepNodeIndex::INVALID)
@@ -145,6 +160,7 @@ impl DepGraph {
     pub fn read(&self, v: DepNode) {
         if let Some(ref data) = self.data {
             data.edges.borrow_mut().read(v);
+            data.current.borrow_mut().read(v);
         }
     }
 
@@ -152,6 +168,7 @@ impl DepGraph {
     pub fn read_index(&self, v: DepNodeIndex) {
         if let Some(ref data) = self.data {
             data.edges.borrow_mut().read_index(v);
+            data.current.borrow_mut().read_index(v);
         }
     }
 
@@ -229,6 +246,23 @@ impl DepGraph {
     pub(super) fn dep_node_debug_str(&self, dep_node: DepNode) -> Option<String> {
         self.data.as_ref().and_then(|t| t.dep_node_debug.borrow().get(&dep_node).cloned())
     }
+
+    pub fn alloc_input_dep_node(&self, dep_node: DepNode) -> DepNodeIndex {
+        if let Some(ref data) = self.data {
+            data.current.borrow_mut().alloc_node(dep_node, Vec::new())
+        } else {
+            DepNodeIndex::INVALID
+        }
+    }
+
+    pub fn maybe_alloc_input_dep_node(&self, dep_node: DepNode) {
+        if let Some(ref data) = self.data {
+            let mut current = data.current.borrow_mut();
+            if !current.node_to_node_index.contains_key(&dep_node) {
+                current.alloc_node(dep_node, Vec::new());
+            }
+        }
+    }
 }
 
 /// A "work product" is an intermediate result that we save into the
@@ -272,4 +306,161 @@ pub struct WorkProduct {
 
     /// Saved files associated with this CGU
     pub saved_files: Vec<(OutputType, String)>,
+}
+
+
+
+pub(super) struct CurrentDepGraph {
+    nodes: IndexVec<DepNodeIndex, DepNode>,
+    edges: IndexVec<DepNodeIndex, Vec<DepNodeIndex>>,
+    node_to_node_index: FxHashMap<DepNode, DepNodeIndex>,
+
+    task_stack: Vec<OpenTask>,
+}
+
+impl CurrentDepGraph {
+    fn new() -> CurrentDepGraph {
+        CurrentDepGraph {
+            nodes: IndexVec::new(),
+            edges: IndexVec::new(),
+            node_to_node_index: FxHashMap(),
+            task_stack: Vec::new(),
+        }
+    }
+
+    pub(super) fn push_ignore(&mut self) {
+        self.task_stack.push(OpenTask::Ignore);
+    }
+
+    pub(super) fn pop_ignore(&mut self) {
+        let popped_node = self.task_stack.pop().unwrap();
+        debug_assert_eq!(popped_node, OpenTask::Ignore);
+    }
+
+    pub(super) fn push_task(&mut self, key: DepNode) {
+        self.task_stack.push(OpenTask::Regular {
+            node: key,
+            reads: Vec::new(),
+            read_set: FxHashSet(),
+        });
+    }
+
+    pub(super) fn pop_task(&mut self, key: DepNode) -> DepNodeIndex {
+        let popped_node = self.task_stack.pop().unwrap();
+
+        if let OpenTask::Regular {
+            node,
+            read_set: _,
+            reads
+        } = popped_node {
+            debug_assert_eq!(node, key);
+
+            let reads: Vec<DepNodeIndex> = reads.into_iter()
+                                                .map(|dep_node| self.node_to_node_index[&dep_node])
+                                                .collect();
+            self.alloc_node(node, reads)
+        } else {
+            bug!("pop_task() - Expected regular task to be popped")
+        }
+    }
+
+    fn push_anon_task(&mut self) {
+        self.task_stack.push(OpenTask::Anon {
+            reads: Vec::new(),
+            read_set: FxHashSet(),
+        });
+    }
+
+    fn pop_anon_task(&mut self, kind: DepKind) -> DepNodeIndex {
+        let popped_node = self.task_stack.pop().unwrap();
+
+        if let OpenTask::Anon {
+            read_set: _,
+            reads
+        } = popped_node {
+            let mut fingerprint = Fingerprint::zero();
+            let mut hasher = StableHasher::new();
+
+            for read in reads.iter() {
+                ::std::mem::discriminant(&read.kind).hash(&mut hasher);
+
+                // Fingerprint::combine() is faster than sending Fingerprint
+                // through the StableHasher (at least as long as StableHasher
+                // is so slow).
+                fingerprint = fingerprint.combine(read.hash);
+            }
+
+            fingerprint = fingerprint.combine(hasher.finish());
+
+            let target_dep_node = DepNode {
+                kind,
+                hash: fingerprint,
+            };
+
+            if let Some(&index) = self.node_to_node_index.get(&target_dep_node) {
+                return index;
+            }
+
+            let reads: Vec<DepNodeIndex> = reads.into_iter()
+                                                .map(|dep_node| self.node_to_node_index[&dep_node])
+                                                .collect();
+            self.alloc_node(target_dep_node, reads)
+        } else {
+            bug!("pop_anon_task() - Expected anonymous task to be popped")
+        }
+    }
+
+    /// Indicates that the current task `C` reads `v` by adding an
+    /// edge from `v` to `C`. If there is no current task, has no
+    /// effect. Note that *reading* from tracked state is harmless if
+    /// you are not in a task; what is bad is *writing* to tracked
+    /// state (and leaking data that you read into a tracked task).
+    fn read(&mut self, source: DepNode) {
+        if !self.node_to_node_index.contains_key(&source) {
+            bug!("No DepNode {:?}", source)
+        }
+
+        match self.task_stack.last_mut() {
+            Some(&mut OpenTask::Regular {
+                ref mut reads,
+                ref mut read_set,
+                node: _,
+            }) => {
+                if read_set.insert(source) {
+                    reads.push(source);
+                }
+            }
+            Some(&mut OpenTask::Anon {
+                ref mut reads,
+                ref mut read_set,
+            }) => {
+                if read_set.insert(source) {
+                    reads.push(source);
+                }
+            }
+            Some(&mut OpenTask::Ignore) | None => {
+                // ignore
+            }
+        }
+    }
+
+    fn read_index(&mut self, source: DepNodeIndex) {
+        let dep_node = self.nodes[source];
+        self.read(dep_node);
+    }
+
+    #[inline]
+    fn alloc_node(&mut self,
+                  dep_node: DepNode,
+                  edges: Vec<DepNodeIndex>)
+                  -> DepNodeIndex {
+        debug_assert_eq!(self.edges.len(), self.nodes.len());
+        debug_assert_eq!(self.node_to_node_index.len(), self.nodes.len());
+        debug_assert!(!self.node_to_node_index.contains_key(&dep_node));
+        let dep_node_index = DepNodeIndex::new(self.nodes.len());
+        self.nodes.push(dep_node);
+        self.node_to_node_index.insert(dep_node, dep_node_index);
+        self.edges.push(edges);
+        dep_node_index
+    }
 }

@@ -204,6 +204,7 @@ impl<T> Tracked<T> {
     }
 
     pub fn get(&self, dep_graph: &DepGraph, dep_node: DepNode) -> &T {
+        dep_graph.maybe_alloc_input_dep_node(dep_node);
         dep_graph.read(dep_node);
         &self.state
     }
