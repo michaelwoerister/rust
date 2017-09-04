@@ -338,6 +338,8 @@ pub(super) struct CurrentDepGraph {
     node_to_node_index: FxHashMap<DepNode, DepNodeIndexNew>,
 
     task_stack: Vec<OpenTask>,
+
+    total_edge_count: usize,
 }
 
 impl CurrentDepGraph {
@@ -347,6 +349,7 @@ impl CurrentDepGraph {
             edges: IndexVec::new(),
             node_to_node_index: FxHashMap(),
             task_stack: Vec::new(),
+            total_edge_count: 0,
         }
     }
 
@@ -467,6 +470,7 @@ impl CurrentDepGraph {
         let dep_node_index = DepNodeIndexNew::new(self.nodes.len());
         self.nodes.push(dep_node);
         self.node_to_node_index.insert(dep_node, dep_node_index);
+        self.total_edge_count += edges.len();
         self.edges.push(edges);
         dep_node_index
     }
@@ -491,6 +495,35 @@ impl CurrentDepGraph {
             DepNodeIndexNew::new(next_id)
         })
     }
+
+    // fn serialize(&self) -> PreviousDepGraph {
+    //     let nodes: IndexVec<PrevDepNodeIndex, DepNode> = self.nodes
+    //                                                          .iter()
+    //                                                          .cloned()
+    //                                                          .collect();
+
+    //     let mut edge_list_indices = IndexVec::with_capacity(nodes.len());
+    //     let mut edge_list_data = Vec::with_capacity(self.total_edge_count);
+
+    //     for (current_dep_node_index, edges) in self.edges.iter_enumerated() {
+    //         let start = edge_list_data.len() as u32;
+    //         // This should really just be a memcpy :/
+    //         edge_list_data.extend(edges.iter().map(|i| PrevDepNodeIndex(i.index)));
+    //         let end = edge_list_data.len() as u32;
+
+    //         assert_eq!(current_dep_node_index.index(), edge_list_indices.len());
+    //         edge_list_indices.push((start, end));
+    //     }
+
+    //     assert!(edge_list_data.len() <= ::std::u32::MAX as usize);
+    //     assert_eq!(edge_list_data.len(), self.total_edge_count);
+
+    //     PreviousDepGraph {
+    //         nodes,
+    //         edge_list_indices,
+    //         edge_list_data,
+    //     }
+    // }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

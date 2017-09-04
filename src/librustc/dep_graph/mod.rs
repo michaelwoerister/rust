@@ -16,6 +16,8 @@ mod graph;
 mod query;
 mod raii;
 mod safe;
+mod serialized;
+mod prev;
 
 pub use self::dep_tracking_map::{DepTrackingMap, DepTrackingMapConfig};
 pub use self::dep_node::DepNode;
