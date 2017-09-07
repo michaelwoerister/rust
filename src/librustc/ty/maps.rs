@@ -13,7 +13,6 @@ use errors::{Diagnostic, DiagnosticBuilder};
 use hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use hir::def::{Def, Export};
 use hir::{self, TraitCandidate, HirId};
-use ich::{Fingerprint, StableHashingContext};
 use lint;
 use middle::const_val;
 use middle::cstore::{ExternCrate, LinkagePreference};
@@ -37,7 +36,7 @@ use rustc_data_structures::indexed_set::IdxSetBuf;
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::fx::FxHashMap;
 use std::cell::{RefCell, RefMut, Cell};
-use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
+
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -731,20 +730,6 @@ macro_rules! define_maps {
                 let ((result, dep_node_index), diagnostics) = res;
 
                 tcx.dep_graph.read_index(dep_node_index);
-
-                // In incremental mode, hash the result of the query. We don't
-                // do anything with the hash yet, but we are computing it
-                // anyway so that
-                //  - we make sure that the infrastructure works and
-                //  - we can get an idea of the runtime cost.
-                if !dep_node.kind.is_anon() && tcx.sess.opts.incremental.is_some() {
-                    let mut hcx = StableHashingContext::new(tcx);
-                    let mut hasher = StableHasher::new();
-
-                    result.hash_stable(&mut hcx, &mut hasher);
-
-                    let _: Fingerprint = hasher.finish();
-                }
 
                 let value = QueryValue {
                     value: result,

@@ -1116,7 +1116,7 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             let dep_node = cgu.work_product_dep_node();
             let ((stats, module), _) =
                 tcx.dep_graph.with_task(dep_node,
-                                        AssertDepGraphSafe(&shared_ccx),
+                                        &shared_ccx,
                                         AssertDepGraphSafe((cgu,
                                                             translation_items.clone(),
                                                             exported_symbols.clone())),
@@ -1159,14 +1159,13 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     fn module_translation<'a, 'tcx>(
-        scx: AssertDepGraphSafe<&SharedCrateContext<'a, 'tcx>>,
+        scx: &SharedCrateContext<'a, 'tcx>,
         args: AssertDepGraphSafe<(CodegenUnit<'tcx>,
                                   Arc<FxHashSet<TransItem<'tcx>>>,
                                   Arc<ExportedSymbols>)>)
         -> (Stats, ModuleTranslation)
     {
         // FIXME(#40304): We ought to be using the id as a key and some queries, I think.
-        let AssertDepGraphSafe(scx) = scx;
         let AssertDepGraphSafe((cgu, crate_trans_items, exported_symbols)) = args;
 
         let cgu_name = String::from(cgu.name());
@@ -1501,4 +1500,35 @@ fn collect_and_partition_translation_items<'a, 'tcx>(scx: &SharedCrateContext<'a
     }
 
     (translation_items, codegen_units)
+}
+
+// FIXME(mw): Anything that is produced via DepGraph::with_task() must implement
+//            the HashStable trait. Normally DepGraph::with_task() calls are
+//            hidden behind queries, but CGU creation is a special case in two
+//            ways: (1) it's not a query and (2) CGU are output nodes, so their
+//            Fingerprints are not actually needed. It remains to be clarified
+//            how exactly this case will be handled in the red/green system but
+//            for now we content ourselves with providing a no-op HashStable
+//            implementation for CGUs.
+mod temp_stable_hash_impls {
+    use rustc_data_structures::stable_hasher::{StableHasherResult, StableHasher,
+                                               HashStable};
+    use context::Stats;
+    use ModuleTranslation;
+
+    impl<HCX> HashStable<HCX> for Stats {
+        fn hash_stable<W: StableHasherResult>(&self,
+                                              _: &mut HCX,
+                                              _: &mut StableHasher<W>) {
+            // do nothing
+        }
+    }
+
+    impl<HCX> HashStable<HCX> for ModuleTranslation {
+        fn hash_stable<W: StableHasherResult>(&self,
+                                              _: &mut HCX,
+                                              _: &mut StableHasher<W>) {
+            // do nothing
+        }
+    }
 }
