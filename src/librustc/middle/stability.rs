@@ -16,7 +16,7 @@ pub use self::StabilityLevel::*;
 use lint;
 use hir::def::Def;
 use hir::def_id::{CrateNum, CRATE_DEF_INDEX, DefId, LOCAL_CRATE};
-use ty::{self, TyCtxt};
+use ich::{self, StableHashingContext};
 use middle::privacy::AccessLevels;
 use syntax::symbol::Symbol;
 use syntax_pos::{Span, DUMMY_SP};
@@ -24,6 +24,7 @@ use syntax::ast;
 use syntax::ast::{NodeId, Attribute};
 use syntax::feature_gate::{GateIssue, emit_feature_err, find_lang_feature_accepted_version};
 use syntax::attr::{self, Stability, Deprecation};
+use ty::{self, TyCtxt};
 use util::nodemap::{FxHashSet, FxHashMap};
 
 use hir;
@@ -32,6 +33,9 @@ use hir::intravisit::{self, Visitor, NestedVisitorMap};
 
 use std::mem::replace;
 use std::cmp::Ordering;
+
+use rustc_data_structures::stable_hasher::{StableHasher, StableHasherResult,
+                                           HashStable};
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Copy, Debug, Eq, Hash)]
 pub enum StabilityLevel {
@@ -64,6 +68,11 @@ pub struct DeprecationEntry {
     /// `DefId`'s.
     origin: Option<HirId>,
 }
+
+impl_stable_hash_for!(struct self::DeprecationEntry {
+    attr,
+    origin
+});
 
 impl DeprecationEntry {
     fn local(attr: Deprecation, id: HirId) -> DeprecationEntry {
@@ -100,6 +109,36 @@ pub struct Index<'tcx> {
 
     /// Features enabled for this crate.
     active_features: FxHashSet<Symbol>,
+}
+
+impl<'a, 'gcx, 'lcx> HashStable<StableHashingContext<'a, 'gcx, 'lcx>> for Index<'gcx> {
+
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'a, 'gcx, 'lcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let Index {
+            ref stab_map,
+            ref depr_map,
+            ref staged_api,
+            ref active_features,
+        } = *self;
+
+        ich::hash_stable_hir_id_map(hcx, hasher, stab_map);
+        ich::hash_stable_hir_id_map(hcx, hasher, depr_map);
+        ich::hash_stable_hashmap(hcx, hasher, staged_api, |hcx, &crate_num| {
+            let def_id = DefId {
+                krate: crate_num,
+                index: CRATE_DEF_INDEX,
+            };
+            hcx.def_path_hash(def_id)
+        });
+
+        let mut active_features: Vec<_> = active_features.iter()
+                                                         .map(|s| s.as_str())
+                                                         .collect();
+        active_features.sort_unstable();
+        active_features.hash_stable(hcx, hasher);
+    }
 }
 
 // A private tree-walker for producing an Index.

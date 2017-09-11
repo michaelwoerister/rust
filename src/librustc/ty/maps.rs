@@ -10,7 +10,7 @@
 
 use dep_graph::{DepConstructor, DepNode, DepNodeIndex};
 use errors::{Diagnostic, DiagnosticBuilder};
-use hir::def_id::{CrateNum, DefId, LOCAL_CRATE, DefIndex};
+use hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use hir::def::{Def, Export};
 use hir::{self, TraitCandidate, HirId};
 use hir::svh::Svh;
@@ -34,7 +34,7 @@ use ty::item_path;
 use ty::steal::Steal;
 use ty::subst::Substs;
 use ty::fast_reject::SimplifiedType;
-use util::nodemap::{DefIdSet, NodeSet, DefIdMap};
+use util::nodemap::{DefIdSet, DefIdMap};
 use util::common::{profq_msg, ProfileQueriesMsg};
 
 use rustc_data_structures::indexed_set::IdxSetBuf;
@@ -1368,7 +1368,7 @@ define_maps! { <'tcx>
     [] fn extern_mod_stmt_cnum: ExternModStmtCnum(HirId) -> Option<CrateNum>,
 
     [] fn get_lang_items: get_lang_items_node(CrateNum) -> Rc<LanguageItems>,
-    [] fn defined_lang_items: DefinedLangItems(CrateNum) -> Rc<Vec<(DefIndex, usize)>>,
+    [] fn defined_lang_items: DefinedLangItems(CrateNum) -> Rc<Vec<(DefId, usize)>>,
     [] fn missing_lang_items: MissingLangItems(CrateNum) -> Rc<Vec<LangItem>>,
     [] fn extern_const_body: ExternConstBody(DefId) -> &'tcx hir::Body,
     [] fn visible_parent_map: visible_parent_map_node(CrateNum)

@@ -94,10 +94,12 @@ impl DepGraphEdges {
     }
 
     pub fn push_ignore(&mut self) {
+        debug!("push_ignore");
         self.task_stack.push(OpenTask::Ignore);
     }
 
     pub fn pop_ignore(&mut self) {
+        debug!("pop_ignore");
         let popped_node = self.task_stack.pop().unwrap();
         debug_assert_eq!(popped_node, OpenTask::Ignore);
     }
@@ -107,6 +109,8 @@ impl DepGraphEdges {
             bug!("Re-opened node {:?}", key)
         }
 
+        debug!("push_task {:?}({:?})", key.kind, key.hash);
+
         self.task_stack.push(OpenTask::Regular {
             node: key,
             reads: Vec::new(),
@@ -115,6 +119,8 @@ impl DepGraphEdges {
     }
 
     pub fn pop_task(&mut self, key: DepNode) -> DepNodeIndex {
+        debug!("pop_task {:?}({:?})", key.kind, key.hash);
+
         let popped_node = self.task_stack.pop().unwrap();
 
         if let OpenTask::Regular {
@@ -138,6 +144,8 @@ impl DepGraphEdges {
     }
 
     pub fn push_anon_task(&mut self) {
+        debug!("push_anon_task");
+
         self.task_stack.push(OpenTask::Anon {
             reads: Vec::new(),
             read_set: FxHashSet(),
@@ -145,6 +153,8 @@ impl DepGraphEdges {
     }
 
     pub fn pop_anon_task(&mut self, kind: DepKind) -> DepNodeIndex {
+        debug!("pop_anon_task");
+
         let popped_node = self.task_stack.pop().unwrap();
 
         if let OpenTask::Anon {

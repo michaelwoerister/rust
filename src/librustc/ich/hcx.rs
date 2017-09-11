@@ -27,7 +27,8 @@ use syntax::symbol::Symbol;
 use syntax_pos::Span;
 
 use rustc_data_structures::stable_hasher::{HashStable, StableHashingContextProvider,
-                                           StableHasher, StableHasherResult};
+                                           StableHasher, StableHasherResult,
+                                           ToStableHashKey};
 use rustc_data_structures::accumulate_vec::AccumulateVec;
 
 /// This is the context state available during incr. comp. hashing. It contains
@@ -243,6 +244,15 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ast::N
     }
 }
 
+impl<'a, 'gcx, 'tcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'tcx>> for ast::NodeId {
+    type KeyType = (DefPathHash, hir::ItemLocalId);
+    fn to_stable_hash_key(&self,
+                          hcx: &StableHashingContext<'a, 'gcx, 'tcx>)
+                          -> (DefPathHash, hir::ItemLocalId) {
+        hcx.tcx.hir.node_to_hir_id(*self).to_stable_hash_key(hcx)
+    }
+}
+
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for Span {
 
     // Hash a span in a stable way. We can't directly hash the span's BytePos
@@ -386,6 +396,21 @@ pub fn hash_stable_nodeset<'a, 'tcx, 'gcx, W>(
         let owner_def_path_hash = definitions.def_path_hash(hir_id.owner);
         (owner_def_path_hash, hir_id.local_id)
     });
+}
+
+pub fn hash_stable_hir_id_map<'a, 'gcx, 'tcx, V, R, W>(
+    hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
+    hasher: &mut StableHasher<W>,
+    map: &HashMap<hir::HirId, V, R>)
+    where V: HashStable<StableHashingContext<'a, 'gcx, 'tcx>>,
+          R: std_hash::BuildHasher,
+          W: StableHasherResult,
+{
+    let definitions = hcx.tcx.hir.definitions();
+    hash_stable_hashmap(hcx, hasher, map, |_, hir_id| {
+        let owner_def_path_hash = definitions.def_path_hash(hir_id.owner);
+        (owner_def_path_hash, hir_id.local_id)
+    })
 }
 
 pub fn hash_stable_itemlocalmap<'a, 'tcx, 'gcx, V, W>(

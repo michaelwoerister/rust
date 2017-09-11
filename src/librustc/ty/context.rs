@@ -1110,9 +1110,9 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         // Once red/green incremental compilation lands we should be able to
         // remove this because while the crate changes often the lint level map
         // will change rarely.
-        self.dep_graph.with_ignore(|| {
+        // self.dep_graph.with_ignore(|| {
             self.get_lang_items(LOCAL_CRATE)
-        })
+        // })
     }
 
     pub fn stability(self) -> Rc<stability::Index<'tcx>> {
@@ -2036,7 +2036,7 @@ pub fn provide(providers: &mut ty::maps::Providers) {
     };
     providers.get_lang_items = |tcx, id| {
         assert_eq!(id, LOCAL_CRATE);
-        Rc::new(middle::lang_items::collect(tcx))
+        tcx.dep_graph.with_ignore(|| Rc::new(middle::lang_items::collect(tcx)))
     };
     providers.freevars = |tcx, id| tcx.gcx.freevars.get(&id).cloned();
     providers.maybe_unused_trait_import = |tcx, id| {

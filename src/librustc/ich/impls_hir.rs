@@ -13,12 +13,12 @@
 
 use hir;
 use hir::def_id::{DefId, CrateNum, CRATE_DEF_INDEX};
-use ich::{self, StableHashingContext, NodeIdHashingMode};
-use rustc_data_structures::stable_hasher::{HashStable, StableHasher,
-                                           StableHasherResult};
+use hir::map::DefPathHash;
+use ich::{StableHashingContext, NodeIdHashingMode};
+use rustc_data_structures::stable_hasher::{HashStable, ToStableHashKey,
+                                           StableHasher, StableHasherResult};
 use std::mem;
 use syntax::ast;
-use util::nodemap::DefIdSet;
 
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for DefId {
     #[inline]
@@ -29,14 +29,10 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for DefId 
     }
 }
 
-impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for DefIdSet
-{
-    fn hash_stable<W: StableHasherResult>(&self,
-                                          hcx: &mut StableHashingContext<'a, 'gcx, 'tcx>,
-                                          hasher: &mut StableHasher<W>) {
-        ich::hash_stable_hashset(hcx, hasher, self, |hcx, def_id| {
-            hcx.def_path_hash(*def_id)
-        });
+impl<'a, 'gcx, 'tcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'tcx>> for DefId {
+    type KeyType = DefPathHash;
+    fn to_stable_hash_key(&self, hcx: &StableHashingContext<'a, 'gcx, 'tcx>) -> DefPathHash {
+        hcx.tcx().def_path_hash(*self)
     }
 }
 
@@ -50,11 +46,20 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for hir::H
             local_id,
         } = *self;
 
-        hcx.def_path_hash(DefId::local(owner)).hash_stable(hcx, hasher);
+        hcx.tcx().hir.definitions().def_path_hash(owner).hash_stable(hcx, hasher);
         local_id.hash_stable(hcx, hasher);
     }
 }
 
+impl<'a, 'gcx, 'tcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'tcx>> for hir::HirId {
+    type KeyType = (DefPathHash, hir::ItemLocalId);
+    fn to_stable_hash_key(&self,
+                          hcx: &StableHashingContext<'a, 'gcx, 'tcx>)
+                          -> (DefPathHash, hir::ItemLocalId) {
+        let def_path_hash = hcx.tcx().hir.definitions().def_path_hash(self.owner);
+        (def_path_hash, self.local_id)
+    }
+}
 
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for CrateNum {
     #[inline]
@@ -69,6 +74,16 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for CrateN
 }
 
 impl_stable_hash_for!(tuple_struct hir::ItemLocalId { index });
+
+impl<'a, 'gcx, 'lcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'lcx>>
+for hir::ItemLocalId {
+    type KeyType = hir::ItemLocalId;
+    fn to_stable_hash_key(&self,
+                          _: &StableHashingContext<'a, 'gcx, 'lcx>)
+                          -> hir::ItemLocalId {
+        *self
+    }
+}
 
 // The following implementations of HashStable for ItemId, TraitItemId, and
 // ImplItemId deserve special attention. Normally we do not hash NodeIds within
@@ -1049,6 +1064,17 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for hir::B
     }
 }
 
+impl<'a, 'gcx, 'tcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'tcx>> for hir::BodyId {
+    type KeyType = (DefPathHash, hir::ItemLocalId);
+
+    fn to_stable_hash_key(&self,
+                          hcx: &StableHashingContext<'a, 'gcx, 'tcx>)
+                          -> (DefPathHash, hir::ItemLocalId) {
+        let hir::BodyId { node_id } = *self;
+        node_id.to_stable_hash_key(hcx)
+    }
+}
+
 impl_stable_hash_for!(struct hir::InlineAsmOutput {
     constraint,
     is_rw,
@@ -1155,6 +1181,14 @@ for hir::def_id::DefIndex {
     }
 }
 
+impl<'a, 'gcx, 'tcx> ToStableHashKey<StableHashingContext<'a, 'gcx, 'tcx>>
+for hir::def_id::DefIndex {
+    type KeyType = DefPathHash;
+    fn to_stable_hash_key(&self, hcx: &StableHashingContext<'a, 'gcx, 'tcx>) -> DefPathHash {
+         hcx.tcx().hir.definitions().def_path_hash(*self)
+    }
+}
+
 impl_stable_hash_for!(struct hir::def::Export {
     ident,
     def,
@@ -1169,6 +1203,11 @@ for ::middle::lang_items::LangItem {
         ::std::hash::Hash::hash(self, hasher);
     }
 }
+
+impl_stable_hash_for!(struct ::middle::lang_items::LanguageItems {
+    items,
+    missing
+});
 
 impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>>
 for hir::TraitCandidate {
@@ -1186,3 +1225,8 @@ for hir::TraitCandidate {
         });
     }
 }
+
+impl_stable_hash_for!(struct hir::Freevar {
+    def,
+    span
+});

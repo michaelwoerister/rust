@@ -15,7 +15,7 @@ pub use self::caching_codemap_view::CachingCodemapView;
 pub use self::hcx::{StableHashingContext, NodeIdHashingMode, hash_stable_hashmap,
                     hash_stable_hashset, hash_stable_nodemap, hash_stable_nodeset,
                     hash_stable_btreemap, hash_stable_itemlocalmap,
-                    hash_stable_trait_impls};
+                    hash_stable_trait_impls, hash_stable_hir_id_map};
 mod fingerprint;
 mod caching_codemap_view;
 mod hcx;
@@ -24,6 +24,7 @@ mod impls_const_math;
 mod impls_cstore;
 mod impls_hir;
 mod impls_mir;
+mod impls_misc;
 mod impls_ty;
 mod impls_syntax;
 
