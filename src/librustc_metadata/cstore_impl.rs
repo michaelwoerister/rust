@@ -51,7 +51,7 @@ macro_rules! provide {
                 assert!(!$def_id.is_local());
 
                 let def_path_hash = $tcx.def_path_hash($def_id);
-                let dep_node = def_path_hash.to_dep_node(::rustc::dep_graph::DepKind::MetaData);
+                let dep_node = def_path_hash.to_dep_node(::rustc::dep_graph::DepKind::ImportedMetaData);
 
                 $tcx.dep_graph.read(dep_node);
 

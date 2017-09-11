@@ -124,8 +124,11 @@ fn does_still_exist(tcx: TyCtxt, dep_node: &DepNode) -> bool {
     match dep_node.kind {
         DepKind::Hir |
         DepKind::HirBody |
-        DepKind::MetaData => {
+        DepKind::ImportedMetaData => {
             dep_node.extract_def_id(tcx).is_some()
+        }
+        DepKind::InScopeTraits => {
+            tcx.dep_graph.fingerprint_of(dep_node).is_some()
         }
         _ => {
             bug!("unexpected Input DepNode: {:?}", dep_node)
@@ -440,7 +443,7 @@ fn process_edge<'a, 'tcx, 'edges>(
     // clean target because removing the input would have dirtied the input
     // node and transitively dirtied the target.
     debug_assert!(match nodes[source].kind {
-        DepKind::Hir | DepKind::HirBody | DepKind::MetaData => {
+        DepKind::Hir | DepKind::HirBody | DepKind::ImportedMetaData => {
             does_still_exist(tcx, &nodes[source])
         }
         _ => true,

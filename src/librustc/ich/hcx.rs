@@ -223,21 +223,21 @@ impl<'a, 'gcx, 'tcx> HashStable<StableHashingContext<'a, 'gcx, 'tcx>> for ast::N
                 hcx.tcx.hir.definitions().node_to_hir_id(*self).hash_stable(hcx, hasher);
             }
             NodeIdHashingMode::HashTraitsInScope => {
-                let hir_id = hcx.tcx.hir.node_to_hir_id(*self);
-                if let Some(traits) = hcx.tcx.in_scope_traits(hir_id) {
-                    // The ordering of the candidates is not fixed. So we hash
-                    // the def-ids and then sort them and hash the collection.
-                    let mut candidates: AccumulateVec<[_; 8]> =
-                        traits.iter()
-                              .map(|&hir::TraitCandidate { def_id, import_id: _ }| {
-                                  hcx.def_path_hash(def_id)
-                              })
-                              .collect();
-                    if traits.len() > 1 {
-                        candidates.sort();
-                    }
-                    candidates.hash_stable(hcx, hasher);
-                }
+                // let hir_id = hcx.tcx.hir.node_to_hir_id(*self);
+                // if let Some(traits) = hcx.tcx.in_scope_traits(hir_id) {
+                //     // The ordering of the candidates is not fixed. So we hash
+                //     // the def-ids and then sort them and hash the collection.
+                //     let mut candidates: AccumulateVec<[_; 8]> =
+                //         traits.iter()
+                //               .map(|&hir::TraitCandidate { def_id, import_id: _ }| {
+                //                   hcx.def_path_hash(def_id)
+                //               })
+                //               .collect();
+                //     if traits.len() > 1 {
+                //         candidates.sort();
+                //     }
+                //     candidates.hash_stable(hcx, hasher);
+                // }
             }
         }
     }

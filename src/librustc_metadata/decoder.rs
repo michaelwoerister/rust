@@ -877,7 +877,7 @@ impl<'a, 'tcx> CrateMetadata {
             return Rc::new([]);
         }
 
-        let dep_node = self.def_path_hash(node_id).to_dep_node(DepKind::MetaData);
+        let dep_node = self.def_path_hash(node_id).to_dep_node(DepKind::ImportedMetaData);
         dep_graph.read(dep_node);
 
         if let Some(&Some(ref val)) =
@@ -1224,6 +1224,6 @@ impl<'a, 'tcx> CrateMetadata {
     pub fn metadata_dep_node(&self, kind: GlobalMetaDataKind) -> DepNode {
         let def_index = kind.def_index(&self.def_path_table);
         let def_path_hash = self.def_path_table.def_path_hash(def_index);
-        def_path_hash.to_dep_node(DepKind::MetaData)
+        def_path_hash.to_dep_node(DepKind::ImportedMetaData)
     }
 }

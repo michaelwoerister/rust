@@ -48,13 +48,6 @@ impl<'q> Predecessors<'q> {
         let is_output = |node: &DepNode| -> bool {
             match node.kind {
                 DepKind::WorkProduct => true,
-                DepKind::MetaData => {
-                    // We do *not* create dep-nodes for the current crate's
-                    // metadata anymore, just for metadata that we import/read
-                    // from other crates.
-                    debug_assert!(!node.extract_def_id(tcx).unwrap().is_local());
-                    false
-                }
                 // if -Z query-dep-graph is passed, save more extended data
                 // to enable better unit testing
                 DepKind::TypeckTables => tcx.sess.opts.debugging_opts.query_dep_graph,
@@ -66,7 +59,7 @@ impl<'q> Predecessors<'q> {
         // Reduce the graph to the most important nodes.
         let compress::Reduction { graph, input_nodes } =
             compress::reduce_graph(&query.graph,
-                                   |n| HashContext::is_hashable(tcx, n),
+                                   |n| n.kind.is_input(),
                                    |n| is_output(n));
 
         let mut hashes = FxHashMap();

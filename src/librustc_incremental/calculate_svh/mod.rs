@@ -312,6 +312,8 @@ pub fn compute_incremental_hashes_map<'a, 'tcx: 'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>)
         }
 
         visitor.compute_and_store_ich_for_trait_impls(krate);
+
+        tcx.compute_trait_map_fingerprints();
     });
 
     tcx.sess.perf_stats.incr_comp_hashes_count.set(visitor.hashes.len() as u64);

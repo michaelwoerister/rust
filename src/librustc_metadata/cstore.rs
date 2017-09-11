@@ -251,7 +251,7 @@ impl CStore {
     pub fn read_dep_node(&self, def_id: DefId) {
         use rustc::middle::cstore::CrateStore;
         let def_path_hash = self.def_path_hash(def_id);
-        let dep_node = def_path_hash.to_dep_node(::rustc::dep_graph::DepKind::MetaData);
+        let dep_node = def_path_hash.to_dep_node(::rustc::dep_graph::DepKind::ImportedMetaData);
         self.dep_graph.read(dep_node);
     }
 }

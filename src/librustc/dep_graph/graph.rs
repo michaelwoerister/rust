@@ -43,6 +43,8 @@ struct DepGraphData {
     work_products: RefCell<FxHashMap<WorkProductId, WorkProduct>>,
 
     dep_node_debug: RefCell<FxHashMap<DepNode, String>>,
+
+    fingerprints: RefCell<FxHashMap<DepNode, Fingerprint>>,
 }
 
 impl DepGraph {
@@ -54,6 +56,7 @@ impl DepGraph {
                     work_products: RefCell::new(FxHashMap()),
                     edges: RefCell::new(DepGraphEdges::new()),
                     dep_node_debug: RefCell::new(FxHashMap()),
+                    fingerprints: RefCell::new(FxHashMap()),
                 }))
             } else {
                 None
@@ -139,7 +142,12 @@ impl DepGraph {
 
             let mut stable_hasher = StableHasher::new();
             result.hash_stable(&mut hcx, &mut stable_hasher);
-            let _: Fingerprint = stable_hasher.finish();
+            // let _: Fingerprint = stable_hasher.finish();
+
+            assert!(data.fingerprints
+                        .borrow_mut()
+                        .insert(key, stable_hasher.finish())
+                        .is_none());
 
             (result, dep_node_index)
         } else {
@@ -257,6 +265,14 @@ impl DepGraph {
 
     pub(super) fn dep_node_debug_str(&self, dep_node: DepNode) -> Option<String> {
         self.data.as_ref().and_then(|t| t.dep_node_debug.borrow().get(&dep_node).cloned())
+    }
+
+    pub fn fingerprint_of(&self, dep_node: &DepNode) -> Option<Fingerprint> {
+        if let Some(ref data) = self.data {
+            data.fingerprints.borrow().get(dep_node).cloned()
+        } else {
+            unreachable!()
+        }
     }
 }
 

@@ -1107,6 +1107,12 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         let cname = self.crate_name(LOCAL_CRATE).as_str();
         self.sess.consider_optimizing(&cname, msg)
     }
+
+    pub fn compute_trait_map_fingerprints(self) {
+        for &k in self.trait_map.keys() {
+            self.in_scope_traits(k);
+        }
+    }
 }
 
 impl<'gcx: 'tcx, 'tcx> GlobalCtxt<'gcx> {
