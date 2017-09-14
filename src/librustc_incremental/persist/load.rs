@@ -65,6 +65,8 @@ pub fn load_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 
     let _ignore = tcx.dep_graph.in_ignore();
+
+    tcx.precompute_in_scope_traits_hashes();
     load_dep_graph_if_exists(tcx, incremental_hashes_map);
 }
 
@@ -170,7 +172,6 @@ pub fn decode_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // Compute the set of nodes from the old graph where some input
     // has changed or been removed.
     let dirty_raw_nodes = initial_dirty_nodes(tcx,
-                                              incremental_hashes_map,
                                               &serialized_dep_graph.nodes,
                                               &serialized_dep_graph.hashes);
     let dirty_raw_nodes = transitive_dirty_nodes(&serialized_dep_graph,
@@ -222,11 +223,10 @@ pub fn decode_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 /// Computes which of the original set of def-ids are dirty. Stored in
 /// a bit vector where the index is the DefPathIndex.
 fn initial_dirty_nodes<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                 incremental_hashes_map: &IncrementalHashesMap,
                                  nodes: &IndexVec<DepNodeIndex, DepNode>,
                                  serialized_hashes: &[(DepNodeIndex, Fingerprint)])
                                  -> DirtyNodes {
-    let mut hcx = HashContext::new(tcx, incremental_hashes_map);
+    let mut hcx = HashContext::new(tcx);
     let mut dirty_nodes = FxHashMap();
 
     for &(dep_node_index, prev_hash) in serialized_hashes {
