@@ -122,7 +122,7 @@ pub fn run(input: &str,
     {
         let dep_graph = DepGraph::new(false);
         let _ignore = dep_graph.in_ignore();
-        let map = hir::map::map_crate(&mut hir_forest, defs);
+        let map = hir::map::map_crate(&sess, &*cstore, &mut hir_forest, &defs);
         let krate = map.krate();
         let mut hir_collector = HirCollector {
             sess: &sess,

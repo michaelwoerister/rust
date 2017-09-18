@@ -110,11 +110,12 @@ use llvm;
 use rustc::dep_graph::{DepNode, WorkProductId};
 use rustc::hir::def_id::DefId;
 use rustc::hir::map::DefPathData;
+use rustc::ich::Fingerprint;
 use rustc::session::config::NUMBERED_CODEGEN_UNIT_MARKER;
 use rustc::ty::{self, TyCtxt, InstanceDef};
 use rustc::ty::item_path::characteristic_def_id_of_type;
 use rustc::util::nodemap::{FxHashMap, FxHashSet};
-use rustc_incremental::IchHasher;
+use rustc_data_structures::stable_hasher::StableHasher;
 use std::collections::hash_map::Entry;
 use std::hash::Hash;
 use syntax::ast::NodeId;
@@ -176,7 +177,7 @@ impl<'tcx> CodegenUnit<'tcx> {
     pub fn compute_symbol_name_hash<'a>(&self,
                                         scx: &SharedCrateContext<'a, 'tcx>)
                                         -> u64 {
-        let mut state = IchHasher::new();
+        let mut state: StableHasher<Fingerprint> = StableHasher::new();
         let all_items = self.items_in_deterministic_order(scx.tcx());
         for (item, (linkage, visibility)) in all_items {
             let symbol_name = item.symbol_name(scx.tcx());
