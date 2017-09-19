@@ -104,7 +104,7 @@ fn does_still_exist(tcx: TyCtxt, dep_node: &DepNode) -> bool {
         DepKind::HirBody |
         DepKind::InScopeTraits |
         DepKind::MetaData => {
-            dep_node.extract_def_id(tcx).is_some()
+            tcx.extract_def_id(dep_node).is_some()
         }
         _ => {
             bug!("unexpected Input DepNode: {:?}", dep_node)
@@ -384,7 +384,7 @@ fn process_edge<'a, 'tcx, 'edges>(
                     // DepNode. This cannot be done for things that where
                     // removed.
                     let blame = nodes[blame];
-                    let blame_str = if let Some(def_id) = blame.extract_def_id(tcx) {
+                    let blame_str = if let Some(def_id) = tcx.extract_def_id(&blame) {
                         format!("{:?}({})",
                                 blame.kind,
                                 tcx.def_path(def_id).to_string(tcx))

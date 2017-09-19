@@ -940,10 +940,9 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                              -> OngoingCrateTranslation {
     check_for_rustc_errors_attr(tcx);
 
-
     let crate_hash = tcx.dep_graph
-                        .fingerprint_of(&DepNode::new_no_params(DepKind::Krate))
-                        .unwrap();
+                        .fingerprint_of(&DepNode::new_no_params(DepKind::Krate),
+                                        |_| panic!("unreachable"));
     let link_meta = link::build_link_meta(crate_hash);
     let exported_symbol_node_ids = find_exported_symbols(tcx);
 

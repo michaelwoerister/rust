@@ -71,7 +71,7 @@ pub fn check_dirty_clean_annotations<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         dirty_inputs.keys()
                     .filter_map(|dep_node_index| {
                         let dep_node = nodes[*dep_node_index];
-                        if dep_node.extract_def_id(tcx).is_some() {
+                        if tcx.extract_def_id(&dep_node).is_some() {
                             Some(dep_node)
                         } else {
                             None
@@ -131,7 +131,7 @@ impl<'a, 'tcx> DirtyCleanVisitor<'a, 'tcx> {
     }
 
     fn dep_node_str(&self, dep_node: &DepNode) -> String {
-        if let Some(def_id) = dep_node.extract_def_id(self.tcx) {
+        if let Some(def_id) = self.tcx.extract_def_id(dep_node) {
             format!("{:?}({})",
                     dep_node.kind,
                     self.tcx.item_path_str(def_id))

@@ -305,14 +305,13 @@ macro_rules! define_dep_nodes {
             /// refers to something from the previous compilation session that
             /// has been removed.
             #[inline]
-            pub fn extract_def_id(&self, tcx: TyCtxt) -> Option<DefId> {
+            pub fn extract_def_id<F>(&self,
+                                     def_path_hash_to_def_id: F)
+                                     -> Option<DefId>
+                where F: FnOnce(DefPathHash) -> Option<DefId>
+            {
                 if self.kind.can_reconstruct_query_key() {
-                    let def_path_hash = DefPathHash(self.hash);
-                    if let Some(ref def_path_map) = tcx.def_path_hash_to_def_id.as_ref() {
-                        def_path_map.get(&def_path_hash).cloned()
-                    } else {
-                       None
-                    }
+                    def_path_hash_to_def_id(DefPathHash(self.hash))
                 } else {
                     None
                 }
@@ -355,7 +354,7 @@ impl fmt::Debug for DepNode {
 
         ::ty::tls::with_opt(|opt_tcx| {
             if let Some(tcx) = opt_tcx {
-                if let Some(def_id) = self.extract_def_id(tcx) {
+                if let Some(def_id) = tcx.extract_def_id(self) {
                     write!(f, "{}", tcx.item_path_str(def_id))?;
                 } else if let Some(ref s) = tcx.dep_graph.dep_node_debug_str(*self) {
                     write!(f, "{}", s)?;
@@ -395,6 +394,17 @@ impl DepKind {
             DepKind::Krate => true,
             _ => false,
         }
+    }
+}
+
+impl<'a, 'gcx, 'lcx> TyCtxt<'a, 'gcx, 'lcx> {
+    #[inline]
+    pub fn extract_def_id(self, dep_node: &DepNode) -> Option<DefId> {
+        dep_node.extract_def_id(|def_path_hash| {
+            self.def_path_hash_to_def_id
+                .as_ref()
+                .and_then(|map| map.get(&def_path_hash).cloned())
+        })
     }
 }
 

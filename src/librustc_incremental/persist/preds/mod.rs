@@ -52,7 +52,7 @@ impl<'q> Predecessors<'q> {
                     // We do *not* create dep-nodes for the current crate's
                     // metadata anymore, just for metadata that we import/read
                     // from other crates.
-                    debug_assert!(!node.extract_def_id(tcx).unwrap().is_local());
+                    debug_assert!(!tcx.extract_def_id(node).unwrap().is_local());
                     false
                 }
                 // if -Z query-dep-graph is passed, save more extended data

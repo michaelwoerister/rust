@@ -116,7 +116,8 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
             .iter()
             .map(|&def_path_hash| {
                 let dep_node = def_path_hash.to_dep_node(DepKind::HirBody);
-                (def_path_hash, self.dep_graph.fingerprint_of(&dep_node))
+                (def_path_hash,
+                 self.dep_graph.fingerprint_of(&dep_node, |_| panic!("unreachable")))
             })
             .collect();
 

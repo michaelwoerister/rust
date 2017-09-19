@@ -41,13 +41,22 @@ impl<'a, 'tcx> HashContext<'a, 'tcx> {
     }
 
     pub fn hash(&mut self, dep_node: &DepNode) -> Option<Fingerprint> {
+        let tcx = self.tcx;
+
+        let def_path_hash_to_def_id = |def_path_hash| -> Option<DefId> {
+            tcx.def_path_hash_to_def_id
+               .as_ref()
+               .and_then(|map| map.get(&def_path_hash).cloned())
+        };
+
         match dep_node.kind {
             // HIR nodes (which always come from our crate) are an input:
             DepKind::Krate |
             DepKind::InScopeTraits |
             DepKind::Hir |
             DepKind::HirBody => {
-                Some(self.tcx.dep_graph.fingerprint_of(dep_node).unwrap())
+                Some(self.tcx.dep_graph.fingerprint_of(dep_node,
+                                                       def_path_hash_to_def_id))
             }
 
             // MetaData from other crates is an *input* to us.
@@ -55,7 +64,7 @@ impl<'a, 'tcx> HashContext<'a, 'tcx> {
             // don't hash them, but we do compute a hash for them and
             // save it for others to use.
             DepKind::MetaData => {
-                let def_id = dep_node.extract_def_id(self.tcx).unwrap();
+                let def_id = dep_node.extract_def_id(def_path_hash_to_def_id).unwrap();
                 assert!(!def_id.is_local());
 
                 Some(self.metadata_hash(def_id,

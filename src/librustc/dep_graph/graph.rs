@@ -16,6 +16,8 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 use util::common::{ProfileQueriesMsg, profq_msg};
 
+use hir::map::DefPathHash;
+use hir::def_id::DefId;
 use ich::Fingerprint;
 
 use super::dep_node::{DepNode, DepKind, WorkProductId};
@@ -213,8 +215,32 @@ impl DepGraph {
         }
     }
 
-    pub fn fingerprint_of(&self, dep_node: &DepNode) -> Option<Fingerprint> {
-        self.fingerprints.borrow().get(dep_node).cloned()
+    // Retrieves the current result fingerprint associated with the given
+    // DepNode. This method will panic if there is no such DepNode in the
+    // current graph or if the task corresponding to the DepNode has not been
+    // executed yet.
+    // The `def_path_hash_to_def_id` is guaranteed to only be used if the
+    // DepNode has DepKind::Metadata. Otherwise a `|_| panic!()` can safely
+    // be passed for it.
+    pub fn fingerprint_of<F>(&self,
+                             dep_node: &DepNode,
+                             def_path_hash_to_def_id: F)
+                             -> Fingerprint
+        where F: FnOnce(DefPathHash) -> Option<DefId>
+    {
+        match dep_node.kind {
+            DepKind::MetaData => {
+                // For MetaData nodes, we currently have special handling, since
+                // their hashes are already compute during crate metadata export
+                // and stored in an extra file in the incr.comp. session dir.
+                let _def_id = dep_node.extract_def_id(def_path_hash_to_def_id);
+
+                // TODO: Load the Fingerprint, similar to how it's done in
+                // rustc_incremental::persist::hash::HashContext::metadata_hash()
+                panic!("not yet implemented")
+            }
+            _ => self.fingerprints.borrow()[dep_node]
+        }
     }
 
     /// Indicates that a previous work product exists for `v`. This is
