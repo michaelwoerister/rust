@@ -756,7 +756,7 @@ impl CurrentDepGraph {
         self.task_stack.push(OpenTask::Regular {
             node: key,
             reads: Vec::new(),
-            read_set: FxHashSet(),
+            read_set: DepNodeIndexSet { set: FxHashSet() },
         });
     }
 
@@ -778,7 +778,7 @@ impl CurrentDepGraph {
     fn push_anon_task(&mut self) {
         self.task_stack.push(OpenTask::Anon {
             reads: Vec::new(),
-            read_set: FxHashSet(),
+            read_set: DepNodeIndexSet { set: FxHashSet() },
         });
     }
 
@@ -895,14 +895,29 @@ enum OpenTask {
     Regular {
         node: DepNode,
         reads: Vec<DepNodeIndex>,
-        read_set: FxHashSet<DepNodeIndex>,
+        read_set: DepNodeIndexSet,
     },
     Anon {
         reads: Vec<DepNodeIndex>,
-        read_set: FxHashSet<DepNodeIndex>,
+        read_set: DepNodeIndexSet,
     },
     Ignore,
     EvalAlways {
         node: DepNode,
     },
+}
+
+
+// Many kinds of nodes often only have between 0 and 3 edges, so we provide a
+// specialized set implementation that does not allocate for those some counts.
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct DepNodeIndexSet {
+    set: FxHashSet<DepNodeIndex>,
+}
+
+impl DepNodeIndexSet {
+    #[inline(never)]
+    fn insert(&mut self, x: DepNodeIndex) -> bool {
+        self.set.insert(x)
+    }
 }
