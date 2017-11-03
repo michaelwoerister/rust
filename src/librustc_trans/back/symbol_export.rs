@@ -124,6 +124,11 @@ pub fn provide_local(providers: &mut Providers) {
                               None,
                               SymbolExportLevel::Rust));
         }
+
+        local_crate.sort_unstable_by(|&(ref name1, ..), &(ref name2, ..)| {
+            name1.cmp(name2)
+        });
+
         Arc::new(local_crate)
     };
 }

@@ -60,12 +60,18 @@ pub fn write_file_header<W: io::Write>(stream: &mut W) -> io::Result<()> {
 ///   incompatible version of the compiler.
 /// - Returns `Err(..)` if some kind of IO error occurred while reading the
 ///   file.
-pub fn read_file(sess: &Session, path: &Path) -> io::Result<Option<Vec<u8>>> {
+pub fn read_file(sess: &Session, path: &Path) -> io::Result<Option<(Vec<u8>, usize)>> {
     if !path.exists() {
         return Ok(None);
     }
 
     let mut file = File::open(path)?;
+    let file_size = file.metadata()?.len() as usize;
+
+    let mut data = Vec::with_capacity(file_size);
+    file.read_to_end(&mut data)?;
+
+    let mut file = io::Cursor::new(data);
 
     // Check FILE_MAGIC
     {
@@ -107,10 +113,9 @@ pub fn read_file(sess: &Session, path: &Path) -> io::Result<Option<Vec<u8>>> {
         }
     }
 
-    let mut data = vec![];
-    file.read_to_end(&mut data)?;
+    let post_header_start_pos = file.position() as usize;
 
-    Ok(Some(data))
+    Ok(Some((file.into_inner(), post_header_start_pos)))
 }
 
 fn report_format_mismatch(sess: &Session, file: &Path, message: &str) {

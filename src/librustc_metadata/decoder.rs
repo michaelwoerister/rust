@@ -222,6 +222,7 @@ impl<'a, 'tcx: 'a> TyDecoder<'a, 'tcx> for DecodeContext<'a, 'tcx> {
             cnum: self.cdata().cnum,
             pos: shorthand,
         };
+        debug_assert!(key.cnum != LOCAL_CRATE);
 
         if let Some(&ty) = tcx.rcache.borrow().get(&key) {
             return Ok(ty);
@@ -273,12 +274,7 @@ impl<'a, 'tcx, T> SpecializedDecoder<LazySeq<T>> for DecodeContext<'a, 'tcx> {
 
 impl<'a, 'tcx> SpecializedDecoder<CrateNum> for DecodeContext<'a, 'tcx> {
     fn specialized_decode(&mut self) -> Result<CrateNum, Self::Error> {
-        let cnum = CrateNum::from_u32(u32::decode(self)?);
-        if cnum == LOCAL_CRATE {
-            Ok(self.cdata().cnum)
-        } else {
-            Ok(self.cdata().cnum_map.borrow()[cnum])
-        }
+        ty_codec::decode_cnum(self)
     }
 }
 

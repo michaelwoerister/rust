@@ -25,8 +25,8 @@ use std::marker::PhantomData;
 use std::mem;
 use syntax_pos::Span;
 
-pub(super) struct QueryMap<D: QueryDescription> {
-    phantom: PhantomData<D>,
+pub(super) struct QueryMap<'tcx, D: QueryDescription<'tcx> + 'tcx> {
+    phantom: PhantomData<&'tcx D>,
     pub(super) map: FxHashMap<D::Key, QueryValue<D::Value>>,
 }
 
@@ -46,8 +46,8 @@ impl<T> QueryValue<T> {
     }
 }
 
-impl<M: QueryDescription> QueryMap<M> {
-    pub(super) fn new() -> QueryMap<M> {
+impl<'tcx, M: QueryDescription<'tcx>> QueryMap<'tcx, M> {
+    pub(super) fn new() -> QueryMap<'tcx, M> {
         QueryMap {
             phantom: PhantomData,
             map: FxHashMap(),
@@ -327,6 +327,7 @@ macro_rules! define_maps {
                         return Self::load_from_disk_and_cache_in_memory(tcx,
                                                                         key,
                                                                         span,
+                                                                        &dep_node,
                                                                         dep_node_index)
                     }
                 }
@@ -372,23 +373,55 @@ macro_rules! define_maps {
             fn load_from_disk_and_cache_in_memory(tcx: TyCtxt<'a, $tcx, 'lcx>,
                                                   key: $K,
                                                   span: Span,
+                                                  dep_node: &DepNode,
                                                   dep_node_index: DepNodeIndex)
                                                   -> Result<$V, CycleError<'a, $tcx>>
             {
                 debug_assert!(tcx.dep_graph.is_green(dep_node_index));
 
                 // We don't do any caching yet, so recompute.
-                // The diagnostics for this query have already been promoted to
-                // the current session during try_mark_green(), so we can ignore
-                // them here.
-                let (result, _) = tcx.cycle_check(span, Query::$name(key), || {
-                    tcx.sess.diagnostic().track_diagnostics(|| {
-                        // The dep-graph for this computation is already in place
-                        tcx.dep_graph.with_ignore(|| {
-                            Self::compute_result(tcx, key)
+
+                // let (result, _) = tcx.cycle_check(span, Query::$name(key), || {
+                //     tcx.sess.diagnostic().track_diagnostics(|| {
+                //         // The dep-graph for this computation is already in place
+                //         tcx.dep_graph.with_ignore(|| {
+                //             Self::compute_result(tcx, key)
+                //         })
+                //     })
+                // })?;
+
+                let result = if Self::ON_DISK_CACHE {
+                    let prev_dep_node_index =
+                        tcx.dep_graph.current_to_prev_dep_node_index(dep_node_index);
+
+                    Self::load_from_cache(tcx.global_tcx(), prev_dep_node_index)
+                } else {
+                    let (result, _) = tcx.cycle_check(span, Query::$name(key), || {
+                        // The diagnostics for this query have already been promoted to
+                        // the current session during try_mark_green(), so we can ignore
+                        // them here.
+                        tcx.sess.diagnostic().track_diagnostics(|| {
+                            // The dep-graph for this computation is already in place
+                            tcx.dep_graph.with_ignore(|| {
+                                Self::compute_result(tcx, key)
+                            })
                         })
-                    })
-                })?;
+                    })?;
+                    result
+                };
+
+                if cfg!(debug_assertions) && false {
+                    use ich::Fingerprint;
+                    use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
+                    let mut hasher = StableHasher::new();
+                    let mut hcx = tcx.create_stable_hashing_context();
+
+                    result.hash_stable(&mut hcx, &mut hasher);
+
+                    let new_fingerprint: Fingerprint = hasher.finish();
+
+                    assert_eq!(tcx.dep_graph.fingerprint_of(dep_node), new_fingerprint);
+                }
 
                 if tcx.sess.opts.debugging_opts.query_dep_graph {
                     tcx.dep_graph.mark_loaded_from_cache(dep_node_index, true);
@@ -519,7 +552,7 @@ macro_rules! define_map_struct {
         pub struct Maps<$tcx> {
             providers: IndexVec<CrateNum, Providers<$tcx>>,
             query_stack: RefCell<Vec<(Span, Query<$tcx>)>>,
-            $($(#[$attr])*  $name: RefCell<QueryMap<queries::$name<$tcx>>>,)*
+            $($(#[$attr])*  $name: RefCell<QueryMap<$tcx, queries::$name<$tcx>>>,)*
         }
     };
 }

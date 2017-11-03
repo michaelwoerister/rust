@@ -499,3 +499,4 @@ fn vtable_methods_node<'tcx>(trait_ref: ty::PolyTraitRef<'tcx>) -> DepConstructo
 fn normalize_ty_node<'tcx>(_: Ty<'tcx>) -> DepConstructor<'tcx> {
     DepConstructor::NormalizeTy
 }
+

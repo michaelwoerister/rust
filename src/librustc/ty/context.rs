@@ -42,6 +42,7 @@ use ty::{PolyFnSig, InferTy, ParamTy, ProjectionTy, ExistentialPredicate, Predic
 use ty::RegionKind;
 use ty::{TyVar, TyVid, IntVar, IntVid, FloatVar, FloatVid};
 use ty::TypeVariants::*;
+use ty::codec as ty_codec;
 use ty::layout::{Layout, TargetDataLayout};
 use ty::maps;
 use ty::steal::Steal;
@@ -313,6 +314,8 @@ impl<'a, V> LocalTableInContextMut<'a, V> {
         self.data.remove(&id.local_id)
     }
 }
+
+impl<'tcx> ::serialize::UseSpecializedDecodable for &'tcx TypeckTables<'tcx> {}
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct TypeckTables<'tcx> {
@@ -1306,16 +1309,38 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         for &def_index in self.trait_map.keys() {
             self.in_scope_traits_map(def_index);
         }
+
+        for &key in self.gcx.export_map.keys() {
+            self.module_exports(key);
+        }
+
+        for &key in self.gcx.named_region_map.defs.keys() {
+            self.named_region_map(key);
+        }
+
+        for &key in self.gcx.named_region_map.late_bound.keys() {
+            self.is_late_bound_map(key);
+        }
+
+        for &key in self.gcx.named_region_map.object_lifetime_defaults.keys() {
+            debug!("input object_lifetime_defaults_map: {:?}", self.def_path_debug_str(DefId::local(key)));
+            self.object_lifetime_defaults_map(key);
+        }
+
+        self.crate_name(LOCAL_CRATE);
+
+        for cnum in self.cstore.crates_untracked() {
+            self.crate_name(cnum);
+        }
     }
 
     pub fn serialize_query_result_cache<E>(self,
                                            encoder: &mut E)
                                            -> Result<(), E::Error>
-        where E: ::rustc_serialize::Encoder
+        where E: ty_codec::TyEncoder
     {
-        self.on_disk_query_result_cache.serialize(encoder)
+        self.on_disk_query_result_cache.serialize(self, encoder)
     }
-
 }
 
 impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {

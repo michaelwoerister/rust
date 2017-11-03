@@ -62,6 +62,8 @@ impl<'tcx> HasLocalDecls<'tcx> for Mir<'tcx> {
     }
 }
 
+impl<'tcx> serialize::UseSpecializedDecodable for &'tcx Mir<'tcx> {}
+
 /// Lowered representation of a single function.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct Mir<'tcx> {

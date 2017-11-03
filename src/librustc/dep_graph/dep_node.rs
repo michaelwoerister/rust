@@ -537,7 +537,7 @@ define_dep_nodes!( <'tcx>
     // The set of impls for a given trait.
     [] TraitImpls(DefId),
 
-    [] AllLocalTraitImpls,
+    [input] AllLocalTraitImpls,
 
     // Trait selection cache is a little funny. Given a trait
     // reference like `Foo: SomeTrait<Bar>`, there could be
@@ -588,7 +588,7 @@ define_dep_nodes!( <'tcx>
     [eval_always] LintLevels,
     [] Specializes { impl1: DefId, impl2: DefId },
     [input] InScopeTraits(DefIndex),
-    [] ModuleExports(DefId),
+    [input] ModuleExports(DefId),
     [] IsSanitizerRuntime(CrateNum),
     [] IsProfilerRuntime(CrateNum),
     [] GetPanicStrategy(CrateNum),
@@ -598,9 +598,9 @@ define_dep_nodes!( <'tcx>
     [] NativeLibraries(CrateNum),
     [] PluginRegistrarFn(CrateNum),
     [] DeriveRegistrarFn(CrateNum),
-    [] CrateDisambiguator(CrateNum),
-    [] CrateHash(CrateNum),
-    [] OriginalCrateName(CrateNum),
+    [input] CrateDisambiguator(CrateNum),
+    [input] CrateHash(CrateNum),
+    [input] OriginalCrateName(CrateNum),
 
     [] ImplementationsOfTrait { krate: CrateNum, trait_id: DefId },
     [] AllTraitImplementations(CrateNum),
@@ -610,23 +610,23 @@ define_dep_nodes!( <'tcx>
     [] NativeLibraryKind(DefId),
     [] LinkArgs,
 
-    [] NamedRegion(DefIndex),
-    [] IsLateBound(DefIndex),
-    [] ObjectLifetimeDefaults(DefIndex),
+    [input] NamedRegion(DefIndex),
+    [input] IsLateBound(DefIndex),
+    [input] ObjectLifetimeDefaults(DefIndex),
 
     [] Visibility(DefId),
     [] DepKind(CrateNum),
-    [] CrateName(CrateNum),
+    [input] CrateName(CrateNum),
     [] ItemChildren(DefId),
     [] ExternModStmtCnum(DefId),
-    [] GetLangItems,
+    [input] GetLangItems,
     [] DefinedLangItems(CrateNum),
     [] MissingLangItems(CrateNum),
     [] ExternConstBody(DefId),
     [] VisibleParentMap,
     [] MissingExternCrateItem(CrateNum),
     [] UsedCrateSource(CrateNum),
-    [] PostorderCnums,
+    [input] PostorderCnums,
     [] HasCloneClosures(CrateNum),
     [] HasCopyClosures(CrateNum),
 
@@ -638,11 +638,11 @@ define_dep_nodes!( <'tcx>
     // may save a bit of time.
     [anon] EraseRegionsTy { ty: Ty<'tcx> },
 
-    [] Freevars(DefId),
-    [] MaybeUnusedTraitImport(DefId),
-    [] MaybeUnusedExternCrates,
+    [input] Freevars(DefId),
+    [input] MaybeUnusedTraitImport(DefId),
+    [input] MaybeUnusedExternCrates,
     [] StabilityIndex,
-    [] AllCrateNums,
+    [input] AllCrateNums,
     [] ExportedSymbols(CrateNum),
     [eval_always] CollectAndPartitionTranslationItems,
     [] ExportName(DefId),

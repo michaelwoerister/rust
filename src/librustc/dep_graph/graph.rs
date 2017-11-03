@@ -350,6 +350,14 @@ impl DepGraph {
         self.data.as_ref().unwrap().previous.fingerprint_of(dep_node)
     }
 
+    pub fn current_to_prev_dep_node_index(&self,
+                                          dep_node_index: DepNodeIndex)
+                                          -> SerializedDepNodeIndex {
+        let data = self.data.as_ref().unwrap();
+        let dep_node = data.current.borrow().nodes[dep_node_index];
+        data.previous.node_to_index(&dep_node)
+    }
+
     /// Indicates that a previous work product exists for `v`. This is
     /// invoked during initial start-up based on what nodes are clean
     /// (and what files exist in the incr. directory).
@@ -521,15 +529,14 @@ impl DepGraph {
                     return None
                 }
                 None => {
-                    if dep_dep_node.kind.is_input() {
-                        // This input does not exist anymore.
-                        debug_assert!(dep_dep_node.extract_def_id(tcx).is_none(),
-                                      "Encountered input {:?} without color",
-                                      dep_dep_node);
-                        debug!("try_mark_green({:?}) - END - dependency {:?} \
-                                was deleted input", dep_node, dep_dep_node);
-                        return None;
-                    }
+                    // if dep_dep_node.kind.is_input() {
+                    //     // // This input does not exist anymore.
+                    //     // debug_assert!(dep_dep_node.extract_def_id(tcx).is_none(),
+                    //     //               "Encountered input {:?} (def_id={:?}) without color",
+                    //     //               dep_dep_node,
+                    //     //               dep_dep_node.extract_def_id(tcx));
+                    //     // return None;
+                    // }
 
                     debug!("try_mark_green({:?}) --- state of dependency {:?} \
                             is unknown, trying to mark it green", dep_node,
@@ -537,11 +544,24 @@ impl DepGraph {
 
                     // We don't know the state of this dependency. Let's try to
                     // mark it green.
-                    if let Some(node_index) = self.try_mark_green(tcx, dep_dep_node) {
-                        debug!("try_mark_green({:?}) --- managed to MARK \
-                                dependency {:?} as green", dep_node, dep_dep_node);
-                        current_deps.push(node_index);
+                    if !dep_dep_node.kind.is_input() {
+                        if let Some(node_index) = self.try_mark_green(tcx, dep_dep_node) {
+                            debug!("try_mark_green({:?}) --- managed to MARK \
+                                    dependency {:?} as green", dep_node, dep_dep_node);
+                            current_deps.push(node_index);
+                            continue;
+                        }
                     } else {
+                        debug_assert!(match dep_dep_node.kind {
+                            DepKind::Hir |
+                            DepKind::HirBody |
+                            DepKind::Krate |
+                            DepKind::CrateMetadata => false,
+                            _ => true,
+                        });
+                    }
+
+                    {
                         // We failed to mark it green, so we try to force the query.
                         debug!("try_mark_green({:?}) --- trying to force \
                                 dependency {:?}", dep_node, dep_dep_node);
@@ -788,6 +808,11 @@ impl CurrentDepGraph {
             reads
         } = popped_node {
             debug_assert_eq!(node, key);
+
+            // if !key.kind.is_input() && reads.len() == 0 {
+            //     println!("zero-reads {:?}", key);
+            // }
+
             self.alloc_node(node, reads)
         } else {
             bug!("pop_task() - Expected regular task to be popped")
