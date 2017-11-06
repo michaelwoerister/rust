@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use leb128::{read_signed_leb128, read_unsigned_leb128, write_signed_leb128, write_unsigned_leb128};
+use leb128::{read_signed_leb128, write_signed_leb128};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use serialize;
@@ -31,9 +31,9 @@ impl<'a> Encoder<'a> {
 
 
 macro_rules! write_uleb128 {
-    ($enc:expr, $value:expr) => {{
+    ($enc:expr, $value:expr, $fn:ident) => {{
         let pos = $enc.cursor.position() as usize;
-        let bytes_written = write_unsigned_leb128($enc.cursor.get_mut(), pos, $value as u128);
+        let bytes_written = ::leb128::$fn($enc.cursor.get_mut(), pos, $value);
         $enc.cursor.set_position((pos + bytes_written) as u64);
         Ok(())
     }}
@@ -56,23 +56,23 @@ impl<'a> serialize::Encoder for Encoder<'a> {
     }
 
     fn emit_usize(&mut self, v: usize) -> EncodeResult {
-        write_uleb128!(self, v)
+        write_uleb128!(self, v, write_usize_leb128)
     }
 
     fn emit_u128(&mut self, v: u128) -> EncodeResult {
-        write_uleb128!(self, v)
+        write_uleb128!(self, v, write_u128_leb128)
     }
 
     fn emit_u64(&mut self, v: u64) -> EncodeResult {
-        write_uleb128!(self, v)
+        write_uleb128!(self, v, write_u64_leb128)
     }
 
     fn emit_u32(&mut self, v: u32) -> EncodeResult {
-        write_uleb128!(self, v)
+        write_uleb128!(self, v, write_u32_leb128)
     }
 
     fn emit_u16(&mut self, v: u16) -> EncodeResult {
-        write_uleb128!(self, v)
+        write_uleb128!(self, v, write_u16_leb128)
     }
 
     fn emit_u8(&mut self, v: u8) -> EncodeResult {
@@ -172,10 +172,10 @@ impl<'a> Decoder<'a> {
 }
 
 macro_rules! read_uleb128 {
-    ($dec:expr, $t:ty) => ({
-        let (value, bytes_read) = read_unsigned_leb128($dec.data, $dec.position);
+    ($dec:expr, $fn:ident) => ({
+        let (value, bytes_read) = ::leb128::$fn($dec.data, $dec.position);
         $dec.position += bytes_read;
-        Ok(value as $t)
+        Ok(value)
     })
 }
 
@@ -198,22 +198,22 @@ impl<'a> serialize::Decoder for Decoder<'a> {
 
     #[inline]
     fn read_u128(&mut self) -> Result<u128, Self::Error> {
-        read_uleb128!(self, u128)
+        read_uleb128!(self, read_u128_leb128)
     }
 
     #[inline]
     fn read_u64(&mut self) -> Result<u64, Self::Error> {
-        read_uleb128!(self, u64)
+        read_uleb128!(self, read_u64_leb128)
     }
 
     #[inline]
     fn read_u32(&mut self) -> Result<u32, Self::Error> {
-        read_uleb128!(self, u32)
+        read_uleb128!(self, read_u32_leb128)
     }
 
     #[inline]
     fn read_u16(&mut self) -> Result<u16, Self::Error> {
-        read_uleb128!(self, u16)
+        read_uleb128!(self, read_u16_leb128)
     }
 
     #[inline]
@@ -225,7 +225,7 @@ impl<'a> serialize::Decoder for Decoder<'a> {
 
     #[inline]
     fn read_usize(&mut self) -> Result<usize, Self::Error> {
-        read_uleb128!(self, usize)
+        read_uleb128!(self, read_usize_leb128)
     }
 
     #[inline]
