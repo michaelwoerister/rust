@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use syntax::ast;
 use syntax::attr;
 use syntax::codemap::CodeMap;
-use syntax::ext::hygiene::SyntaxContext;
+// use syntax::ext::hygiene::SyntaxContext;
 use syntax::symbol::Symbol;
 use syntax_pos::Span;
 
@@ -415,12 +415,12 @@ impl<'gcx> HashStable<StableHashingContext<'gcx>> for Span {
             }
         }
 
-        if span.ctxt == SyntaxContext::empty() {
-            0u8.hash_stable(hcx, hasher);
-        } else {
-            1u8.hash_stable(hcx, hasher);
-            self.source_callsite().hash_stable(hcx, hasher);
-        }
+        // if span.ctxt == SyntaxContext::empty() {
+        //     0u8.hash_stable(hcx, hasher);
+        // } else {
+        //     1u8.hash_stable(hcx, hasher);
+        //     self.source_callsite().hash_stable(hcx, hasher);
+        // }
     }
 }
 

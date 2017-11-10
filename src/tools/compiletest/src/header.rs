@@ -259,9 +259,9 @@ impl TestProps {
         props
     }
 
-    pub fn from_file(testfile: &Path, config: &Config) -> Self {
+    pub fn from_file(testfile: &Path, cfg: Option<&str>, config: &Config) -> Self {
         let mut props = TestProps::new();
-        props.load_from(testfile, None, config);
+        props.load_from(testfile, cfg, config);
         props
     }
 

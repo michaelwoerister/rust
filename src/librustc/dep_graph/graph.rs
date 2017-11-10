@@ -224,10 +224,12 @@ impl DepGraph {
 
             let dep_node_index = pop(&data.current, key);
 
+            // println!("BEGIN with_task({:?})", key);
             let mut stable_hasher = StableHasher::new();
             result.hash_stable(&mut hcx, &mut stable_hasher);
 
             let current_fingerprint = stable_hasher.finish();
+            // println!("END with_task({:?})", key);
 
             // Store the current fingerprint
             {
@@ -331,8 +333,27 @@ impl DepGraph {
         self.fingerprints.borrow()[dep_node]
     }
 
+    pub fn fingerprint_of_index(&self, dep_node_index: DepNodeIndex) -> Fingerprint {
+        let dep_node = self.data.as_ref().unwrap().current.borrow().nodes[dep_node_index];
+        self.fingerprints.borrow()[&dep_node]
+    }
+
     pub fn prev_fingerprint_of(&self, dep_node: &DepNode) -> Option<Fingerprint> {
         self.data.as_ref().unwrap().previous.fingerprint_of(dep_node)
+    }
+
+    pub fn current_to_prev_dep_node_index(&self,
+                                          dep_node_index: DepNodeIndex)
+                                          -> SerializedDepNodeIndex {
+        let data = self.data.as_ref().unwrap();
+        let dep_node = data.current.borrow().nodes[dep_node_index];
+        data.previous.node_to_index(&dep_node)
+    }
+
+    pub fn prev_dep_node_index_to_dep_node(&self,
+                                           dep_node_index: SerializedDepNodeIndex)
+                                          -> DepNode {
+        self.data.as_ref().unwrap().previous.index_to_node(dep_node_index)
     }
 
     /// Indicates that a previous work product exists for `v`. This is
@@ -524,9 +545,17 @@ impl DepGraph {
                             DepKind::Hir |
                             DepKind::HirBody |
                             DepKind::CrateMetadata => {
-                                assert!(dep_dep_node.extract_def_id(tcx).is_none(),
-                                    "Input {:?} should have been pre-allocated but wasn't.",
-                                    dep_dep_node);
+                                if dep_node.extract_def_id(tcx).is_none() {
+                                    // If the node does not exist anymore, we
+                                    // just fail to mark green.
+                                    return None
+                                } else {
+                                    // If the node does exist, it should have
+                                    // been pre-allocated.
+                                    bug!("DepNode {:?} should have been \
+                                          pre-allocated but wasn't.",
+                                          dep_dep_node)
+                                }
                             }
                             _ => {
                                 // For other kinds of inputs it's OK to be

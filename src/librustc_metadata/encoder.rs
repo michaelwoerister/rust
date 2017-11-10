@@ -100,6 +100,13 @@ impl<'a, 'tcx> Encoder for EncodeContext<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx, T: Encodable> SpecializedEncoder<mir::ClearOnDecode<T>> for EncodeContext<'a, 'tcx> {
+    fn specialized_encode(&mut self, _: &mir::ClearOnDecode<T>) -> Result<(), Self::Error> {
+        ().encode(self)
+    }
+}
+
+
 impl<'a, 'tcx, T> SpecializedEncoder<Lazy<T>> for EncodeContext<'a, 'tcx> {
     fn specialized_encode(&mut self, lazy: &Lazy<T>) -> Result<(), Self::Error> {
         self.emit_lazy_distance(lazy.position, Lazy::<T>::min_size())

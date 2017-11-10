@@ -57,7 +57,7 @@ enum AnnotationKind {
 }
 
 /// An entry in the `depr_map`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DeprecationEntry {
     /// The metadata of the attribute associated with this entry.
     pub attr: Deprecation,

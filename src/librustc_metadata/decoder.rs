@@ -207,6 +207,11 @@ impl<'a, 'tcx: 'a> TyDecoder<'a, 'tcx> for DecodeContext<'a, 'tcx> {
         self.tcx.expect("missing TyCtxt in DecodeContext")
     }
 
+    fn position(&self) -> usize {
+        self.opaque.position()
+    }
+
+
     fn peek_byte(&self) -> u8 {
         self.opaque.data[self.opaque.position()]
     }
@@ -223,6 +228,7 @@ impl<'a, 'tcx: 'a> TyDecoder<'a, 'tcx> for DecodeContext<'a, 'tcx> {
             cnum: self.cdata().cnum,
             pos: shorthand,
         };
+        debug_assert!(key.cnum != LOCAL_CRATE);
 
         if let Some(&ty) = tcx.rcache.borrow().get(&key) {
             return Ok(ty);
@@ -254,6 +260,15 @@ impl<'a, 'tcx: 'a> TyDecoder<'a, 'tcx> for DecodeContext<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx, T: Decodable> SpecializedDecoder<::rustc::mir::ClearOnDecode<T>> for DecodeContext<'a, 'tcx> {
+    fn specialized_decode(&mut self) -> Result<::rustc::mir::ClearOnDecode<T>, Self::Error> {
+        let _: () = Decodable::decode(self)?;
+        Ok(::rustc::mir::ClearOnDecode::Clear)
+    }
+}
+
+
+
 impl<'a, 'tcx, T> SpecializedDecoder<Lazy<T>> for DecodeContext<'a, 'tcx> {
     fn specialized_decode(&mut self) -> Result<Lazy<T>, Self::Error> {
         Ok(Lazy::with_position(self.read_lazy_distance(Lazy::<T>::min_size())?))
@@ -274,12 +289,7 @@ impl<'a, 'tcx, T> SpecializedDecoder<LazySeq<T>> for DecodeContext<'a, 'tcx> {
 
 impl<'a, 'tcx> SpecializedDecoder<CrateNum> for DecodeContext<'a, 'tcx> {
     fn specialized_decode(&mut self) -> Result<CrateNum, Self::Error> {
-        let cnum = CrateNum::from_u32(u32::decode(self)?);
-        if cnum == LOCAL_CRATE {
-            Ok(self.cdata().cnum)
-        } else {
-            Ok(self.cdata().cnum_map.borrow()[cnum])
-        }
+        ty_codec::decode_cnum(self)
     }
 }
 

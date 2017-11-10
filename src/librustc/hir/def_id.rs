@@ -11,7 +11,7 @@
 use ty;
 
 use rustc_data_structures::indexed_vec::Idx;
-use serialize::{self, Encoder, Decoder};
+use serialize::{self, Encoder, Decoder, Encodable, Decodable};
 
 use std::fmt;
 use std::u32;
@@ -32,6 +32,9 @@ newtype_index!(CrateNum
 
         /// A CrateNum value that indicates that something is wrong.
         const INVALID_CRATE = u32::MAX - 1,
+
+
+        const INCR_CACHE_CRATE = u32::MAX - 2,
     });
 
 impl CrateNum {
@@ -146,6 +149,15 @@ impl DefIndex {
     }
 }
 
+impl serialize::UseSpecializedDecodable for DefIndex {
+    fn default_decode<D: Decoder>(d: &mut D) -> Result<DefIndex, D::Error> {
+        d.read_struct("DefIndex", 1, |d| {
+            let index: u32 = d.read_struct_field("", 0, |d| Decodable::decode(d))?;
+            Ok(DefIndex(index))
+        })
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub enum DefIndexAddressSpace {
     Low = 0,
@@ -166,7 +178,7 @@ impl DefIndexAddressSpace {
 
 /// A DefId identifies a particular *definition*, by combining a crate
 /// index and a def index.
-#[derive(Clone, Eq, Ord, PartialOrd, PartialEq, RustcEncodable, RustcDecodable, Hash, Copy)]
+#[derive(Clone, Eq, Ord, PartialOrd, PartialEq, Hash, Copy)]
 pub struct DefId {
     pub krate: CrateNum,
     pub index: DefIndex,
@@ -188,7 +200,6 @@ impl fmt::Debug for DefId {
     }
 }
 
-
 impl DefId {
     /// Make a local `DefId` with the given index.
     pub fn local(index: DefIndex) -> DefId {
@@ -197,5 +208,25 @@ impl DefId {
 
     pub fn is_local(&self) -> bool {
         self.krate == LOCAL_CRATE
+    }
+}
+
+
+impl serialize::UseSpecializedEncodable for DefId {
+    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        self.krate.encode(s)?;
+        self.index.encode(s)
+    }
+}
+
+impl serialize::UseSpecializedDecodable for DefId {
+    fn default_decode<D: Decoder>(d: &mut D) -> Result<DefId, D::Error> {
+        let krate = CrateNum::decode(d)?;
+        let index = DefIndex::decode(d)?;
+
+        Ok(DefId {
+            krate,
+            index
+        })
     }
 }

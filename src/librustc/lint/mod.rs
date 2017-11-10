@@ -340,7 +340,7 @@ impl Level {
 }
 
 /// How a lint level was set.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LintSource {
     /// Lint is at the default level as declared
     /// in rustc or a plugin.

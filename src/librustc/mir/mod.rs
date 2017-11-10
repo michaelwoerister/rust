@@ -62,6 +62,8 @@ impl<'tcx> HasLocalDecls<'tcx> for Mir<'tcx> {
     }
 }
 
+impl<'tcx> serialize::UseSpecializedDecodable for &'tcx Mir<'tcx> {}
+
 /// Lowered representation of a single function.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct Mir<'tcx> {
@@ -275,7 +277,7 @@ impl<'tcx> Mir<'tcx> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct VisibilityScopeInfo {
     /// A NodeId with lint levels equivalent to this scope's lint levels.
     pub lint_root: ast::NodeId,
@@ -283,7 +285,7 @@ pub struct VisibilityScopeInfo {
     pub safety: Safety,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Safety {
     Safe,
     /// Unsafe because of a PushUnsafeBlock
@@ -294,22 +296,126 @@ pub enum Safety {
     ExplicitUnsafe(ast::NodeId)
 }
 
-impl_stable_hash_for!(struct Mir<'tcx> {
-    basic_blocks,
-    visibility_scopes,
-    visibility_scope_info,
-    promoted,
-    return_ty,
-    yield_ty,
-    generator_drop,
-    generator_layout,
-    local_decls,
-    arg_count,
-    upvar_decls,
-    spread_arg,
-    span,
-    cache
-});
+// impl_stable_hash_for!(struct Mir<'tcx> {
+//     basic_blocks,
+//     visibility_scopes,
+//     visibility_scope_info,
+//     promoted,
+//     return_ty,
+//     yield_ty,
+//     generator_drop,
+//     generator_layout,
+//     local_decls,
+//     arg_count,
+//     upvar_decls,
+//     spread_arg,
+//     span,
+//     cache
+// });
+
+// fn print_basic_blocks(mir: &Mir) {
+
+//     println!("BasicBlocks(len={}):", mir.basic_blocks.len());
+
+//     for bb in mir.basic_blocks.iter() {
+//         println!("  BasicBlock(is_cleanup={})", bb.is_cleanup);
+
+//         println!("    - statements(len={}):", bb.statements.len());
+//         for s in bb.statements.iter() {
+//             format!("   - {:?}", s);
+//         }
+//         println!("    - terminator:");
+//         println!("      - {:?}", bb.terminator);
+//     }
+// }
+
+impl<'gcx> ::rustc_data_structures::stable_hasher::HashStable<::ich::StableHashingContext<'gcx>>
+for Mir<'gcx> {
+    fn hash_stable<W: ::rustc_data_structures::stable_hasher::StableHasherResult>(&self,
+                                          hcx: &mut ::ich::StableHashingContext<'gcx>,
+                                          hasher: &mut ::rustc_data_structures::stable_hasher::StableHasher<W>) {
+        let Mir {
+            ref basic_blocks,
+            ref visibility_scopes,
+            ref visibility_scope_info,
+            ref promoted,
+            ref return_ty,
+            ref yield_ty,
+            ref generator_drop,
+            ref generator_layout,
+            ref local_decls,
+            ref arg_count,
+            ref upvar_decls,
+            ref spread_arg,
+            ref span,
+            ref cache,
+        } = *self;
+
+        // print_basic_blocks(self);
+
+        // println!("initial: {:?}", hasher);
+
+        basic_blocks.hash_stable(hcx, hasher);
+        // println!("_basic_blocks: {:?}", hasher);
+
+        visibility_scopes.hash_stable(hcx, hasher);
+        // println!("_visibility_scopes: {:?}", hasher);
+
+        visibility_scope_info.hash_stable(hcx, hasher);
+        // println!("_visibility_scope_info: {:?}", hasher);
+
+        promoted.hash_stable(hcx, hasher);
+        // println!("_promoted: {:?}", hasher);
+
+        return_ty.hash_stable(hcx, hasher);
+        // println!("_return_ty: {:?}", hasher);
+
+        yield_ty.hash_stable(hcx, hasher);
+        // println!("_yield_ty: {:?}", hasher);
+
+        generator_drop.hash_stable(hcx, hasher);
+        // println!("_generator_drop: {:?}", hasher);
+
+        generator_layout.hash_stable(hcx, hasher);
+        // println!("_generator_layout: {:?}", hasher);
+
+        local_decls.hash_stable(hcx, hasher);
+        // println!("_local_decls: {:?}", hasher);
+
+        arg_count.hash_stable(hcx, hasher);
+        // println!("_arg_count: {:?}", hasher);
+
+        upvar_decls.hash_stable(hcx, hasher);
+        // println!("_upvar_decls: {:?}", hasher);
+
+        spread_arg.hash_stable(hcx, hasher);
+        // println!("_spread_arg: {:?}", hasher);
+
+        span.hash_stable(hcx, hasher);
+        // println!("_span: {:?}", hasher);
+
+        cache.hash_stable(hcx, hasher);
+        // println!("_cache: {:?}", hasher);
+
+
+        // NO MISMATCH FOR THIS CONFIG
+        // // _basic_blocks.hash_stable(hcx, hasher);
+        // _visibility_scopes.hash_stable(hcx, hasher);
+        // _visibility_scope_info.hash_stable(hcx, hasher);
+        // _promoted.hash_stable(hcx, hasher);
+        // _return_ty.hash_stable(hcx, hasher);
+        // _yield_ty.hash_stable(hcx, hasher);
+        // _generator_drop.hash_stable(hcx, hasher);
+        // _generator_layout.hash_stable(hcx, hasher);
+        // // _local_decls.hash_stable(hcx, hasher);
+        // _arg_count.hash_stable(hcx, hasher);
+        // _upvar_decls.hash_stable(hcx, hasher);
+        // _spread_arg.hash_stable(hcx, hasher);
+        // // _span.hash_stable(hcx, hasher);
+        // _cache.hash_stable(hcx, hasher);
+    }
+}
+
 
 impl<'tcx> Index<BasicBlock> for Mir<'tcx> {
     type Output = BasicBlockData<'tcx>;
@@ -333,17 +439,55 @@ pub enum ClearOnDecode<T> {
     Set(T)
 }
 
-impl<T> serialize::Encodable for ClearOnDecode<T> {
-    fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        serialize::Encodable::encode(&(), s)
+// impl<T> serialize::Encodable for ClearOnDecode<T> {
+//     fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+//         serialize::Encodable::encode(&(), s)
+//     }
+// }
+
+// impl<T> serialize::Decodable for ClearOnDecode<T> {
+//     fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
+//         serialize::Decodable::decode(d).map(|()| ClearOnDecode::Clear)
+//     }
+// }
+
+impl<T: serialize::Encodable> serialize::UseSpecializedEncodable for ClearOnDecode<T> {
+    fn default_encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        use serialize::Encodable;
+
+        match *self {
+            ClearOnDecode::Clear => {
+                0u8.encode(s)
+            }
+            ClearOnDecode::Set(ref x) => {
+                1u8.encode(s)?;
+                x.encode(s)
+            }
+        }
     }
 }
 
-impl<T> serialize::Decodable for ClearOnDecode<T> {
-    fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        serialize::Decodable::decode(d).map(|()| ClearOnDecode::Clear)
+impl<T: serialize::Decodable> serialize::UseSpecializedDecodable for ClearOnDecode<T> {
+    fn default_decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
+        let discr: u8 = serialize::Decodable::decode(d)?;
+
+        match discr {
+            0 => {
+                Ok(ClearOnDecode::Clear)
+            }
+            1 => {
+                let x: T = serialize::Decodable::decode(d)?;
+                Ok(ClearOnDecode::Set(x))
+            }
+            _ => {
+                bug!("wat!")
+            }
+        }
     }
 }
+
+
+
 
 /// Grouped information about the source code origin of a MIR entity.
 /// Intended to be inspected by diagnostics and debuginfo.

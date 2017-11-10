@@ -16,7 +16,7 @@ use std::slice;
 use std::ptr;
 use std::mem;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SipHasher128 {
     k0: u64,
     k1: u64,
@@ -25,6 +25,19 @@ pub struct SipHasher128 {
     tail: u64, // unprocessed bytes le
     ntail: usize, // how many bytes in tail are valid
 }
+
+impl ::std::fmt::Debug for SipHasher128 {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "{:x}-{:x}-{:x}-{:x}---{:x}-{}",
+            self.state.v0,
+            self.state.v1,
+            self.state.v2,
+            self.state.v3,
+            self.tail & ((1 << (self.ntail * 8))-1),
+            self.length)
+    }
+}
+
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]

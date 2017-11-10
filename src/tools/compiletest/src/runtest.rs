@@ -69,7 +69,7 @@ pub fn run(config: Config, testpaths: &TestPaths) {
         print!("\n\n");
     }
     debug!("running {:?}", testpaths.file.display());
-    let base_props = TestProps::from_file(&testpaths.file, &config);
+    let base_props = TestProps::from_file(&testpaths.file, None, &config);
 
     let base_cx = TestCx { config: &config,
                            props: &base_props,
@@ -81,8 +81,7 @@ pub fn run(config: Config, testpaths: &TestPaths) {
         base_cx.run_revision()
     } else {
         for revision in &base_props.revisions {
-            let mut revision_props = base_props.clone();
-            revision_props.load_from(&testpaths.file, Some(revision), &config);
+            let revision_props = TestProps::from_file(&testpaths.file, Some(revision), &config);
             let rev_cx = TestCx {
                 config: &config,
                 props: &revision_props,
@@ -1319,6 +1318,7 @@ actual:\n\
         {
             let cmdline = self.make_cmdline(&command, lib_path);
             logv(self.config, format!("executing {}", cmdline));
+            println!("executing {}", cmdline);
             cmdline
         };
 
@@ -2003,9 +2003,9 @@ actual:\n\
         }
         fs::create_dir_all(&incremental_dir).unwrap();
 
-        if self.config.verbose {
-            print!("init_incremental_test: incremental_dir={}", incremental_dir.display());
-        }
+        // if self.config.verbose {
+            println!("init_incremental_test: incremental_dir={}", incremental_dir.display());
+        // }
     }
 
     fn run_incremental_test(&self) {
@@ -2045,9 +2045,9 @@ actual:\n\
             revision: self.revision,
         };
 
-        if self.config.verbose {
-            print!("revision={:?} revision_props={:#?}", revision, revision_props);
-        }
+        // if self.config.verbose {
+            println!("revision={:?} revision_props={:#?}", revision, revision_props);
+        // }
 
         if revision.starts_with("rpass") {
             revision_cx.run_rpass_test();

@@ -22,15 +22,44 @@ impl_stable_hash_for!(struct mir::SourceInfo { span, scope });
 impl_stable_hash_for!(enum mir::Mutability { Mut, Not });
 impl_stable_hash_for!(enum mir::BorrowKind { Shared, Unique, Mut });
 impl_stable_hash_for!(enum mir::LocalKind { Var, Temp, Arg, ReturnPointer });
-impl_stable_hash_for!(struct mir::LocalDecl<'tcx> {
-    mutability,
-    ty,
-    name,
-    source_info,
-    internal,
-    lexical_scope,
-    is_user_variable
-});
+
+// impl_stable_hash_for!(struct mir::LocalDecl<'tcx> {
+//     mutability,
+//     ty,
+//     name,
+//     source_info,
+//     internal,
+//     lexical_scope,
+//     is_user_variable
+// });
+
+impl<'gcx> HashStable<StableHashingContext<'gcx>>
+for mir::LocalDecl<'gcx> {
+    #[inline]
+    fn hash_stable<W: StableHasherResult>(&self,
+                                          hcx: &mut StableHashingContext<'gcx>,
+                                          hasher: &mut StableHasher<W>) {
+        let mir::LocalDecl {
+            mutability: ref _mutability,
+            ty: ref _ty,
+            name: ref _name,
+            source_info: ref _source_info,
+            internal: ref _internal,
+            lexical_scope: ref _lexical_scope,
+            is_user_variable: ref _is_user_variable
+        } = *self;
+
+        _mutability.hash_stable(hcx, hasher);
+        _ty.hash_stable(hcx, hasher);
+        _name.hash_stable(hcx, hasher);
+        _source_info.hash_stable(hcx, hasher);
+        _internal.hash_stable(hcx, hasher);
+        _lexical_scope.hash_stable(hcx, hasher);
+        _is_user_variable.hash_stable(hcx, hasher);
+    }
+}
+
+
 impl_stable_hash_for!(struct mir::UpvarDecl { debug_name, by_ref });
 impl_stable_hash_for!(struct mir::BasicBlockData<'tcx> { statements, terminator, is_cleanup });
 impl_stable_hash_for!(struct mir::UnsafetyViolation { source_info, description, lint_node_id });

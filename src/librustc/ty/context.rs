@@ -42,6 +42,7 @@ use ty::{PolyFnSig, InferTy, ParamTy, ProjectionTy, ExistentialPredicate, Predic
 use ty::RegionKind;
 use ty::{TyVar, TyVid, IntVar, IntVid, FloatVar, FloatVid};
 use ty::TypeVariants::*;
+use ty::codec as ty_codec;
 use ty::layout::{Layout, TargetDataLayout};
 use ty::maps;
 use ty::steal::Steal;
@@ -313,6 +314,8 @@ impl<'a, V> LocalTableInContextMut<'a, V> {
         self.data.remove(&id.local_id)
     }
 }
+
+// impl<'tcx> ::serialize::UseSpecializedDecodable for &'tcx TypeckTables<'tcx> {}
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct TypeckTables<'tcx> {
@@ -1311,11 +1314,10 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     pub fn serialize_query_result_cache<E>(self,
                                            encoder: &mut E)
                                            -> Result<(), E::Error>
-        where E: ::rustc_serialize::Encoder
+        where E: ty_codec::TyEncoder
     {
-        self.on_disk_query_result_cache.serialize(encoder)
+        self.on_disk_query_result_cache.serialize(self, encoder, self.cstore)
     }
-
 }
 
 impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {
@@ -2154,7 +2156,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         // Once red/green incremental compilation lands we should be able to
         // remove this because while the crate changes often the lint level map
         // will change rarely.
-        self.dep_graph.with_ignore(|| {
+        // self.dep_graph.with_ignore(|| {
             let sets = self.lint_levels(LOCAL_CRATE);
             loop {
                 let hir_id = self.hir.definitions().node_to_hir_id(id);
@@ -2167,7 +2169,7 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
                 }
                 id = next;
             }
-        })
+        // })
     }
 
     pub fn struct_span_lint_node<S: Into<MultiSpan>>(self,

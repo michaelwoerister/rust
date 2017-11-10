@@ -54,6 +54,13 @@ impl Clone for DefPathTable {
 
 impl DefPathTable {
 
+    pub fn new() -> DefPathTable {
+        DefPathTable {
+            index_to_key: [vec![], vec![]],
+            def_path_hashes: [vec![], vec![]],
+        }
+    }
+
     fn allocate(&mut self,
                 key: DefKey,
                 def_path_hash: DefPathHash,
