@@ -27,6 +27,7 @@ pub trait QueryConfig {
 pub(super) trait QueryDescription<'tcx>: QueryConfig {
     fn describe(tcx: TyCtxt, key: Self::Key) -> String;
 
+    #[inline]
     fn cache_on_disk(_: Self::Key) -> bool {
         false
     }
@@ -34,7 +35,7 @@ pub(super) trait QueryDescription<'tcx>: QueryConfig {
     fn load_from_disk<'a>(_: TyCtxt<'a, 'tcx, 'tcx>,
                           _: SerializedDepNodeIndex)
                           -> Self::Value {
-        bug!("QueryDescription::load_from_disk() called for unsupport query.")
+        bug!("QueryDescription::load_from_disk() called for unsupported query.")
     }
 }
 
@@ -233,6 +234,17 @@ impl<'tcx> QueryDescription<'tcx> for queries::const_is_rvalue_promotable_to_sta
     fn describe(tcx: TyCtxt, def_id: DefId) -> String {
         format!("const checking if rvalue is promotable to static `{}`",
             tcx.item_path_str(def_id))
+    }
+
+    #[inline]
+    fn cache_on_disk(_: Self::Key) -> bool {
+        true
+    }
+
+    fn load_from_disk<'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          id: SerializedDepNodeIndex)
+                          -> Self::Value {
+        tcx.on_disk_query_result_cache.load_query_result(tcx, id)
     }
 }
 
@@ -565,3 +577,41 @@ impl<'tcx> QueryDescription<'tcx> for queries::typeck_tables_of<'tcx> {
     }
 }
 
+impl<'tcx> QueryDescription<'tcx> for queries::optimized_mir<'tcx> {
+    #[inline]
+    fn cache_on_disk(def_id: Self::Key) -> bool {
+        def_id.is_local()
+    }
+
+    fn load_from_disk<'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                          id: SerializedDepNodeIndex)
+                          -> Self::Value {
+        let mir: ::mir::Mir<'tcx> = tcx.on_disk_query_result_cache
+                                       .load_query_result(tcx, id);
+        tcx.alloc_mir(mir)
+    }
+}
+
+macro_rules! impl_disk_cacheable_query(
+    ($query_name:ident, |$key:tt| $cond:expr) => {
+        impl<'tcx> QueryDescription<'tcx> for queries::$query_name<'tcx> {
+            #[inline]
+            fn cache_on_disk($key: Self::Key) -> bool {
+                $cond
+            }
+
+            fn load_from_disk<'a>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                  id: SerializedDepNodeIndex)
+                                  -> Self::Value {
+                tcx.on_disk_query_result_cache.load_query_result(tcx, id)
+            }
+        }
+    }
+);
+
+impl_disk_cacheable_query!(unsafety_check_result, |def_id| def_id.is_local());
+impl_disk_cacheable_query!(borrowck, |def_id| def_id.is_local());
+impl_disk_cacheable_query!(mir_borrowck, |def_id| def_id.is_local());
+impl_disk_cacheable_query!(mir_const_qualif, |def_id| def_id.is_local());
+impl_disk_cacheable_query!(contains_extern_indicator, |_| true);
+impl_disk_cacheable_query!(def_symbol_name, |_| true);
