@@ -20,6 +20,7 @@ use rustc::mir::*;
 use rustc::mir::visit::{LvalueContext, Visitor};
 
 use syntax::ast;
+use syntax::symbol::Symbol;
 
 use std::rc::Rc;
 
@@ -194,7 +195,7 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
                         self.visibility_scope_info[source_info.scope].lint_root;
                     self.register_violations(&[UnsafetyViolation {
                         source_info,
-                        description: "use of extern static",
+                        description: Symbol::intern("use of extern static").as_str(),
                         lint_node_id: Some(lint_root)
                     }], &[]);
                 }
@@ -210,7 +211,9 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
     {
         let source_info = self.source_info;
         self.register_violations(&[UnsafetyViolation {
-            source_info, description, lint_node_id: None
+            source_info,
+            description: Symbol::intern(description).as_str(),
+            lint_node_id: None
         }], &[]);
     }
 
@@ -385,7 +388,7 @@ pub fn check_unsafety<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) {
             struct_span_err!(
                 tcx.sess, source_info.span, E0133,
                 "{} requires unsafe function or block", description)
-                .span_label(source_info.span, description)
+                .span_label(source_info.span, &description[..])
                 .emit();
         }
     }
