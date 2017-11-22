@@ -15,6 +15,7 @@ use hir::def_id::{CrateNum, DefIndex, DefId, LocalDefId,
                   RESERVED_FOR_INCR_COMP_CACHE, LOCAL_CRATE};
 use hir::map::definitions::DefPathHash;
 use middle::cstore::CrateStore;
+use mir;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::indexed_vec::{IndexVec, Idx};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder, opaque,
@@ -40,6 +41,9 @@ const QUERY_RESULT_INDEX_TAG: u64 = 0x1234_5678_C3C3_C3C3;
 const TAG_NO_EXPANSION_INFO: u8 = 0;
 const TAG_EXPANSION_INFO_SHORTHAND: u8 = 1;
 const TAG_EXPANSION_INFO_INLINE: u8 = 2;
+
+const TAG_CLEAR_CROSS_CRATE_CLEAR: u8 = 0;
+const TAG_CLEAR_CROSS_CRATE_SET: u8 = 1;
 
 /// `OnDiskCache` provides an interface to incr. comp. data cached from the
 /// previous compilation session. This data will eventually include the results
@@ -568,9 +572,29 @@ impl<'a, 'tcx, 'x> SpecializedDecoder<hir::HirId> for CacheDecoder<'a, 'tcx, 'x>
 // NodeIds are not stable across compilation sessions, so we store them in their
 // HirId representation. This allows use to map them to the current NodeId.
 impl<'a, 'tcx, 'x> SpecializedDecoder<NodeId> for CacheDecoder<'a, 'tcx, 'x> {
+    #[inline]
     fn specialized_decode(&mut self) -> Result<NodeId, Self::Error> {
         let hir_id = hir::HirId::decode(self)?;
         Ok(self.tcx().hir.hir_to_node_id(hir_id))
+    }
+}
+
+impl<'a, 'tcx, 'x, T: Decodable> SpecializedDecoder<mir::ClearCrossCrate<T>>
+for CacheDecoder<'a, 'tcx, 'x> {
+    #[inline]
+    fn specialized_decode(&mut self) -> Result<mir::ClearCrossCrate<T>, Self::Error> {
+        let discr = u8::decode(self)?;
+
+        match discr {
+            TAG_CLEAR_CROSS_CRATE_CLEAR => Ok(mir::ClearCrossCrate::Clear),
+            TAG_CLEAR_CROSS_CRATE_SET => {
+                let val = T::decode(self)?;
+                Ok(mir::ClearCrossCrate::Set(val))
+            }
+            _ => {
+                unreachable!()
+            }
+        }
     }
 }
 
@@ -737,6 +761,27 @@ impl<'enc, 'a, 'tcx, E> SpecializedEncoder<NodeId> for CacheEncoder<'enc, 'a, 't
     fn specialized_encode(&mut self, node_id: &NodeId) -> Result<(), Self::Error> {
         let hir_id = self.tcx.hir.node_to_hir_id(*node_id);
         hir_id.encode(self)
+    }
+}
+
+impl<'enc, 'a, 'tcx, E, T> SpecializedEncoder<mir::ClearCrossCrate<T>>
+for CacheEncoder<'enc, 'a, 'tcx, E>
+    where E: 'enc + ty_codec::TyEncoder,
+          T: Encodable,
+{
+    #[inline]
+    fn specialized_encode(&mut self,
+                          val: &mir::ClearCrossCrate<T>)
+                          -> Result<(), Self::Error> {
+        match *val {
+            mir::ClearCrossCrate::Clear => {
+                TAG_CLEAR_CROSS_CRATE_CLEAR.encode(self)
+            }
+            mir::ClearCrossCrate::Set(ref val) => {
+                TAG_CLEAR_CROSS_CRATE_SET.encode(self)?;
+                val.encode(self)
+            }
+        }
     }
 }
 

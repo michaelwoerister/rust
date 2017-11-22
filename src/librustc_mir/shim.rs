@@ -195,7 +195,7 @@ fn build_drop_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         IndexVec::from_elem_n(
             VisibilityScopeData { span: span, parent_scope: None }, 1
         ),
-        ClearOnDecode::Clear,
+        ClearCrossCrate::Clear,
         IndexVec::new(),
         None,
         local_decls_for_sig(&sig, span),
@@ -342,7 +342,7 @@ impl<'a, 'tcx> CloneShimBuilder<'a, 'tcx> {
             IndexVec::from_elem_n(
                 VisibilityScopeData { span: self.span, parent_scope: None }, 1
             ),
-            ClearOnDecode::Clear,
+            ClearCrossCrate::Clear,
             IndexVec::new(),
             None,
             self.local_decls,
@@ -804,7 +804,7 @@ fn build_call_shim<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         IndexVec::from_elem_n(
             VisibilityScopeData { span: span, parent_scope: None }, 1
         ),
-        ClearOnDecode::Clear,
+        ClearCrossCrate::Clear,
         IndexVec::new(),
         None,
         local_decls,
@@ -876,7 +876,7 @@ pub fn build_adt_ctor<'a, 'gcx, 'tcx>(infcx: &infer::InferCtxt<'a, 'gcx, 'tcx>,
         IndexVec::from_elem_n(
             VisibilityScopeData { span: span, parent_scope: None }, 1
         ),
-        ClearOnDecode::Clear,
+        ClearCrossCrate::Clear,
         IndexVec::new(),
         None,
         local_decls,
