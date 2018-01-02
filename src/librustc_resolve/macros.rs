@@ -13,7 +13,6 @@ use {Module, ModuleKind, NameBinding, NameBindingKind, PathResult};
 use Namespace::{self, MacroNS};
 use build_reduced_graph::BuildReducedGraphVisitor;
 use resolve_imports::ImportResolver;
-use rustc_data_structures::indexed_vec::Idx;
 use rustc::hir::def_id::{DefId, BUILTIN_MACROS_CRATE, CRATE_DEF_INDEX, DefIndex};
 use rustc::hir::def::{Def, Export};
 use rustc::hir::map::{self, DefCollector};
@@ -188,7 +187,8 @@ impl<'a> base::Resolver for Resolver<'a> {
     fn add_builtin(&mut self, ident: ast::Ident, ext: Rc<SyntaxExtension>) {
         let def_id = DefId {
             krate: BUILTIN_MACROS_CRATE,
-            index: DefIndex::new(self.macro_map.len()),
+            index: DefIndex::from_array_index(self.macro_map.len(),
+                                ::rustc::hir::def_id::DefIndexAddressSpace::Low),
         };
         let kind = ext.kind();
         self.macro_map.insert(def_id, ext);

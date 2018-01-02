@@ -36,7 +36,6 @@ use std::rc::Rc;
 use std::u32;
 
 use rustc_serialize::{Decodable, Decoder, SpecializedDecoder, opaque};
-use rustc_data_structures::indexed_vec::Idx;
 use syntax::attr;
 use syntax::ast::{self, Ident};
 use syntax::codemap;
@@ -634,7 +633,8 @@ impl<'a, 'tcx> CrateMetadata {
                     let def = Def::Macro(
                         DefId {
                             krate: self.cnum,
-                            index: DefIndex::new(id + 1)
+                            index: DefIndex::from_array_index(id + 1,
+                                ::rustc::hir::def_id::DefIndexAddressSpace::Low)
                         },
                         ext.kind()
                     );

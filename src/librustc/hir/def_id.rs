@@ -120,10 +120,18 @@ impl DefIndex {
 
     #[inline]
     pub fn address_space(&self) -> DefIndexAddressSpace {
-        if self.0 < DEF_INDEX_HI_START.0 {
-            DefIndexAddressSpace::Low
-        } else {
-            DefIndexAddressSpace::High
+        // if self.0 < DEF_INDEX_HI_START.0 {
+        //     DefIndexAddressSpace::Low
+        // } else {
+        //     DefIndexAddressSpace::High
+        // }
+
+        // (self.0 & 1) as usize as DefIndexAddressSpace
+
+        match self.0 & 1 {
+            0 => DefIndexAddressSpace::Low,
+            1 => DefIndexAddressSpace::High,
+            _ => unreachable!()
         }
     }
 
@@ -133,11 +141,13 @@ impl DefIndex {
     /// index will be (DefIndex - DEF_INDEX_HI_START).
     #[inline]
     pub fn as_array_index(&self) -> usize {
-        (self.0 & !DEF_INDEX_HI_START.0) as usize
+        // (self.0 & !DEF_INDEX_HI_START.0) as usize
+        (self.0 >> 1) as usize
     }
 
     pub fn from_array_index(i: usize, address_space: DefIndexAddressSpace) -> DefIndex {
-        DefIndex::new(address_space.start() + i)
+        // DefIndex::new(address_space.start() + i)
+        DefIndex::new((i << 1) | (address_space as usize))
     }
 }
 
@@ -156,10 +166,10 @@ impl DefIndexAddressSpace {
         *self as usize
     }
 
-    #[inline]
-    pub fn start(&self) -> usize {
-        self.index() * DEF_INDEX_HI_START.as_usize()
-    }
+    // #[inline]
+    // pub fn start(&self) -> usize {
+    //     self.index() * DEF_INDEX_HI_START.as_usize()
+    // }
 }
 
 /// A DefId identifies a particular *definition*, by combining a crate
