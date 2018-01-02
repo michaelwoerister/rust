@@ -12,6 +12,7 @@ use leb128::{read_signed_leb128, write_signed_leb128};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use serialize;
+use std::fs;
 
 // -----------------------------------------------------------------------------
 // Encoder
@@ -21,11 +22,22 @@ pub type EncodeResult = io::Result<()>;
 
 pub struct Encoder<'a> {
     pub cursor: &'a mut io::Cursor<Vec<u8>>,
+    log_file: fs::File,
+    emit_log: bool,
 }
 
 impl<'a> Encoder<'a> {
-    pub fn new(cursor: &'a mut io::Cursor<Vec<u8>>) -> Encoder<'a> {
-        Encoder { cursor: cursor }
+    pub fn new(cursor: &'a mut io::Cursor<Vec<u8>>,
+               log_file: &str)
+               -> Encoder<'a> {
+        let log_file = fs::File::create(log_file)
+            .expect("Could not create OpaqueEncoder log file");
+
+        Encoder {
+            cursor,
+            log_file,
+            emit_log: true,
+        }
     }
 }
 
@@ -56,51 +68,87 @@ impl<'a> serialize::Encoder for Encoder<'a> {
     }
 
     fn emit_usize(&mut self, v: usize) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "usize {:x}", v).unwrap();
+        }
         write_uleb128!(self, v, write_usize_leb128)
     }
 
     fn emit_u128(&mut self, v: u128) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "u128 {:x}", v).unwrap();
+        }
         write_uleb128!(self, v, write_u128_leb128)
     }
 
     fn emit_u64(&mut self, v: u64) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "u64 {:x}", v).unwrap();
+        }
         write_uleb128!(self, v, write_u64_leb128)
     }
 
     fn emit_u32(&mut self, v: u32) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "u32 {:x}", v).unwrap();
+        }
         write_uleb128!(self, v, write_u32_leb128)
     }
 
     fn emit_u16(&mut self, v: u16) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "u16 {:x}", v).unwrap();
+        }
         write_uleb128!(self, v, write_u16_leb128)
     }
 
     fn emit_u8(&mut self, v: u8) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "u8 {:x}", v).unwrap();
+        }
         let _ = self.cursor.write_all(&[v]);
         Ok(())
     }
 
     fn emit_isize(&mut self, v: isize) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "isize {:x}", v).unwrap();
+        }
         write_sleb128!(self, v)
     }
 
     fn emit_i128(&mut self, v: i128) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "i128 {:x}", v).unwrap();
+        }
         write_sleb128!(self, v)
     }
 
     fn emit_i64(&mut self, v: i64) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "i64 {:x}", v).unwrap();
+        }
         write_sleb128!(self, v)
     }
 
     fn emit_i32(&mut self, v: i32) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "i32 {:x}", v).unwrap();
+        }
         write_sleb128!(self, v)
     }
 
     fn emit_i16(&mut self, v: i16) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "i16 {:x}", v).unwrap();
+        }
         write_sleb128!(self, v)
     }
 
     fn emit_i8(&mut self, v: i8) -> EncodeResult {
+        if self.emit_log {
+            writeln!(self.log_file, "i8 {:x}", v).unwrap();
+        }
         let as_u8: u8 = unsafe { ::std::mem::transmute(v) };
         let _ = self.cursor.write_all(&[as_u8]);
         Ok(())

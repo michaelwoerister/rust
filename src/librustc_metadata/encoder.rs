@@ -1634,7 +1634,7 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     let root = {
         let mut ecx = EncodeContext {
-            opaque: opaque::Encoder::new(&mut cursor),
+            opaque: opaque::Encoder::new(&mut cursor, "metadata_test_data.rs"),
             tcx,
             link_meta,
             exported_symbols,

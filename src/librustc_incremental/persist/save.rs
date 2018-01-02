@@ -36,6 +36,7 @@ pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
     time(sess.time_passes(), "persist query result cache", || {
         save_in(sess,
                 query_cache_path(sess),
+                "query_cache_test_data.rs",
                 |e| encode_query_cache(tcx, e));
     });
 
@@ -43,6 +44,7 @@ pub fn save_dep_graph<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) {
         time(sess.time_passes(), "persist dep-graph", || {
             save_in(sess,
                     dep_graph_path(sess),
+                    "dep_graph_test_data.rs",
                     |e| encode_dep_graph(tcx, e));
         });
     }
@@ -58,7 +60,8 @@ pub fn save_work_products(sess: &Session, dep_graph: &DepGraph) {
     debug!("save_work_products()");
     let _ignore = dep_graph.in_ignore();
     let path = work_products_path(sess);
-    save_in(sess, path, |e| encode_work_products(dep_graph, e));
+    save_in(sess, path, "work_products_test_data.rs",
+        |e| encode_work_products(dep_graph, e));
 
     // We also need to clean out old work-products, as not all of them are
     // deleted during invalidation. Some object files don't change their
@@ -86,7 +89,7 @@ pub fn save_work_products(sess: &Session, dep_graph: &DepGraph) {
     });
 }
 
-fn save_in<F>(sess: &Session, path_buf: PathBuf, encode: F)
+fn save_in<F>(sess: &Session, path_buf: PathBuf, log_file: &str, encode: F)
     where F: FnOnce(&mut Encoder) -> io::Result<()>
 {
     debug!("save: storing data in {}", path_buf.display());
@@ -112,7 +115,7 @@ fn save_in<F>(sess: &Session, path_buf: PathBuf, encode: F)
     // generate the data in a memory buffer
     let mut wr = Cursor::new(Vec::new());
     file_format::write_file_header(&mut wr).unwrap();
-    match encode(&mut Encoder::new(&mut wr)) {
+    match encode(&mut Encoder::new(&mut wr, log_file)) {
         Ok(()) => {}
         Err(err) => {
             sess.err(&format!("could not encode dep-graph to `{}`: {}",
