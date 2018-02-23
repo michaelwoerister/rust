@@ -88,6 +88,17 @@ impl<CTX> stable_hasher::HashStable<CTX> for Fingerprint {
     }
 }
 
+impl<CTX> stable_hasher::ToStableHashKey<CTX> for Fingerprint {
+    type KeyType = Fingerprint;
+
+    #[inline]
+    fn to_stable_hash_key(&self,
+                          _: &CTX)
+                          -> Fingerprint {
+        *self
+    }
+}
+
 impl serialize::UseSpecializedEncodable for Fingerprint { }
 
 impl serialize::UseSpecializedDecodable for Fingerprint { }

@@ -29,10 +29,9 @@ use hir::map as hir_map;
 use hir::map::definitions::{Definitions, DefKey, DefPathTable};
 use hir::svh::Svh;
 use ich;
-use ty::{self, TyCtxt};
+use ty::{self, TyCtxt, Instance};
 use session::{Session, CrateDisambiguator};
 use session::search_paths::PathKind;
-use util::nodemap::NodeSet;
 
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -44,6 +43,7 @@ use syntax::ext::base::SyntaxExtension;
 use syntax::symbol::Symbol;
 use syntax_pos::Span;
 use rustc_back::target::Target;
+use rustc_data_structures::fx::FxHashSet;
 
 pub use self::NativeLibraryKind::*;
 
@@ -259,7 +259,7 @@ pub trait CrateStore {
     fn encode_metadata<'a, 'tcx>(&self,
                                  tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                  link_meta: &LinkMeta,
-                                 reachable: &NodeSet)
+                                 available_monomorphizations: &FxHashSet<Instance<'tcx>>)
                                  -> EncodedMetadata;
     fn metadata_encoding_version(&self) -> &[u8];
 }
@@ -343,7 +343,7 @@ impl CrateStore for DummyCrateStore {
     fn encode_metadata<'a, 'tcx>(&self,
                                  tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                  link_meta: &LinkMeta,
-                                 reachable: &NodeSet)
+                                 available_monomorphizations: &FxHashSet<Instance<'tcx>>)
                                  -> EncodedMetadata {
         bug!("encode_metadata")
     }

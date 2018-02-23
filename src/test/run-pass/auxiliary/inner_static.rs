@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// compile-flags:-Csave-temps
+
 pub struct A<T> { pub v: T }
 pub struct B<T> { pub v: T }
 

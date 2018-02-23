@@ -111,7 +111,7 @@ pub fn find_exported_symbols<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>) -> NodeSet {
                 (generics.parent_types == 0 && generics.types.is_empty()) &&
                 // Functions marked with #[inline] are only ever translated
                 // with "internal" linkage and are never exported.
-                !Instance::mono(tcx, def_id).def.requires_local(tcx)
+                !Instance::mono(tcx, def_id).def.requires_local_copy_per_cgu(tcx)
             }
 
             _ => false

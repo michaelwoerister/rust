@@ -157,6 +157,8 @@ fn predefine_fn<'a, 'tcx>(cx: &CodegenCx<'a, 'tcx>,
     assert!(!instance.substs.needs_infer() &&
             !instance.substs.has_param_types());
 
+    // assert!(!symbol_name.contains("h147a0441bdf4ce37"));
+
     let mono_ty = instance.ty(cx.tcx);
     let attrs = instance.def.attrs(cx.tcx);
     let lldecl = declare::declare_fn(cx, symbol_name, mono_ty);
@@ -183,7 +185,7 @@ fn predefine_fn<'a, 'tcx>(cx: &CodegenCx<'a, 'tcx>,
     }
 
     debug!("predefine_fn: mono_ty = {:?} instance = {:?}", mono_ty, instance);
-    if instance.def.is_inline(cx.tcx) {
+    if instance.def.is_inline_by_kind(cx.tcx) {
         attributes::inline(lldecl, attributes::InlineAttr::Hint);
     }
     attributes::from_fn_attrs(cx, lldecl, instance.def.def_id());

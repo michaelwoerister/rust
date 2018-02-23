@@ -39,7 +39,7 @@ use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc::middle::lang_items::StartFnLangItem;
 use rustc::mir::mono::{Linkage, Visibility, Stats};
 use rustc::middle::cstore::{EncodedMetadata};
-use rustc::ty::{self, Ty, TyCtxt};
+use rustc::ty::{self, Ty, TyCtxt, InstanceDef};
 use rustc::ty::layout::{self, Align, TyLayout, LayoutOf};
 use rustc::ty::maps::Providers;
 use rustc::dep_graph::{DepNode, DepConstructor};
@@ -70,7 +70,7 @@ use time_graph;
 use trans_item::{MonoItem, BaseMonoItemExt, MonoItemExt, DefPathBasedNames};
 use type_::Type;
 use type_of::LayoutLlvmExt;
-use rustc::util::nodemap::{NodeSet, FxHashMap, FxHashSet, DefIdSet};
+use rustc::util::nodemap::{FxHashMap, FxHashSet, DefIdSet};
 use CrateInfo;
 
 use std::any::Any;
@@ -607,7 +607,7 @@ fn contains_null(s: &str) -> bool {
 fn write_metadata<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'gcx>,
                             llmod_id: &str,
                             link_meta: &LinkMeta,
-                            exported_symbols: &NodeSet)
+                            available_monomorphizations: &FxHashSet<Instance<'gcx>>)
                             -> (ContextRef, ModuleRef, EncodedMetadata) {
     use std::io::Write;
     use flate2::Compression;
@@ -643,7 +643,7 @@ fn write_metadata<'a, 'gcx>(tcx: TyCtxt<'a, 'gcx, 'gcx>,
                 EncodedMetadata::new());
     }
 
-    let metadata = tcx.encode_metadata(link_meta, exported_symbols);
+    let metadata = tcx.encode_metadata(link_meta, available_monomorphizations);
     if kind == MetadataKind::Uncompressed {
         return (metadata_llcx, metadata_llmod, metadata);
     }
@@ -718,25 +718,9 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
 
     let crate_hash = tcx.crate_hash(LOCAL_CRATE);
     let link_meta = link::build_link_meta(crate_hash);
-    let exported_symbol_node_ids = find_exported_symbols(tcx);
 
     // Translate the metadata.
     let llmod_id = "metadata";
-    let (metadata_llcx, metadata_llmod, metadata) =
-        time(tcx.sess.time_passes(), "write metadata", || {
-            write_metadata(tcx, llmod_id, &link_meta, &exported_symbol_node_ids)
-        });
-
-    let metadata_module = ModuleTranslation {
-        name: link::METADATA_MODULE_NAME.to_string(),
-        llmod_id: llmod_id.to_string(),
-        source: ModuleSource::Translated(ModuleLlvm {
-            llcx: metadata_llcx,
-            llmod: metadata_llmod,
-            tm: create_target_machine(tcx.sess),
-        }),
-        kind: ModuleKind::Metadata,
-    };
 
     let time_graph = if tcx.sess.opts.debugging_opts.trans_time_graph {
         Some(time_graph::TimeGraph::new())
@@ -747,6 +731,22 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     // Skip crate items and just output metadata in -Z no-trans mode.
     if tcx.sess.opts.debugging_opts.no_trans ||
        !tcx.sess.opts.output_types.should_trans() {
+         let (metadata_llcx, metadata_llmod, metadata) =
+            time(tcx.sess.time_passes(), "write metadata", || {
+                write_metadata(tcx, llmod_id, &link_meta, &FxHashSet())
+            });
+
+        let metadata_module = ModuleTranslation {
+            name: link::METADATA_MODULE_NAME.to_string(),
+            llmod_id: llmod_id.to_string(),
+            source: ModuleSource::Translated(ModuleLlvm {
+                llcx: metadata_llcx,
+                llmod: metadata_llmod,
+                tm: create_target_machine(tcx.sess),
+            }),
+            kind: ModuleKind::Metadata,
+        };
+
         let ongoing_translation = write::start_async_translation(
             tcx,
             time_graph.clone(),
@@ -781,6 +781,43 @@ pub fn trans_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             tcx.codegen_unit(cgu.name().clone());
         }
     }
+
+    let available_monomorphizations: FxHashSet<Instance<'tcx>> = codegen_units
+        .iter()
+        .flat_map(|cgu| cgu.items().iter())
+        .filter_map(|(&mono_item, &(linkage, visibility))| {
+            if linkage == Linkage::External && visibility == Visibility::Default {
+                if let MonoItem::Fn(ref instance) = mono_item {
+                    if let InstanceDef::Item(_) = instance.def {
+                        if instance.substs.types().next().is_some() {
+                            return Some(*instance)
+                        }
+                    }
+                }
+            }
+
+            None
+        })
+        .collect();
+
+    let (metadata_llcx, metadata_llmod, metadata) =
+        time(tcx.sess.time_passes(), "write metadata", || {
+            write_metadata(tcx,
+                           llmod_id,
+                           &link_meta,
+                           &available_monomorphizations)
+        });
+
+    let metadata_module = ModuleTranslation {
+        name: link::METADATA_MODULE_NAME.to_string(),
+        llmod_id: llmod_id.to_string(),
+        source: ModuleSource::Translated(ModuleLlvm {
+            llcx: metadata_llcx,
+            llmod: metadata_llmod,
+            tm: create_target_machine(tcx.sess),
+        }),
+        kind: ModuleKind::Metadata,
+    };
 
     let ongoing_translation = write::start_async_translation(
         tcx,

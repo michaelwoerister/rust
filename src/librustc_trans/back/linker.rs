@@ -757,6 +757,10 @@ fn exported_symbols(tcx: TyCtxt, crate_type: CrateType) -> Vec<String> {
         }
     }
 
+    for &(_, ref symbol_name) in tcx.available_monomorphizations_in_crate(LOCAL_CRATE).iter() {
+        symbols.push(symbol_name.clone())
+    }
+
     let formats = tcx.sess.dependency_formats.borrow();
     let deps = formats[&crate_type].iter();
 
@@ -769,6 +773,10 @@ fn exported_symbols(tcx: TyCtxt, crate_type: CrateType) -> Vec<String> {
                 if level.is_below_threshold(export_threshold) {
                     symbols.push(name.clone());
                 }
+            }
+
+            for &(_, ref symbol_name) in tcx.available_monomorphizations_in_crate(cnum).iter() {
+                symbols.push(symbol_name.clone())
             }
         }
     }

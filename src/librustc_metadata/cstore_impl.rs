@@ -21,13 +21,13 @@ use rustc::middle::cstore::{CrateStore, DepKind,
 use rustc::middle::stability::DeprecationEntry;
 use rustc::hir::def;
 use rustc::session::{CrateDisambiguator, Session};
-use rustc::ty::{self, TyCtxt};
+use rustc::ty::{self, TyCtxt, Instance};
 use rustc::ty::maps::Providers;
 use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE, CRATE_DEF_INDEX};
 use rustc::hir::map::{DefKey, DefPath, DefPathHash};
 use rustc::hir::map::blocks::FnLikeNode;
 use rustc::hir::map::definitions::DefPathTable;
-use rustc::util::nodemap::{NodeSet, DefIdMap};
+use rustc::util::nodemap::DefIdMap;
 
 use std::any::Any;
 use std::rc::Rc;
@@ -39,6 +39,7 @@ use syntax::parse::filemap_to_stream;
 use syntax::symbol::Symbol;
 use syntax_pos::{Span, NO_EXPANSION, FileName};
 use rustc_data_structures::indexed_set::IdxSetBuf;
+use rustc_data_structures::fx::FxHashSet;
 use rustc::hir;
 
 macro_rules! provide {
@@ -176,6 +177,7 @@ provide! { <'tcx> tcx, def_id, other, cdata,
     is_no_builtins => { cdata.is_no_builtins(tcx.sess) }
     impl_defaultness => { cdata.get_impl_defaultness(def_id.index) }
     reachable_non_generics => { Rc::new(cdata.reachable_non_generics()) }
+    available_monomorphizations_in_crate => { Rc::new(cdata.available_monomorphizations()) }
     native_libraries => { Rc::new(cdata.get_native_libraries(tcx.sess)) }
     plugin_registrar_fn => {
         cdata.root.plugin_registrar_fn.map(|index| {
@@ -517,10 +519,10 @@ impl CrateStore for cstore::CStore {
     fn encode_metadata<'a, 'tcx>(&self,
                                  tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                  link_meta: &LinkMeta,
-                                 reachable: &NodeSet)
+                                 available_monomorphizations: &FxHashSet<Instance<'tcx>>)
                                  -> EncodedMetadata
     {
-        encoder::encode_metadata(tcx, link_meta, reachable)
+        encoder::encode_metadata(tcx, link_meta, available_monomorphizations)
     }
 
     fn metadata_encoding_version(&self) -> &[u8]

@@ -56,6 +56,24 @@ impl<'tcx> QueryDescription<'tcx> for queries::is_copy_raw<'tcx> {
     }
 }
 
+impl<'tcx> QueryDescription<'tcx> for queries::available_monomorphizations_in_crate<'tcx> {
+    fn describe(_tcx: TyCtxt, cnum: CrateNum) -> String {
+        format!("fetching monomorphizations available in `{:?}`", cnum)
+    }
+}
+
+impl<'tcx> QueryDescription<'tcx> for queries::available_monomorphizations<'tcx> {
+    fn describe(_tcx: TyCtxt, _: CrateNum) -> String {
+        format!("compiling list of monomorphizations available upstream")
+    }
+}
+
+impl<'tcx> QueryDescription<'tcx> for queries::available_monomorphization<'tcx> {
+    fn describe(_tcx: TyCtxt, instance: ty::Instance<'tcx>) -> String {
+        format!("looking for upstream monomorphization {:?}", instance)
+    }
+}
+
 impl<'tcx> QueryDescription<'tcx> for queries::is_sized_raw<'tcx> {
     fn describe(_tcx: TyCtxt, env: ty::ParamEnvAnd<'tcx, Ty<'tcx>>) -> String {
         format!("computing whether `{}` is `Sized`", env.value)

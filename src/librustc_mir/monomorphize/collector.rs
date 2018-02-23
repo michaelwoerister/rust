@@ -192,7 +192,7 @@ use rustc::hir;
 use rustc::hir::itemlikevisit::ItemLikeVisitor;
 
 use rustc::hir::map as hir_map;
-use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::{DefId};
 use rustc::middle::const_val::ConstVal;
 use rustc::middle::lang_items::{ExchangeMallocFnLangItem, StartFnLangItem};
 use rustc::traits;
@@ -739,7 +739,8 @@ fn should_monomorphize_locally<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, instance: 
         Some(_) => true,
         None => {
             if tcx.is_reachable_non_generic(def_id) ||
-                tcx.is_foreign_item(def_id)
+                tcx.is_foreign_item(def_id) ||
+                tcx.available_monomorphization(*instance).is_some()
             {
                 // We can link to the item in question, no instance needed
                 // in this crate

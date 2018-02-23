@@ -165,6 +165,10 @@ pub fn std_cargo(build: &Build,
         cargo.env("LLVM_CONFIG", build.llvm_config(target));
     }
 
+    if compiler.stage != 0 {
+        cargo.env("SAVE_TEMPS", "1");
+    }
+
     cargo.arg("--features").arg(features)
         .arg("--manifest-path")
         .arg(build.src.join("src/libstd/Cargo.toml"));

@@ -74,7 +74,10 @@ impl<'tcx> InstanceDef<'tcx> {
         tcx.get_attrs(self.def_id())
     }
 
-    pub fn is_inline<'a>(
+    // True if this instance always requires an inline annotation at the LLVM
+    // because of the kind of thing it is (as opposed to user-provided
+    // annotations)
+    pub fn is_inline_by_kind<'a>(
         &self,
         tcx: TyCtxt<'a, 'tcx, 'tcx>
     ) -> bool {
@@ -92,12 +95,12 @@ impl<'tcx> InstanceDef<'tcx> {
         }
     }
 
-    pub fn requires_local<'a>(
+    pub fn requires_local_copy_per_cgu<'a>(
         &self,
         tcx: TyCtxt<'a, 'tcx, 'tcx>
     ) -> bool {
         use syntax::attr::requests_inline;
-        if self.is_inline(tcx) {
+        if self.is_inline_by_kind(tcx) {
             return true
         }
         if let ty::InstanceDef::DropGlue(..) = *self {

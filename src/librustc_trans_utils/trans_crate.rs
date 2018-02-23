@@ -46,6 +46,7 @@ use rustc::dep_graph::DepGraph;
 use rustc_back::target::Target;
 use rustc_mir::monomorphize::collector;
 use link::{build_link_meta, out_filename};
+use rustc_data_structures::fx::FxHashSet;
 
 pub trait TransCrate {
     fn init(&self, _sess: &Session) {}
@@ -235,7 +236,7 @@ impl TransCrate for MetadataOnlyTransCrate {
                     if def_id.is_local()  {
                         let _ = tcx.export_name(def_id);
                         let _ = tcx.contains_extern_indicator(def_id);
-                        let _ = inst.def.is_inline(tcx);
+                        let _ = inst.def.is_inline_by_kind(tcx);
                         let attrs = inst.def.attrs(tcx);
                         let _ =
                             ::syntax::attr::find_inline_attr(Some(tcx.sess.diagnostic()), &attrs);
@@ -247,7 +248,7 @@ impl TransCrate for MetadataOnlyTransCrate {
         tcx.sess.abort_if_errors();
 
         let link_meta = build_link_meta(tcx.crate_hash(LOCAL_CRATE));
-        let exported_symbols = ::find_exported_symbols(tcx);
+        let exported_symbols = FxHashSet();
         let metadata = tcx.encode_metadata(&link_meta, &exported_symbols);
 
         box OngoingCrateTranslation {

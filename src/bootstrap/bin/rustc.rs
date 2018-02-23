@@ -120,6 +120,11 @@ fn main() {
             cmd.arg("-L").arg(&root);
         }
 
+        if env::var_os("SAVE_TEMPS").is_some() {
+            cmd.arg("-Csave-temps");
+            cmd.arg("-Ccodegen-units=1");
+        }
+
         // Override linker if necessary.
         if let Ok(target_linker) = env::var("RUSTC_TARGET_LINKER") {
             cmd.arg(format!("-Clinker={}", target_linker));
@@ -171,8 +176,10 @@ fn main() {
             cmd.arg("-C").arg(format!("codegen-units={}", s));
         }
         if env::var("RUSTC_THINLTO").is_ok() {
-            cmd.arg("-Ccodegen-units=16").arg("-Zthinlto");
+            // cmd.arg("-Ccodegen-units=16").arg("-Zthinlto");
         }
+
+        cmd.arg("-Zthinlto=no");
 
         // Emit save-analysis info.
         if env::var("RUSTC_SAVE_ANALYSIS") == Ok("api".to_string()) {

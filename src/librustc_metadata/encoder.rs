@@ -23,13 +23,13 @@ use rustc::middle::dependency_format::Linkage;
 use rustc::middle::lang_items;
 use rustc::mir;
 use rustc::traits::specialization_graph;
-use rustc::ty::{self, Ty, TyCtxt, ReprOptions};
+use rustc::ty::{self, Ty, TyCtxt, ReprOptions, Instance};
 use rustc::ty::codec::{self as ty_codec, TyEncoder};
 
 use rustc::session::config::{self, CrateTypeProcMacro};
-use rustc::util::nodemap::{FxHashMap, NodeSet};
+use rustc::util::nodemap::{FxHashSet, FxHashMap};
 
-use rustc_data_structures::stable_hasher::StableHasher;
+use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
 use rustc_serialize::{Encodable, Encoder, SpecializedEncoder, opaque};
 
 use std::hash::Hash;
@@ -53,7 +53,7 @@ pub struct EncodeContext<'a, 'tcx: 'a> {
     opaque: opaque::Encoder<'a>,
     pub tcx: TyCtxt<'a, 'tcx, 'tcx>,
     link_meta: &'a LinkMeta,
-    reachable_non_generics: &'a NodeSet,
+    available_monomorphizations: &'a FxHashSet<Instance<'tcx>>,
 
     lazy_state: LazyState,
     type_shorthands: FxHashMap<Ty<'tcx>, usize>,
@@ -397,8 +397,13 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         i = self.position();
         let reachable_non_generics = self.tracked(
             IsolatedEncoder::encode_reachable_non_generics,
-            self.reachable_non_generics);
+            ());
+        let available_monomorphizations = self.tracked(
+            IsolatedEncoder::encode_available_monomorphizations,
+            self.available_monomorphizations);
         let reachable_non_generics_bytes = self.position() - i;
+
+
 
         // Encode and index the items.
         i = self.position();
@@ -443,6 +448,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
             def_path_table,
             impls,
             reachable_non_generics,
+            available_monomorphizations,
             index,
         });
 
@@ -1388,12 +1394,49 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
     // middle::reachable module but filters out items that either don't have a
     // symbol associated with them (they weren't translated) or if they're an FFI
     // definition (as that's not defined in this crate).
-    fn encode_reachable_non_generics(&mut self,
-                                     reachable_non_generics: &NodeSet)
-                                     -> LazySeq<DefIndex> {
+    fn encode_reachable_non_generics(&mut self, _: ()) -> LazySeq<DefIndex> {
         let tcx = self.tcx;
-        self.lazy_seq(reachable_non_generics.iter()
-                                            .map(|&id| tcx.hir.local_def_id(id).index))
+
+
+        // self.lazy_seq(reachable_non_generics.iter()
+        //                                     .map(|&id| tcx.hir.local_def_id(id).index))
+
+        self.lazy_seq(tcx.reachable_non_generics(LOCAL_CRATE).iter().map(|def_id| {
+            debug_assert!(def_id.is_local());
+            def_id.index
+        }))
+                                            // .map(|&id| tcx.hir.local_def_id(id).index))
+    }
+
+    fn encode_available_monomorphizations(&mut self,
+                                          available_monomorphizations: &FxHashSet<Instance<'tcx>>)
+                                          // -> LazySeq<Fingerprint> {
+                                            -> LazySeq<(Fingerprint, String)> {
+        use std::fs::File;
+        use std::io::Write;
+
+        let tcx = self.tcx;
+
+        let hcx = &mut tcx.create_stable_hashing_context();
+
+        let mut file = File::create(format!("available-monos-{:?}.txt",
+            tcx.original_crate_name(LOCAL_CRATE))).unwrap();
+
+        self.lazy_seq(available_monomorphizations.iter().map(|instance| {
+
+            let mut hasher = StableHasher::new();
+            instance.hash_stable(hcx, &mut hasher);
+            let fingerprint = hasher.finish();
+
+            // writeln!(file, "{:?} - {}", fingerprint, tcx.symbol_name(*instance)).unwrap();
+
+            // fingerprint
+
+            let symbol_name = tcx.symbol_name(*instance);
+            writeln!(file, "{:?} - {}", fingerprint, tcx.symbol_name(*instance)).unwrap();
+
+            (fingerprint, (&symbol_name.name[..]).to_owned())
+        }))
     }
 
     fn encode_dylib_dependency_formats(&mut self, _: ()) -> LazySeq<Option<LinkagePreference>> {
@@ -1667,7 +1710,7 @@ impl<'a, 'tcx, 'v> ItemLikeVisitor<'v> for ImplVisitor<'a, 'tcx> {
 
 pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                  link_meta: &LinkMeta,
-                                 reachable_non_generics: &NodeSet)
+                                 available_monomorphizations: &FxHashSet<Instance<'tcx>>)
                                  -> EncodedMetadata
 {
     let mut cursor = Cursor::new(vec![]);
@@ -1680,8 +1723,8 @@ pub fn encode_metadata<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         let mut ecx = EncodeContext {
             opaque: opaque::Encoder::new(&mut cursor),
             tcx,
+            available_monomorphizations,
             link_meta,
-            reachable_non_generics,
             lazy_state: LazyState::NoNode,
             type_shorthands: Default::default(),
             predicate_shorthands: Default::default(),

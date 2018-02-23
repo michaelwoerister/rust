@@ -122,7 +122,7 @@ pub trait MonoItemExt<'a, 'tcx>: fmt::Debug {
                 // If this function isn't inlined or otherwise has explicit
                 // linkage, then we'll be creating a globally shared version.
                 if self.explicit_linkage(tcx).is_some() ||
-                    !instance.def.requires_local(tcx)
+                    !instance.def.requires_local_copy_per_cgu(tcx)
                 {
                     return InstantiationMode::GloballyShared  { may_conflict: false }
                 }

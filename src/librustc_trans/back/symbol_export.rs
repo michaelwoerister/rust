@@ -15,11 +15,12 @@ use base;
 use monomorphize::Instance;
 use rustc::hir::def_id::CrateNum;
 use rustc::hir::def_id::{DefId, LOCAL_CRATE};
+// use rustc::middle::cstore::DepKind;
 use rustc::middle::exported_symbols::SymbolExportLevel;
 use rustc::session::config;
 use rustc::ty::TyCtxt;
 use rustc::ty::maps::Providers;
-use rustc::util::nodemap::FxHashMap;
+use rustc::util::nodemap::{FxHashMap};
 use rustc_allocator::ALLOCATOR_METHODS;
 use rustc_back::LinkerFlavor;
 use syntax::attr;
@@ -135,6 +136,120 @@ pub fn provide(providers: &mut Providers) {
     };
 
     providers.symbol_export_level = export_level;
+
+    providers.available_monomorphizations = |tcx, cnum| {
+        assert!(cnum == LOCAL_CRATE);
+
+        // let all_crate_nums = tcx.all_crate_nums();
+
+        // let size: usize = all_crate_nums.iter().map(|&cnum| {
+        //     tcx.available_monomorphizations_in_crate(cnum).len()
+        // }).sum();
+
+        let crate_info = ::CrateInfo::new(tcx);
+
+        let mut combined = FxHashMap();
+
+        // ::back::link::each_linked_rlib(tcx.sess, &crate_info, &mut |cnum, _| {
+        //     for &fp in tcx.available_monomorphizations_in_crate(cnum).iter() {
+        //         combined.insert(fp, cnum);
+        //     }
+        // }).unwrap();
+
+        for &(cnum, _) in crate_info.used_crates_static.iter() {
+            assert!(cnum != LOCAL_CRATE);
+            for &(fp, ref symbol_name) in tcx.available_monomorphizations_in_crate(cnum).iter() {
+                combined.insert(fp, (symbol_name.clone(), cnum));
+            }
+        }
+
+
+
+
+
+        // for &cnum in tcx.all_crate_nums(LOCAL_CRATE).iter() {
+        //     match tcx.dep_kind(cnum) {
+        //         DepKind::UnexportedMacrosOnly |
+        //         DepKind::MacrosOnly => {
+        //             continue
+        //         }
+        //         DepKind::Implicit |
+        //         DepKind::Explicit => {}
+        //     }
+
+        //     for &fp in tcx.available_monomorphizations_in_crate(cnum).iter() {
+        //         combined.insert(fp, cnum);
+        //     }
+
+        //     // combined.extend(tcx.available_monomorphizations_in_crate(cnum)
+        //     //                    .iter()
+        //     //                    .cloned());
+        // }
+
+        {
+            use std::fs::File;
+            use std::io::Write;
+
+            let mut file = File::create(format!("available-monos-fp-{:?}.txt",
+                tcx.original_crate_name(LOCAL_CRATE))).unwrap();
+
+            for (&fp, &(ref symbol_name, cnum)) in combined.iter() {
+                writeln!(file, "{:?} - {:?} - {}", fp, tcx.original_crate_name(cnum), symbol_name).unwrap();
+            }
+        }
+
+        Rc::new(combined)
+    };
+
+    providers.available_monomorphization = |tcx, instance| {
+        use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
+
+        let mut hasher = StableHasher::new();
+        instance.hash_stable(&mut tcx.create_stable_hashing_context(), &mut hasher);
+        let fingerprint = hasher.finish();
+
+        tcx.available_monomorphizations(LOCAL_CRATE).get(&fingerprint).cloned()
+    };
+
+    providers.available_monomorphizations_in_crate = |tcx, cnum| {
+        use rustc_data_structures::fx::FxHashSet;
+        use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
+        use rustc::mir::mono::{MonoItem, Linkage, Visibility};
+        use rustc::ty::InstanceDef;
+
+        assert_eq!(cnum, LOCAL_CRATE);
+
+        let codegen_units = tcx.collect_and_partition_translation_items(LOCAL_CRATE).1;
+        let codegen_units = (*codegen_units).clone();
+
+        let hcx = &mut tcx.create_stable_hashing_context();
+
+        let available_monomorphizations: FxHashSet<_> = codegen_units
+            .iter()
+            .flat_map(|cgu| cgu.items().iter())
+            .filter_map(|(&mono_item, &(linkage, visibility))| {
+                if linkage == Linkage::External && visibility == Visibility::Default {
+                    if let MonoItem::Fn(ref instance) = mono_item {
+                        if let InstanceDef::Item(_) = instance.def {
+                            if instance.substs.types().next().is_some() {
+                                // return Some(*instance)
+                                let symbol_name = tcx.symbol_name(*instance);
+                                let mut hasher = StableHasher::new();
+                                instance.hash_stable(hcx, &mut hasher);
+                                let fingerprint = hasher.finish();
+
+                                return Some((fingerprint, (&symbol_name.name[..]).to_owned()))
+                            }
+                        }
+                    }
+                }
+
+                None
+            })
+            .collect();
+
+        Rc::new(available_monomorphizations.into_iter().collect()) //<Vec<(Fingerprint, String)>
+    };
 }
 
 pub fn provide_extern(providers: &mut Providers) {

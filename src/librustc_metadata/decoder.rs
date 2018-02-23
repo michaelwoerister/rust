@@ -1007,10 +1007,27 @@ impl<'a, 'tcx> CrateMetadata {
     }
 
     pub fn reachable_non_generics(&self) -> DefIdSet {
+        if self.root.plugin_registrar_fn.is_some() ||
+           self.root.macro_derive_registrar.is_some() {
+            return DefIdSet();
+        }
+
         self.root
             .reachable_non_generics
             .decode(self)
             .map(|index| self.local_def_id(index))
+            .collect()
+    }
+
+    pub fn available_monomorphizations(&self) -> Vec<(Fingerprint, String)> {
+        if self.root.plugin_registrar_fn.is_some() ||
+           self.root.macro_derive_registrar.is_some() {
+            return vec![];
+        }
+
+        self.root
+            .available_monomorphizations
+            .decode(self)
             .collect()
     }
 

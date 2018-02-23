@@ -104,7 +104,8 @@
 
 use monomorphize::collector::InliningMap;
 use rustc::dep_graph::WorkProductId;
-use rustc::hir::def_id::DefId;
+// use rustc::hir::def_id::{DefId, LOCAL_CRATE};
+use rustc::hir::def_id::{DefId};
 use rustc::hir::map::DefPathData;
 use rustc::mir::mono::{Linkage, Visibility};
 use rustc::middle::exported_symbols::SymbolExportLevel;
@@ -300,6 +301,8 @@ fn place_root_translation_items<'a, 'tcx, I>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let is_incremental_build = tcx.sess.opts.incremental.is_some();
     let mut internalization_candidates = FxHashSet();
 
+    // let reachable_set = tcx.reachable_set(LOCAL_CRATE).0;
+
     for trans_item in trans_items {
         match trans_item.instantiation_mode(tcx) {
             InstantiationMode::GloballyShared { .. } => {}
@@ -327,7 +330,8 @@ fn place_root_translation_items<'a, 'tcx, I>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             if tcx.sess.target.target.options.default_hidden_visibility &&
                 tcx.symbol_export_level(id) != SymbolExportLevel::C
             {
-                Visibility::Hidden
+                // Visibility::Hidden
+                Visibility::Default
             } else {
                 Visibility::Default
             }
@@ -361,14 +365,34 @@ fn place_root_translation_items<'a, 'tcx, I>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                     can_be_internalized = false;
                                     Visibility::Hidden
                                 } else if def_id.is_local() {
-                                    if tcx.is_reachable_non_generic(def_id) {
-                                        can_be_internalized = false;
-                                        default_visibility(def_id)
+                                    if instance.substs.types().next().is_none() {
+                                        // non-generic
+                                        if tcx.is_reachable_non_generic(def_id) {
+                                            can_be_internalized = false;
+                                            default_visibility(def_id)
+                                        } else {
+                                            // Visibility::Hidden
+                                            Visibility::Default
+                                        }
                                     } else {
-                                        Visibility::Hidden
+                                        // generic
+
+                                        // let node_id = tcx.hir.as_local_node_id(def_id).unwrap();
+                                        // if reachable_set.contains(&node_id) {
+                                            can_be_internalized = false;
+                                            default_visibility(def_id)
+                                        // } else {
+                                        //     // Visibility::Hidden
+                                        //     Visibility::Default
+                                        // }
                                     }
                                 } else {
-                                    Visibility::Hidden
+                                    // from upstream.
+                                    if instance.substs.types().next().is_some() {
+                                        can_be_internalized = false;
+                                    }
+
+                                    Visibility::Default
                                 }
                             }
                             InstanceDef::FnPtrShim(..) |

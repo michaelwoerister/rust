@@ -100,7 +100,7 @@
 use rustc::middle::weak_lang_items;
 use rustc_mir::monomorphize::Instance;
 use rustc_mir::monomorphize::item::{MonoItem, MonoItemExt, InstantiationMode};
-use rustc::hir::def_id::DefId;
+use rustc::hir::def_id::{DefId, LOCAL_CRATE};
 use rustc::hir::map as hir_map;
 use rustc::ty::{self, Ty, TyCtxt, TypeFoldable};
 use rustc::ty::fold::TypeVisitor;
@@ -114,6 +114,8 @@ use syntax::attr;
 use syntax_pos::symbol::Symbol;
 
 use std::fmt::Write;
+
+// use rustc_data_structures::stable_hasher::{StableHasher, HashStable};
 
 pub fn provide(providers: &mut Providers) {
     *providers = Providers {
@@ -201,24 +203,27 @@ fn get_symbol_hash<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // project.
         if substs.types().next().is_some() {
             avoid_cross_crate_conflicts = true;
-        }
-
-        // If we're dealing with an instance of a function that's inlined from
-        // another crate but we're marking it as globally shared to our
-        // compliation (aka we're not making an internal copy in each of our
-        // codegen units) then this symbol may become an exported (but hidden
-        // visibility) symbol. This means that multiple crates may do the same
-        // and we want to be sure to avoid any symbol conflicts here.
-        match MonoItem::Fn(instance).instantiation_mode(tcx) {
-            InstantiationMode::GloballyShared { may_conflict: true } => {
-                avoid_cross_crate_conflicts = true;
+        } else {
+            // If we're dealing with an instance of a function that's inlined from
+            // another crate but we're marking it as globally shared to our
+            // compliation (aka we're not making an internal copy in each of our
+            // codegen units) then this symbol may become an exported (but hidden
+            // visibility) symbol. This means that multiple crates may do the same
+            // and we want to be sure to avoid any symbol conflicts here.
+            match MonoItem::Fn(instance).instantiation_mode(tcx) {
+                InstantiationMode::GloballyShared { may_conflict: true } => {
+                    avoid_cross_crate_conflicts = true;
+                }
+                _ => {}
             }
-            _ => {}
         }
 
         if avoid_cross_crate_conflicts {
-            hasher.hash(tcx.crate_name.as_str());
-            hasher.hash(tcx.sess.local_crate_disambiguator());
+            let cnum = tcx.available_monomorphization(instance).map(|(_, cnum)| cnum)
+                          .unwrap_or(LOCAL_CRATE);
+
+            hasher.hash(&tcx.original_crate_name(cnum).as_str());
+            hasher.hash(&tcx.crate_disambiguator(cnum));
         }
     });
 
@@ -329,7 +334,15 @@ fn compute_symbol_name<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, instance: Instance
 
     let hash = get_symbol_hash(tcx, def_id, instance, instance_ty, substs);
 
-    SymbolPathBuffer::from_interned(tcx.def_symbol_name(def_id)).finish(hash)
+    let symbol_name = SymbolPathBuffer::from_interned(tcx.def_symbol_name(def_id)).finish(hash);
+
+    if instance.substs.types().next().is_some() {
+        if let Some((expected, _)) = tcx.available_monomorphization(instance) {
+            assert!(expected == symbol_name)
+        }
+    }
+
+    symbol_name
 }
 
 // Follow C++ namespace-mangling style, see

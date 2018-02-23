@@ -14,6 +14,7 @@ use hir::def_id::{CrateNum, DefId, DefIndex};
 use hir::def::{Def, Export};
 use hir::{self, TraitCandidate, ItemLocalId};
 use hir::svh::Svh;
+use ich::Fingerprint;
 use lint;
 use middle::borrowck::BorrowCheckResult;
 use middle::const_val;
@@ -44,6 +45,7 @@ use rustc_back::PanicStrategy;
 use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_data_structures::stable_hasher::StableVec;
+
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -303,8 +305,12 @@ define_maps! { <'tcx>
     // like the compiler-generated `main` function and so on.
     [] fn reachable_non_generics: ReachableNonGenerics(CrateNum) -> Rc<DefIdSet>,
 
-    // This
     [] fn is_reachable_non_generic: IsReachableNonGeneric(DefId) -> bool,
+
+    [] fn available_monomorphizations_in_crate: AvailableMonomorphizationsInCrate(CrateNum) -> Rc<Vec<(Fingerprint, String)>>,
+    // [] fn available_monomorphizations: AvailableMonomorphizations(CrateNum) -> Rc<FxHashMap<Fingerprint, CrateNum>>,
+    [] fn available_monomorphizations: AvailableMonomorphizations(CrateNum) -> Rc<FxHashMap<Fingerprint, (String, CrateNum)>>,
+    [] fn available_monomorphization: available_monomorphization_node(ty::Instance<'tcx>) -> Option<(String, CrateNum)>,
 
 
     [] fn native_libraries: NativeLibraries(CrateNum) -> Rc<Vec<NativeLibrary>>,
@@ -545,5 +551,12 @@ fn instance_def_size_estimate_dep_node<'tcx>(instance_def: ty::InstanceDef<'tcx>
                                               -> DepConstructor<'tcx> {
     DepConstructor::InstanceDefSizeEstimate {
         instance_def
+    }
+}
+
+fn available_monomorphization_node<'tcx>(instance: ty::Instance<'tcx>)
+                                         -> DepConstructor<'tcx> {
+    DepConstructor::AvailableMonomorphization {
+        instance
     }
 }

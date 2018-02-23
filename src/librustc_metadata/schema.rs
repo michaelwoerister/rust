@@ -14,7 +14,7 @@ use index;
 use rustc::hir;
 use rustc::hir::def::{self, CtorKind};
 use rustc::hir::def_id::{DefIndex, DefId, CrateNum};
-use rustc::ich::StableHashingContext;
+use rustc::ich::{StableHashingContext, Fingerprint};
 use rustc::middle::cstore::{DepKind, LinkagePreference, NativeLibrary};
 use rustc::middle::lang_items;
 use rustc::mir;
@@ -203,6 +203,7 @@ pub struct CrateRoot {
     pub def_path_table: Lazy<hir::map::definitions::DefPathTable>,
     pub impls: LazySeq<TraitImpls>,
     pub reachable_non_generics: LazySeq<DefIndex>,
+    pub available_monomorphizations: LazySeq<(Fingerprint, String)>,
     pub index: LazySeq<index::Index>,
 }
 

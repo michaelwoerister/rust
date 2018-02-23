@@ -96,7 +96,7 @@ pub fn get_fn<'a, 'tcx>(cx: &CodegenCx<'a, 'tcx>,
         assert_eq!(common::val_ty(llfn), llptrty);
         debug!("get_fn: not casting pointer!");
 
-        if instance.def.is_inline(tcx) {
+        if instance.def.is_inline_by_kind(tcx) {
             attributes::inline(llfn, attributes::InlineAttr::Hint);
         }
         attributes::from_fn_attrs(cx, llfn, instance.def.def_id());
@@ -149,15 +149,16 @@ pub fn get_fn<'a, 'tcx>(cx: &CodegenCx<'a, 'tcx>,
         unsafe {
             llvm::LLVMRustSetLinkage(llfn, llvm::Linkage::ExternalLinkage);
 
-            if cx.tcx.is_translated_function(instance_def_id) {
-                if instance_def_id.is_local() {
-                    if !cx.tcx.is_reachable_non_generic(instance_def_id) {
-                        llvm::LLVMRustSetVisibility(llfn, llvm::Visibility::Hidden);
-                    }
-                } else {
-                    llvm::LLVMRustSetVisibility(llfn, llvm::Visibility::Hidden);
-                }
-            }
+            // if cx.tcx.is_translated_function(instance_def_id) {
+            //     if instance_def_id.is_local() {
+            //         // if !cx.tcx.is_reachable_non_generic(instance_def_id) &&
+            //         //    !cx.tcx.available_monomorphization(instance) {
+            //         //     llvm::LLVMRustSetVisibility(llfn, llvm::Visibility::Hidden);
+            //         // }
+            //     } else {
+            //         llvm::LLVMRustSetVisibility(llfn, llvm::Visibility::Hidden);
+            //     }
+            // }
         }
 
         if cx.use_dll_storage_attrs &&

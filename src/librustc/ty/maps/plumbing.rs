@@ -775,6 +775,7 @@ pub fn force_from_dep_node<'a, 'gcx, 'lcx>(tcx: TyCtxt<'a, 'gcx, 'lcx>,
         DepKind::NormalizeTy |
         DepKind::SubstituteNormalizeAndTestPredicates |
         DepKind::InstanceDefSizeEstimate |
+        DepKind::AvailableMonomorphization |
 
         // This one should never occur in this context
         DepKind::Null => {
@@ -936,6 +937,9 @@ pub fn force_from_dep_node<'a, 'gcx, 'lcx>(tcx: TyCtxt<'a, 'gcx, 'lcx>,
         DepKind::TargetFeaturesEnabled => { force!(target_features_enabled, def_id!()); }
 
         DepKind::GetSymbolExportLevel => { force!(symbol_export_level, def_id!()); }
+
+        DepKind::AvailableMonomorphizations => { force!(available_monomorphizations, LOCAL_CRATE); }
+        DepKind::AvailableMonomorphizationsInCrate => { force!(available_monomorphizations_in_crate, krate!()); }
     }
 
     true

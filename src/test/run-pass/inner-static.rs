@@ -10,6 +10,7 @@
 
 // aux-build:inner_static.rs
 
+// compile-flags:-Csave-temps
 
 extern crate inner_static;
 
