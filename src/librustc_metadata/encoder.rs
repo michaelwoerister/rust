@@ -1391,8 +1391,13 @@ impl<'a, 'b: 'a, 'tcx: 'b> IsolatedEncoder<'a, 'b, 'tcx> {
     // definition (as that's not defined in this crate).
     fn encode_exported_symbols(&mut self,
                                exported_symbols: &[(ExportedSymbol, SymbolExportLevel)])
-                               -> LazySeq<(ExportedSymbol, SymbolExportLevel)> {
-        self.lazy_seq(exported_symbols.iter().cloned())
+                               -> EncodedExportedSymbols {
+        let lazy_seq = self.lazy_seq(exported_symbols.iter().cloned());
+
+        EncodedExportedSymbols {
+            len: lazy_seq.len,
+            position: lazy_seq.position,
+        }
     }
 
     fn encode_dylib_dependency_formats(&mut self, _: ()) -> LazySeq<Option<LinkagePreference>> {

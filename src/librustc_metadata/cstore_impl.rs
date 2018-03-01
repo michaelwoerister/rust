@@ -263,7 +263,7 @@ provide! { <'tcx> tcx, def_id, other, cdata,
             return Arc::new(Vec::new())
         }
 
-        let mut crate_exports: Vec<_> = cdata.exported_symbols();
+        let mut crate_exports: Vec<_> = cdata.exported_symbols(tcx);
 
         // Dealing with compiler-builtins and wasm right now is super janky.
         // There's no linker! As a result we need all of the compiler-builtins
