@@ -1362,6 +1362,13 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
         self.on_disk_query_result_cache.serialize(self.global_tcx(), encoder)
     }
 
+    #[inline]
+    pub fn share_generics(self) -> bool {
+        match self.sess.opts.debugging_opts.share_generics {
+            Some(true) => true,
+            Some(false) | None => false,
+        }
+    }
 }
 
 impl<'a, 'tcx> TyCtxt<'a, 'tcx, 'tcx> {

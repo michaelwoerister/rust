@@ -51,6 +51,21 @@ for &'gcx ty::Slice<T>
     }
 }
 
+impl<'gcx, T> ToStableHashKey<StableHashingContext<'gcx>> for &'gcx ty::Slice<T>
+    where T: HashStable<StableHashingContext<'gcx>>
+{
+    type KeyType = Fingerprint;
+
+    #[inline]
+    fn to_stable_hash_key(&self, hcx: &StableHashingContext<'gcx>) -> Fingerprint {
+        let mut hasher = StableHasher::new();
+        let mut hcx: StableHashingContext<'gcx> = hcx.clone();
+        self.hash_stable(&mut hcx, &mut hasher);
+        hasher.finish()
+    }
+}
+
+
 impl<'gcx> HashStable<StableHashingContext<'gcx>>
 for ty::subst::Kind<'gcx> {
     fn hash_stable<W: StableHasherResult>(&self,

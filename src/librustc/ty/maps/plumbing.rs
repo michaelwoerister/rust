@@ -936,6 +936,13 @@ pub fn force_from_dep_node<'a, 'gcx, 'lcx>(tcx: TyCtxt<'a, 'gcx, 'lcx>,
         DepKind::TargetFeaturesEnabled => { force!(target_features_enabled, def_id!()); }
 
         DepKind::GetSymbolExportLevel => { force!(symbol_export_level, def_id!()); }
+        DepKind::UpstreamMonomorphizations => {
+            force!(upstream_monomorphizations, krate!());
+        }
+        DepKind::UpstreamMonomorphizationsFor => {
+            force!(upstream_monomorphizations_for, def_id!());
+        }
+
     }
 
     true

@@ -1324,6 +1324,8 @@ options! {DebuggingOptions, DebuggingSetter, basic_debugging_options,
           "run `dsymutil` and delete intermediate object files"),
     ui_testing: bool = (false, parse_bool, [UNTRACKED],
           "format compiler diagnostics in a way that's better suitable for UI testing"),
+    share_generics: Option<bool> = (None, parse_opt_bool, [TRACKED],
+          "make the current crate share its generic instantiations"),
 }
 
 pub fn default_lib_output() -> CrateType {
