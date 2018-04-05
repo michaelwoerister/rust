@@ -27,6 +27,15 @@ fn main() {
     for arg in env::args().skip(1) {
         let path = Path::new(&arg);
         if !path.is_file() {
+            let arg = if arg.ends_with("/list") && arg.contains("rustc.") {
+                // Special case the linker script since it contains a temporary
+                // directory name created by the compiler
+                let end = arg.rfind("rustc.").unwrap();
+                (&arg[..end]).to_string()
+            } else {
+                arg.to_string()
+            };
+
             out.push_str(&arg);
             out.push_str("\n");
             continue

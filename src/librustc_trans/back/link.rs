@@ -957,12 +957,9 @@ fn link_args(cmd: &mut Linker,
         }
     }
 
-    // If we're building a dynamic library then some platforms need to make sure
-    // that all symbols are exported correctly from the dynamic library.
-    if crate_type != config::CrateTypeExecutable ||
-       sess.target.target.options.is_like_emscripten {
-        cmd.export_symbols(tmpdir, crate_type);
-    }
+    // We are always giving the linker a list of exported symbols so it can hide
+    // as many symbols as possible.
+    cmd.export_symbols(tmpdir, crate_type);
 
     // When linking a dynamic library, we put the metadata into a section of the
     // executable. This metadata is in a separate object file from the main

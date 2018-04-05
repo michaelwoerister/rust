@@ -49,8 +49,7 @@ all:
 	# Check that a Rust dylib does not export generics if -Zshare-generics=no
 	[ "$$($(NM) $(TMPDIR)/$(RDYLIB_NAME) | grep -c _ZN.*public_generic_function_from_rlib.*E)" -eq "0" ]
 
-	# Check that an executable does not export any dynamic symbols
-	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c public_c_function_from_rlib)" -eq "0" ]
+	# Check that an executable does not export any dynamic Rust symbols
 	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c public_rust_function_from_exe)" -eq "0" ]
 	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c _ZN.*h.*E)" -eq "0" ]
 
@@ -87,8 +86,7 @@ all:
 	[ "$$($(NM) $(TMPDIR)/$(RDYLIB_NAME) | grep -c public_rust_function_from_rlib)" -eq "1" ]
 	[ "$$($(NM) $(TMPDIR)/$(RDYLIB_NAME) | grep -c _ZN.*public_generic_function_from_rlib.*E)" -eq "1" ]
 
-	# Check that an executable does not export any dynamic symbols
-	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c public_c_function_from_rlib)" -eq "0" ]
+	# Check that an executable does not export any dynamic Rust symbols
 	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c public_rust_function_from_exe)" -eq "0" ]
 	[ "$$($(NM) $(TMPDIR)/$(EXE_NAME) | grep -c _ZN.*h.*E)" -eq "0" ]
 endif
