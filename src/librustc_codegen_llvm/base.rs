@@ -43,7 +43,6 @@ use rustc::middle::cstore::{EncodedMetadata};
 use rustc::ty::{self, Ty, TyCtxt};
 use rustc::ty::layout::{self, Align, TyLayout, LayoutOf};
 use rustc::ty::query::Providers;
-use rustc::dep_graph::{DepNode, DepConstructor};
 use rustc::middle::cstore::{self, LinkMeta, LinkagePreference};
 use rustc::middle::exported_symbols;
 use rustc::util::common::{time, print_time_passes_entry};
@@ -858,6 +857,9 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let mut total_codegen_time = Duration::new(0, 0);
     let mut all_stats = Stats::default();
 
+    let llvm_module_id_map = build_llvm_module_id_map(tcx, codegen_units.iter().cloned());
+    let thin_lto_imports = load_thin_lto_imports(tcx.sess);
+
     for cgu in codegen_units.into_iter() {
         ongoing_codegen.wait_for_signal_to_codegen_item();
         ongoing_codegen.check_for_errors(tcx.sess);
@@ -866,35 +868,54 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         // codegen unit from the cache.
         if tcx.dep_graph.is_fully_enabled() {
             let cgu_id = cgu.work_product_id();
+            let llmod_id = llvm_module_id(tcx, &cgu);
 
             // Check whether there is a previous work-product we can
             // re-use.  Not only must the file exist, and the inputs not
             // be dirty, but the hash of the symbols we will generate must
             // be the same.
             if let Some(buf) = tcx.dep_graph.previous_work_product(&cgu_id) {
-                let dep_node = &DepNode::new(tcx,
-                    DepConstructor::CompileCodegenUnit(cgu.name().clone()));
+                let main_cgu_dep_node = &cgu.compilation_dep_node(tcx);
 
-                // We try to mark the DepNode::CompileCodegenUnit green. If we
-                // succeed it means that none of the dependencies has changed
-                // and we can safely re-use.
-                if let Some(dep_node_index) = tcx.dep_graph.try_mark_green(tcx, dep_node) {
-                    // Append ".rs" to LLVM module identifier.
-                    //
-                    // LLVM code generator emits a ".file filename" directive
-                    // for ELF backends. Value of the "filename" is set as the
-                    // LLVM module identifier.  Due to a LLVM MC bug[1], LLVM
-                    // crashes if the module identifier is same as other symbols
-                    // such as a function name in the module.
-                    // 1. http://llvm.org/bugs/show_bug.cgi?id=11479
-                    let llmod_id = format!("{}.rs", cgu.name());
+                // First we check if anything in the module we are translating
+                // has changed.
+                let main_cgu_is_green = tcx.dep_graph.is_green(main_cgu_dep_node) ||
+                    tcx.dep_graph.try_mark_green(tcx, main_cgu_dep_node).is_some();
 
+                let can_reuse = main_cgu_is_green && {
+                    // If nothing in the main CGU has changed, we also check if
+                    // anything has changed in a CGU that was imported via ThinLTO.
+                    let imported_cgus = thin_lto_imports.modules_imported_by(&llmod_id);
+
+                    let mut any_imported_cgu_changed = false;
+                    for imported_llvm_mod_id in imported_cgus {
+                        // We know that the main cgu has not changed, so all
+                        // module that it has imported must still be there.
+                        let imported_cgu = llvm_module_id_map
+                            .get(imported_llvm_mod_id)
+                            .expect("Cannot find CGU for imported LLVM module.");
+
+                        let dep_node = &imported_cgu.compilation_dep_node(tcx);
+
+                        if !(tcx.dep_graph.is_green(dep_node) ||
+                             tcx.dep_graph.try_mark_green(tcx, dep_node).is_some()) {
+                            any_imported_cgu_changed = true;
+                            break;
+                        }
+                    }
+
+                    !any_imported_cgu_changed
+                };
+
+                if can_reuse {
                     let module = ModuleCodegen {
                         name: cgu.name().to_string(),
                         source: ModuleSource::Preexisting(buf),
                         kind: ModuleKind::Regular,
                         llmod_id,
                     };
+                    let dep_node_index = tcx.dep_graph
+                                            .dep_node_index_of(main_cgu_dep_node);
                     tcx.dep_graph.mark_loaded_from_cache(dep_node_index, true);
                     write::submit_codegened_module_to_llvm(tcx, module, 0);
                     // Continue to next cgu, this one is done.
@@ -1268,6 +1289,29 @@ fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     }
 }
 
+fn llvm_module_id(tcx: TyCtxt, cgu: &CodegenUnit) -> String {
+    // Append ".rs" to LLVM module identifier.
+    //
+    // LLVM code generator emits a ".file filename" directive
+    // for ELF backends. Value of the "filename" is set as the
+    // LLVM module identifier.  Due to a LLVM MC bug[1], LLVM
+    // crashes if the module identifier is same as other symbols
+    // such as a function name in the module.
+    // 1. http://llvm.org/bugs/show_bug.cgi?id=11479
+    format!("{}-{}.rs",
+            cgu.name(),
+            tcx.crate_disambiguator(LOCAL_CRATE)
+               .to_fingerprint().to_hex())
+}
+
+fn build_llvm_module_id_map<'tcx, I>(tcx: TyCtxt<'_, 'tcx, 'tcx>,
+                                     cgus: I)
+                                     -> FxHashMap<String, Arc<CodegenUnit<'tcx>>>
+    where I: Iterator<Item=Arc<CodegenUnit<'tcx>>>
+{
+    cgus.map(|cgu| (llvm_module_id(tcx, &cgu), cgu)).collect()
+}
+
 pub fn provide(providers: &mut Providers) {
     providers.collect_and_partition_mono_items =
         collect_and_partition_mono_items;
@@ -1363,8 +1407,11 @@ mod temp_stable_hash_impls {
     }
 }
 
-#[allow(unused)]
 fn load_thin_lto_imports(sess: &Session) -> lto::ThinLTOImports {
+    if sess.opts.incremental.is_none() {
+        return lto::ThinLTOImports::new_empty();
+    }
+
     let path = rustc_incremental::in_incr_comp_dir_sess(
         sess,
         lto::THIN_LTO_IMPORTS_INCR_COMP_FILE_NAME
