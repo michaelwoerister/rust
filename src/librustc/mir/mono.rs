@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use hir::def_id::{DefId, CrateNum};
+use hir::svh::Svh;
 use syntax::ast::NodeId;
 use syntax::symbol::{Symbol, InternedString};
 use ty::{Instance, TyCtxt};
@@ -317,3 +318,22 @@ impl Stats {
         self.fn_stats.extend(stats.fn_stats);
     }
 }
+
+#[derive(Clone)]
+pub struct CompileCodegenUnitResult(Stats, Svh);
+
+impl CompileCodegenUnitResult {
+
+    pub fn new(stats: Stats, svh: Svh) -> CompileCodegenUnitResult {
+        CompileCodegenUnitResult(stats, svh)
+    }
+
+    pub fn stats(&self) -> Stats {
+        self.0.clone()
+    }
+}
+
+impl_stable_hash_for!(tuple_struct self::CompileCodegenUnitResult {
+    stats,
+    svh
+});

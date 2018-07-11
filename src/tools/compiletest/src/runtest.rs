@@ -1657,7 +1657,9 @@ impl<'test> TestCx<'test> {
         if !is_rustdoc {
             if let Some(ref incremental_dir) = self.props.incremental_dir {
                 rustc.args(&["-C", &format!("incremental={}", incremental_dir.display())]);
-                rustc.args(&["-Z", "incremental-verify-ich"]);
+                // rustc.args(&["-Z", "incremental-verify-ich"]);
+                rustc.args(&["-Z", "human-readable-cgu-names"]);
+                rustc.args(&["-Clto=off"]);
                 rustc.args(&["-Z", "incremental-queries"]);
             }
 

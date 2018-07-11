@@ -36,6 +36,7 @@ use llvm;
 use libc::c_uint;
 use metadata;
 use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc::hir::svh::Svh;
 use rustc::middle::lang_items::StartFnLangItem;
 use rustc::middle::weak_lang_items;
 use rustc::mir::mono::{Linkage, Visibility, Stats};
@@ -857,35 +858,51 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     let mut total_codegen_time = Duration::new(0, 0);
     let mut all_stats = Stats::default();
 
-    let llvm_module_id_map = build_llvm_module_id_map(tcx, codegen_units.iter().cloned());
+    let llvm_module_id_map = build_llvm_module_id_map(codegen_units.iter().cloned());
     let thin_lto_imports = load_thin_lto_imports(tcx.sess);
+
+    let codegen_unit_is_green = |dep_node| {
+        if tcx.dep_graph.dep_node_exists(&dep_node) {
+            tcx.dep_graph.is_green(&dep_node)
+        } else {
+            tcx.dep_graph.try_mark_green(tcx, &dep_node).is_some()
+        }
+    };
 
     for cgu in codegen_units.into_iter() {
         ongoing_codegen.wait_for_signal_to_codegen_item();
         ongoing_codegen.check_for_errors(tcx.sess);
 
+        debug!("starting codegen for CGU: {}", cgu.name());
+
         // First, if incremental compilation is enabled, we try to re-use the
         // codegen unit from the cache.
         if tcx.dep_graph.is_fully_enabled() {
-            let cgu_id = cgu.work_product_id();
-            let llmod_id = llvm_module_id(tcx, &cgu);
+            let main_cgu_id = cgu.work_product_id();
 
             // Check whether there is a previous work-product we can
             // re-use.  Not only must the file exist, and the inputs not
             // be dirty, but the hash of the symbols we will generate must
             // be the same.
-            if let Some(buf) = tcx.dep_graph.previous_work_product(&cgu_id) {
-                let main_cgu_dep_node = &cgu.compilation_dep_node(tcx);
+            if let Some(buf) = tcx.dep_graph.previous_work_product(&main_cgu_id) {
+                let main_cgu_dep_node = cgu.compilation_dep_node(tcx);
+                debug!("testing if CGU `{}` can be re-used", cgu.name());
 
                 // First we check if anything in the module we are translating
                 // has changed.
-                let main_cgu_is_green = tcx.dep_graph.is_green(main_cgu_dep_node) ||
-                    tcx.dep_graph.try_mark_green(tcx, main_cgu_dep_node).is_some();
+                let main_cgu_is_green = codegen_unit_is_green(main_cgu_dep_node);
+
+                debug!(" -> CGU `{}` {}", cgu.name(), if main_cgu_is_green {
+                    "has not changed itself, checking ThinLTO imports for changes"
+                } else {
+                    "has changed, re-compiling"
+                });
 
                 let can_reuse = main_cgu_is_green && {
                     // If nothing in the main CGU has changed, we also check if
                     // anything has changed in a CGU that was imported via ThinLTO.
-                    let imported_cgus = thin_lto_imports.modules_imported_by(&llmod_id);
+                    let main_cgu_name = cgu.name().as_str();
+                    let imported_cgus = thin_lto_imports.modules_imported_by(&main_cgu_name[..]);
 
                     let mut any_imported_cgu_changed = false;
                     for imported_llvm_mod_id in imported_cgus {
@@ -895,12 +912,16 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                             .get(imported_llvm_mod_id)
                             .expect("Cannot find CGU for imported LLVM module.");
 
-                        let dep_node = &imported_cgu.compilation_dep_node(tcx);
+                        let dep_node = imported_cgu.compilation_dep_node(tcx);
 
-                        if !(tcx.dep_graph.is_green(dep_node) ||
-                             tcx.dep_graph.try_mark_green(tcx, dep_node).is_some()) {
+                        if !codegen_unit_is_green(dep_node) {
+                            debug!("  -> ThinLTO import `{}` has changed, re-compiling.",
+                                   imported_llvm_mod_id);
                             any_imported_cgu_changed = true;
                             break;
+                        } else {
+                            debug!("  -> ThinLTO import `{}` has not changed.",
+                                   imported_llvm_mod_id);
                         }
                     }
 
@@ -908,20 +929,21 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                 };
 
                 if can_reuse {
+                    debug!("CGU `{}` can be re-used", cgu.name());
                     let module = ModuleCodegen {
                         name: cgu.name().to_string(),
                         source: ModuleSource::Preexisting(buf),
                         kind: ModuleKind::Regular,
-                        llmod_id,
                     };
                     let dep_node_index = tcx.dep_graph
-                                            .dep_node_index_of(main_cgu_dep_node);
+                                            .dep_node_index_of(&main_cgu_dep_node);
                     tcx.dep_graph.mark_loaded_from_cache(dep_node_index, true);
                     write::submit_codegened_module_to_llvm(tcx, module, 0);
                     // Continue to next cgu, this one is done.
                     continue
                 }
             } else {
+                debug!("work products for CGU `{}` not found, re-compiling", cgu.name());
                 // This can happen if files were  deleted from the cache
                 // directory for some reason. We just re-compile then.
             }
@@ -933,7 +955,15 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                              &format!("codegen {}", cgu.name()))
         });
         let start_time = Instant::now();
-        all_stats.extend(tcx.compile_codegen_unit(*cgu.name()));
+        // assert!(!tcx.dep_graph.is_green(&cgu.compilation_dep_node(tcx)),
+        //         "recompiling CGU, but dep-node is green: {:?}", cgu.compilation_dep_node(tcx));
+        // all_stats.extend(tcx.compile_codegen_unit(*cgu.name()).stats());
+        let stats = compile_codegen_unit(tcx, *cgu.name());
+        all_stats.extend(stats);
+
+        // assert!(!tcx.dep_graph.is_green(&cgu.compilation_dep_node(tcx)),
+        //         "CGU recompiled, but dep-node is green: {:?}", cgu.compilation_dep_node(tcx));
+
         total_codegen_time += start_time.elapsed();
         ongoing_codegen.check_for_errors(tcx.sess);
     }
@@ -1198,12 +1228,123 @@ fn is_codegened_item(tcx: TyCtxt, id: DefId) -> bool {
     all_mono_items.contains(&id)
 }
 
-fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
-                                  cgu: InternedString) -> Stats {
-    let cgu = tcx.codegen_unit(cgu);
 
+// fn compile_codegen_unit2<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+//                                    cgu: Arc<CodegenUnit<'tcx>>) {
+
+//     // with_task<'gcx, C, A, R>(&self,
+//     //                                key: DepNode,
+//     //                                cx: C,
+//     //                                arg: A,
+//     //                                task: fn(C, A) -> R)
+
+//     let dep_node = cgu.compilation_dep_node();
+
+//     let (stats, module) = tcx.dep_graph.with_task(dep_node, tcx, cgu, |tcx, cgu| {
+//         let cgu_name = cgu.name().to_string();
+
+//         let start_time = Instant::now();
+
+//         // Instantiate monomorphizations without filling out definitions yet...
+//         let cx = CodegenCx::new(tcx, cgu);
+//         let module = {
+//             let mono_items = cx.codegen_unit
+//                                .items_in_deterministic_order(cx.tcx);
+//             for &(mono_item, (linkage, visibility)) in &mono_items {
+//                 mono_item.predefine(&cx, linkage, visibility);
+//             }
+
+//             // ... and now that we have everything pre-defined, fill out those definitions.
+//             for &(mono_item, _) in &mono_items {
+//                 mono_item.define(&cx);
+//             }
+
+//             // If this codegen unit contains the main function, also create the
+//             // wrapper here
+//             maybe_create_entry_wrapper(&cx);
+
+//             // Run replace-all-uses-with for statics that need it
+//             for &(old_g, new_g) in cx.statics_to_rauw.borrow().iter() {
+//                 unsafe {
+//                     let bitcast = llvm::LLVMConstPointerCast(new_g, llvm::LLVMTypeOf(old_g));
+//                     llvm::LLVMReplaceAllUsesWith(old_g, bitcast);
+//                     llvm::LLVMDeleteGlobal(old_g);
+//                 }
+//             }
+
+//             // Create the llvm.used variable
+//             // This variable has type [N x i8*] and is stored in the llvm.metadata section
+//             if !cx.used_statics.borrow().is_empty() {
+//                 let name = CString::new("llvm.used").unwrap();
+//                 let section = CString::new("llvm.metadata").unwrap();
+//                 let array = C_array(Type::i8(&cx).ptr_to(), &*cx.used_statics.borrow());
+
+//                 unsafe {
+//                     let g = llvm::LLVMAddGlobal(cx.llmod,
+//                                                 val_ty(array).to_ref(),
+//                                                 name.as_ptr());
+//                     llvm::LLVMSetInitializer(g, array);
+//                     llvm::LLVMRustSetLinkage(g, llvm::Linkage::AppendingLinkage);
+//                     llvm::LLVMSetSection(g, section.as_ptr());
+//                 }
+//             }
+
+//             // Finalize debuginfo
+//             if cx.sess().opts.debuginfo != NoDebugInfo {
+//                 debuginfo::finalize(&cx);
+//             }
+
+//             let llvm_module = ModuleLlvm {
+//                 llcx: cx.llcx,
+//                 llmod: cx.llmod,
+//                 tm: create_target_machine(cx.sess(), false),
+//             };
+
+//             ModuleCodegen {
+//                 name: cgu_name.clone(),
+//                 source: ModuleSource::Codegened(llvm_module),
+//                 kind: ModuleKind::Regular,
+//             }
+//         };
+
+//         // We always want CompileCodegenUnit dep-nodes to be marked as red if
+//         // they are re-compiled, since we cannot actually check if the generated
+//         // LLVM has changed or not. So we mark it red to be on the safe side.
+//         // This is achieved by including the current SVH into the result.
+//         let crate_hash = tcx.hir.crate_hash;
+//         // eprintln!("cgu = {}, crate_hash = {}", cgu_name, crate_hash);
+//         // (CompileCodegenUnitResult::new(, crate_hash),
+//         //  module)
+
+//         let stats = cx.into_stats();
+//         let time_to_codegen = start_time.elapsed();
+
+//             // We assume that the cost to run LLVM on a CGU is proportional to
+//         // the time we needed for codegenning it.
+//         let cost = time_to_codegen.as_secs() * 1_000_000_000 +
+//                    time_to_codegen.subsec_nanos() as u64;
+
+//         write::submit_codegened_module_to_llvm(tcx,
+//                                                 module,
+//                                                 cost);
+//     });
+// }
+
+
+fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                  cgu_name: InternedString)
+                                  -> Stats {
     let start_time = Instant::now();
-    let (stats, module) = module_codegen(tcx, cgu);
+
+    let dep_node = tcx.codegen_unit(cgu_name).compilation_dep_node(tcx);
+    let ((stats, _, module), _) = tcx.dep_graph.with_forced_task(dep_node,
+                                                                 tcx,
+                                                                 cgu_name,
+                                                                 module_codegen);
+    assert!(!tcx.dep_graph.is_green(&dep_node),
+            "CGU recompiled, but dep-node is green: {:?}",
+            dep_node);
+
     let time_to_codegen = start_time.elapsed();
 
     // We assume that the cost to run LLVM on a CGU is proportional to
@@ -1212,22 +1353,23 @@ fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                time_to_codegen.subsec_nanos() as u64;
 
     write::submit_codegened_module_to_llvm(tcx,
-                                            module,
-                                            cost);
+                                           module,
+                                           cost);
     return stats;
 
     fn module_codegen<'a, 'tcx>(
         tcx: TyCtxt<'a, 'tcx, 'tcx>,
-        cgu: Arc<CodegenUnit<'tcx>>)
-        -> (Stats, ModuleCodegen)
+        cgu_name: InternedString)
+        -> (Stats, Svh, ModuleCodegen)
     {
-        let cgu_name = cgu.name().to_string();
+        // let cgu_name = cgu.name().to_string();
+        let cgu = tcx.codegen_unit(cgu_name);
 
         // Instantiate monomorphizations without filling out definitions yet...
         let cx = CodegenCx::new(tcx, cgu);
         let module = {
             let mono_items = cx.codegen_unit
-                                 .items_in_deterministic_order(cx.tcx);
+                               .items_in_deterministic_order(cx.tcx);
             for &(mono_item, (linkage, visibility)) in &mono_items {
                 mono_item.predefine(&cx, linkage, visibility);
             }
@@ -1279,34 +1421,121 @@ fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
             };
 
             ModuleCodegen {
-                name: cgu_name,
+                name: cgu_name.to_string(),
                 source: ModuleSource::Codegened(llvm_module),
                 kind: ModuleKind::Regular,
             }
         };
 
-        (cx.into_stats(), module)
+        // We always want CompileCodegenUnit dep-nodes to be marked as red if
+        // they are re-compiled, since we cannot actually check if the generated
+        // LLVM has changed or not. So we mark it red to be on the safe side.
+        // This is achieved by including the current SVH into the result.
+        let crate_hash = tcx.hir.crate_hash;
+        (cx.into_stats(), crate_hash, module)
     }
 }
 
-fn llvm_module_id(tcx: TyCtxt, cgu: &CodegenUnit) -> String {
-    // Append ".rs" to LLVM module identifier.
-    //
-    // LLVM code generator emits a ".file filename" directive
-    // for ELF backends. Value of the "filename" is set as the
-    // LLVM module identifier.  Due to a LLVM MC bug[1], LLVM
-    // crashes if the module identifier is same as other symbols
-    // such as a function name in the module.
-    // 1. http://llvm.org/bugs/show_bug.cgi?id=11479
-    format!("{}-{}.rs",
-            cgu.name(),
-            tcx.crate_disambiguator(LOCAL_CRATE)
-               .to_fingerprint().to_hex())
-}
+// fn compile_codegen_unit<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+//                                   cgu: InternedString) -> CompileCodegenUnitResult {
+//     let cgu = tcx.codegen_unit(cgu);
 
-fn build_llvm_module_id_map<'tcx, I>(tcx: TyCtxt<'_, 'tcx, 'tcx>,
-                                     cgus: I)
-                                     -> FxHashMap<String, Arc<CodegenUnit<'tcx>>>
+//     let start_time = Instant::now();
+//     let (result, module) = module_codegen(tcx, cgu);
+//     let time_to_codegen = start_time.elapsed();
+
+//     // We assume that the cost to run LLVM on a CGU is proportional to
+//     // the time we needed for codegenning it.
+//     let cost = time_to_codegen.as_secs() * 1_000_000_000 +
+//                time_to_codegen.subsec_nanos() as u64;
+
+//     write::submit_codegened_module_to_llvm(tcx,
+//                                             module,
+//                                             cost);
+//     return result;
+
+//     fn module_codegen<'a, 'tcx>(
+//         tcx: TyCtxt<'a, 'tcx, 'tcx>,
+//         cgu: Arc<CodegenUnit<'tcx>>)
+//         -> (CompileCodegenUnitResult, ModuleCodegen)
+//     {
+//         let cgu_name = cgu.name().to_string();
+
+//         // Instantiate monomorphizations without filling out definitions yet...
+//         let cx = CodegenCx::new(tcx, cgu);
+//         let module = {
+//             let mono_items = cx.codegen_unit
+//                                .items_in_deterministic_order(cx.tcx);
+//             for &(mono_item, (linkage, visibility)) in &mono_items {
+//                 mono_item.predefine(&cx, linkage, visibility);
+//             }
+
+//             // ... and now that we have everything pre-defined, fill out those definitions.
+//             for &(mono_item, _) in &mono_items {
+//                 mono_item.define(&cx);
+//             }
+
+//             // If this codegen unit contains the main function, also create the
+//             // wrapper here
+//             maybe_create_entry_wrapper(&cx);
+
+//             // Run replace-all-uses-with for statics that need it
+//             for &(old_g, new_g) in cx.statics_to_rauw.borrow().iter() {
+//                 unsafe {
+//                     let bitcast = llvm::LLVMConstPointerCast(new_g, llvm::LLVMTypeOf(old_g));
+//                     llvm::LLVMReplaceAllUsesWith(old_g, bitcast);
+//                     llvm::LLVMDeleteGlobal(old_g);
+//                 }
+//             }
+
+//             // Create the llvm.used variable
+//             // This variable has type [N x i8*] and is stored in the llvm.metadata section
+//             if !cx.used_statics.borrow().is_empty() {
+//                 let name = CString::new("llvm.used").unwrap();
+//                 let section = CString::new("llvm.metadata").unwrap();
+//                 let array = C_array(Type::i8(&cx).ptr_to(), &*cx.used_statics.borrow());
+
+//                 unsafe {
+//                     let g = llvm::LLVMAddGlobal(cx.llmod,
+//                                                 val_ty(array).to_ref(),
+//                                                 name.as_ptr());
+//                     llvm::LLVMSetInitializer(g, array);
+//                     llvm::LLVMRustSetLinkage(g, llvm::Linkage::AppendingLinkage);
+//                     llvm::LLVMSetSection(g, section.as_ptr());
+//                 }
+//             }
+
+//             // Finalize debuginfo
+//             if cx.sess().opts.debuginfo != NoDebugInfo {
+//                 debuginfo::finalize(&cx);
+//             }
+
+//             let llvm_module = ModuleLlvm {
+//                 llcx: cx.llcx,
+//                 llmod: cx.llmod,
+//                 tm: create_target_machine(cx.sess(), false),
+//             };
+
+//             ModuleCodegen {
+//                 name: cgu_name.clone(),
+//                 source: ModuleSource::Codegened(llvm_module),
+//                 kind: ModuleKind::Regular,
+//             }
+//         };
+
+//         // We always want CompileCodegenUnit dep-nodes to be marked as red if
+//         // they are re-compiled, since we cannot actually check if the generated
+//         // LLVM has changed or not. So we mark it red to be on the safe side.
+//         // This is achieved by including the current SVH into the result.
+//         let crate_hash = tcx.hir.crate_hash;
+//         eprintln!("cgu = {}, crate_hash = {}", cgu_name, crate_hash);
+//         (CompileCodegenUnitResult::new(cx.into_stats(), crate_hash),
+//          module)
+//     }
+// }
+
+fn build_llvm_module_id_map<'tcx, I>(cgus: I)
+                                      -> FxHashMap<String, Arc<CodegenUnit<'tcx>>>
     where I: Iterator<Item=Arc<CodegenUnit<'tcx>>>
 {
     cgus.map(|cgu| (llvm_module_id(tcx, &cgu), cgu)).collect()
@@ -1325,7 +1554,7 @@ pub fn provide(providers: &mut Providers) {
             .cloned()
             .expect(&format!("failed to find cgu with name {:?}", name))
     };
-    providers.compile_codegen_unit = compile_codegen_unit;
+    // providers.compile_codegen_unit = compile_codegen_unit;
 
     provide_extern(providers);
 }
@@ -1400,9 +1629,14 @@ mod temp_stable_hash_impls {
 
     impl<HCX> HashStable<HCX> for ModuleCodegen {
         fn hash_stable<W: StableHasherResult>(&self,
-                                              _: &mut HCX,
-                                              _: &mut StableHasher<W>) {
-            // do nothing
+                                              hcx: &mut HCX,
+                                              hasher: &mut StableHasher<W>) {
+            use std::time::{SystemTime, UNIX_EPOCH};
+
+            let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            let nanos = duration.as_secs() * 1_000_000_000 +
+                        duration.subsec_nanos() as u64;
+            nanos.hash_stable(hcx, hasher);
         }
     }
 }
