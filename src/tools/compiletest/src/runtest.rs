@@ -1658,6 +1658,7 @@ impl<'test> TestCx<'test> {
                 rustc.args(&["-C", &format!("incremental={}", incremental_dir.display())]);
                 rustc.args(&["-Z", "incremental-verify-ich"]);
                 rustc.args(&["-Z", "incremental-queries"]);
+                rustc.args(&["-Z", "human_readable_cgu_names"]);
             }
 
             if self.config.mode == CodegenUnits {

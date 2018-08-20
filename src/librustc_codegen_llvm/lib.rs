@@ -65,15 +65,21 @@ extern crate rustc_errors as errors;
 extern crate serialize;
 extern crate cc; // Used to locate MSVC
 extern crate tempfile;
+extern crate memmap;
 
 use back::bytecode::RLIB_BYTECODE_EXTENSION;
 
 pub use llvm_util::target_features;
 
+// use memmap::Mmap;
+
 use std::any::Any;
-use std::path::PathBuf;
+// use std::fs::File;
+// use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::sync::mpsc;
 use rustc_data_structures::sync::Lrc;
+// use rustc_data_structures::small_c_str::SmallCStr;
 
 use rustc::dep_graph::DepGraph;
 use rustc::hir::def_id::CrateNum;
@@ -271,8 +277,13 @@ struct ModuleCodegen {
     /// as the crate name and disambiguator.
     /// We currently generate these names via CodegenUnit::build_cgu_name().
     name: String,
-    source: ModuleSource,
+    module_llvm: ModuleLlvm,
     kind: ModuleKind,
+}
+
+struct CachedModuleCodegen {
+    name: String,
+    source: WorkProduct,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -283,22 +294,11 @@ enum ModuleKind {
 }
 
 impl ModuleCodegen {
-    fn llvm(&self) -> Option<&ModuleLlvm> {
-        match self.source {
-            ModuleSource::Codegened(ref llvm) => Some(llvm),
-            ModuleSource::Preexisting(_) => None,
-        }
-    }
-
     fn into_compiled_module(self,
-                                emit_obj: bool,
-                                emit_bc: bool,
-                                emit_bc_compressed: bool,
-                                outputs: &OutputFilenames) -> CompiledModule {
-        let pre_existing = match self.source {
-            ModuleSource::Preexisting(_) => true,
-            ModuleSource::Codegened(_) => false,
-        };
+                            emit_obj: bool,
+                            emit_bc: bool,
+                            emit_bc_compressed: bool,
+                            outputs: &OutputFilenames) -> CompiledModule {
         let object = if emit_obj {
             Some(outputs.temp_path(OutputType::Object, Some(&self.name)))
         } else {
@@ -319,7 +319,6 @@ impl ModuleCodegen {
         CompiledModule {
             name: self.name.clone(),
             kind: self.kind,
-            pre_existing,
             object,
             bytecode,
             bytecode_compressed,
@@ -331,18 +330,9 @@ impl ModuleCodegen {
 struct CompiledModule {
     name: String,
     kind: ModuleKind,
-    pre_existing: bool,
     object: Option<PathBuf>,
     bytecode: Option<PathBuf>,
     bytecode_compressed: Option<PathBuf>,
-}
-
-enum ModuleSource {
-    /// Copy the `.o` files or whatever from the incr. comp. directory.
-    Preexisting(WorkProduct),
-
-    /// Rebuild from this LLVM module.
-    Codegened(ModuleLlvm),
 }
 
 struct ModuleLlvm {
