@@ -45,7 +45,7 @@ use rustc::middle::cstore::{self, LinkagePreference};
 use rustc::middle::exported_symbols;
 use rustc::util::common::{time, print_time_passes_entry};
 use rustc::util::profiling::ProfileCategory;
-use rustc::session::config::{self, DebugInfo, EntryFnType};
+use rustc::session::config::{self, DebugInfo, EntryFnType, Lto};
 use rustc::session::Session;
 use rustc_incremental;
 use allocator;
@@ -771,6 +771,30 @@ fn determine_cgu_reuse<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
     reusable_cgus
 }
 
+fn determine_cgu_reuse2<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
+                                  cgu: &CodegenUnit<'tcx>)
+                                  -> bool {
+    if !tcx.dep_graph.is_fully_enabled() {
+        return false;
+    }
+
+    let work_product_id = &cgu.work_product_id();
+    if tcx.dep_graph.previous_work_product(work_product_id).is_none() {
+        // We don't have anything cached for this CGU. This can happen
+        // if the CGU did not exist in the previous session.
+        return false;
+    };
+
+    // Try to mark the CGU as green
+    let dep_node = cgu.codegen_dep_node(tcx);
+    assert!(!tcx.dep_graph.dep_node_exists(&dep_node),
+        "CompileCodegenUnit dep-node for CGU `{}` already exists before marking.",
+        cgu.name());
+
+    // If it's green, we can re-use.
+    tcx.dep_graph.try_mark_green(tcx, &dep_node).is_some()
+}
+
 pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                              rx: mpsc::Receiver<Box<dyn Any + Send>>)
                              -> OngoingCodegen {
@@ -926,41 +950,67 @@ pub fn codegen_crate<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
         ongoing_codegen.wait_for_signal_to_codegen_item();
         ongoing_codegen.check_for_errors(tcx.sess);
 
-        let loaded_from_cache = match cgu_reuse[cgu.name()] {
-            CguReUsable::No => {
-                let _timing_guard = time_graph.as_ref().map(|time_graph| {
-                    time_graph.start(write::CODEGEN_WORKER_TIMELINE,
-                                     write::CODEGEN_WORK_PACKAGE_KIND,
-                                     &format!("codegen {}", cgu.name()))
-                });
-                let start_time = Instant::now();
-                let stats = compile_codegen_unit(tcx, *cgu.name());
-                all_stats.extend(stats);
-                total_codegen_time += start_time.elapsed();
-                false
-            }
-            CguReUsable::PreThinLto => {
-                write::submit_pre_lto_module_to_llvm(tcx, CachedModuleCodegen {
-                    name: cgu.name().to_string(),
-                    source: cgu.work_product(tcx),
-                });
-                true
-            }
-            CguReUsable::PostThinLtoButImportedFrom => {
-                write::submit_import_only_module_to_llvm(tcx, CachedModuleCodegen {
-                    name: cgu.name().to_string(),
-                    source: cgu.work_product(tcx),
-                });
-                true
-            }
-            CguReUsable::PostThinLto => {
+        // let loaded_from_cache = match cgu_reuse[cgu.name()] {
+        //     CguReUsable::No => {
+        //         let _timing_guard = time_graph.as_ref().map(|time_graph| {
+        //             time_graph.start(write::CODEGEN_WORKER_TIMELINE,
+        //                              write::CODEGEN_WORK_PACKAGE_KIND,
+        //                              &format!("codegen {}", cgu.name()))
+        //         });
+        //         let start_time = Instant::now();
+        //         let stats = compile_codegen_unit(tcx, *cgu.name());
+        //         all_stats.extend(stats);
+        //         total_codegen_time += start_time.elapsed();
+        //         false
+        //     }
+        //     CguReUsable::PreThinLto => {
+        //         write::submit_pre_lto_module_to_llvm(tcx, CachedModuleCodegen {
+        //             name: cgu.name().to_string(),
+        //             source: cgu.work_product(tcx),
+        //         });
+        //         true
+        //     }
+        //     CguReUsable::PostThinLtoButImportedFrom => {
+        //         write::submit_import_only_module_to_llvm(tcx, CachedModuleCodegen {
+        //             name: cgu.name().to_string(),
+        //             source: cgu.work_product(tcx),
+        //         });
+        //         true
+        //     }
+        //     CguReUsable::PostThinLto => {
+        //         write::submit_post_lto_module_to_llvm(tcx, CachedModuleCodegen {
+        //             name: cgu.name().to_string(),
+        //             source: cgu.work_product(tcx),
+        //         });
+        //         true
+        //     }
+        // };
+
+        let loaded_from_cache = determine_cgu_reuse2(tcx, cgu);
+
+        if loaded_from_cache {
+            if tcx.sess.lto() == Lto::No {
                 write::submit_post_lto_module_to_llvm(tcx, CachedModuleCodegen {
                     name: cgu.name().to_string(),
                     source: cgu.work_product(tcx),
                 });
-                true
+            } else {
+                 write::submit_pre_lto_module_to_llvm(tcx, CachedModuleCodegen {
+                    name: cgu.name().to_string(),
+                    source: cgu.work_product(tcx),
+                });
             }
-        };
+        } else {
+            let _timing_guard = time_graph.as_ref().map(|time_graph| {
+            time_graph.start(write::CODEGEN_WORKER_TIMELINE,
+                                 write::CODEGEN_WORK_PACKAGE_KIND,
+                                 &format!("codegen {}", cgu.name()))
+            });
+            let start_time = Instant::now();
+            let stats = compile_codegen_unit(tcx, *cgu.name());
+            all_stats.extend(stats);
+            total_codegen_time += start_time.elapsed();
+        }
 
         if tcx.dep_graph.is_fully_enabled() {
             let dep_node = cgu.codegen_dep_node(tcx);

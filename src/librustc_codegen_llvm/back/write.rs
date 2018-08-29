@@ -637,7 +637,7 @@ unsafe fn optimize(cgcx: &CodegenContext,
 }
 
 fn generate_lto_work(cgcx: &CodegenContext,
-                     modules: Vec<ModuleCodegen>,
+                     modules: Vec<(ModuleCodegen, bool)>,
                      import_only_modules: Vec<(SerializedModule, CString)>)
     -> Vec<(WorkItem, u64)>
 {
@@ -646,6 +646,7 @@ fn generate_lto_work(cgcx: &CodegenContext,
                  CODEGEN_WORK_PACKAGE_KIND,
                  "generate lto")
     }).unwrap_or(Timeline::noop());
+    let modules: Vec<_> = modules.into_iter().map(|(m, _)| m).collect();
     let lto_modules = lto::run(cgcx, modules, import_only_modules, &mut timeline)
         .unwrap_or_else(|e| e.raise());
 
@@ -1314,7 +1315,10 @@ impl WorkItem {
 
 enum WorkItemResult {
     Compiled(CompiledModule),
-    NeedsLTO(ModuleCodegen),
+    NeedsLTO {
+        module: ModuleCodegen,
+        loaded_from_cache: bool
+    },
 }
 
 fn execute_work_item(cgcx: &CodegenContext,
@@ -1405,7 +1409,10 @@ fn execute_optimize_work_item(cgcx: &CodegenContext,
     let needs_lto = needs_lto && module.kind != ModuleKind::Metadata;
 
     if needs_lto {
-        Ok(WorkItemResult::NeedsLTO(module))
+        Ok(WorkItemResult::NeedsLTO {
+            module,
+            loaded_from_cache: false,
+        })
     } else {
         let module = unsafe {
             codegen(cgcx, &diag_handler, module, config, timeline)?
@@ -1565,17 +1572,21 @@ fn execute_load_pre_lto_mod_work_item(cgcx: &CodegenContext,
         }
     };
 
-    Ok(WorkItemResult::NeedsLTO(ModuleCodegen {
-        name: module.name.to_string(),
-        module_llvm,
-        kind: ModuleKind::Regular,
-    }))
+    Ok(WorkItemResult::NeedsLTO {
+        module: ModuleCodegen {
+            name: module.name.to_string(),
+            module_llvm,
+            kind: ModuleKind::Regular,
+        },
+        loaded_from_cache: true,
+    })
 }
 
 enum Message {
     Token(io::Result<Acquired>),
     NeedsLTO {
-        result: ModuleCodegen,
+        module: ModuleCodegen,
+        loaded_from_cache: bool,
         worker_id: usize,
     },
     Done {
@@ -2094,7 +2105,7 @@ fn start_executing_work(tcx: TyCtxt,
                         }
                     }
                 }
-                Message::NeedsLTO { result, worker_id } => {
+                Message::NeedsLTO { module, loaded_from_cache, worker_id } => {
                     assert!(!started_lto);
                     if main_thread_worker_state == MainThreadWorkerState::LLVMing {
                         main_thread_worker_state = MainThreadWorkerState::Idle;
@@ -2102,7 +2113,7 @@ fn start_executing_work(tcx: TyCtxt,
                         running -= 1;
                     }
                     free_worker_ids.push(worker_id);
-                    needs_lto.push(result);
+                    needs_lto.push((module, loaded_from_cache));
                 }
                 Message::AddImportOnlyModule { module_data, module_name } => {
                     assert!(!started_lto);
@@ -2195,8 +2206,8 @@ fn spawn_work(cgcx: CodegenContext, work: WorkItem) {
                     Some(WorkItemResult::Compiled(m)) => {
                         Message::Done { result: Ok(m), worker_id }
                     }
-                    Some(WorkItemResult::NeedsLTO(m)) => {
-                        Message::NeedsLTO { result: m, worker_id }
+                    Some(WorkItemResult::NeedsLTO{ module, loaded_from_cache }) => {
+                        Message::NeedsLTO { module, loaded_from_cache, worker_id }
                     }
                     None => Message::Done { result: Err(()), worker_id }
                 };
