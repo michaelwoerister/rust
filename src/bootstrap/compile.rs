@@ -691,6 +691,8 @@ impl Step for CodegenBackend {
             let num_jobs = builder.jobs();
 
             if !target.contains("msvc") {
+                cargo_tails_args.push("-Zcross-lang-lto".to_string());
+
                 // Here we assume that the linker is clang. If it's not, there'll
                 // be linker errors.
                 cargo_tails_args.push("-Clink-arg=-fuse-ld=lld".to_string());
