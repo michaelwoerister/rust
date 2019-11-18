@@ -306,7 +306,7 @@ impl<'sess> OnDiskCache<'sess> {
         tcx: TyCtxt<'_>,
         dep_node_index: SerializedDepNodeIndex,
     ) -> Vec<Diagnostic> {
-        let diagnostics: Option<EncodedDiagnostics> = self.load_indexed(
+        let diagnostics: Result<EncodedDiagnostics, DecodingError> = self.load_indexed(
             tcx,
             dep_node_index,
             &self.prev_diagnostics_index,
@@ -341,7 +341,27 @@ impl<'sess> OnDiskCache<'sess> {
         self.load_indexed(tcx,
                           dep_node_index,
                           &self.query_result_index,
-                          "query result")
+                          "query result").ok()
+    }
+
+    pub fn compare_to_cached<T>(
+        &self,
+        tcx: TyCtxt<'_>,
+        dep_node_index: SerializedDepNodeIndex,
+        current: &T,
+    ) -> bool
+    where
+        T: Decodable + Eq,
+    {
+        match self.load_indexed::<T>(tcx, dep_node_index, &self.query_result_index, "compare_to_cached") {
+            Ok(cached) => cached == *current,
+            Err(DecodingError::Soft) => {
+                false
+            }
+            Err(DecodingError::Hard) => {
+                bug!("Encountered hard decoding error while trying to compare values!")
+            }
+        }
     }
 
     /// Stores a diagnostic emitted during computation of an anonymous query.
@@ -365,12 +385,17 @@ impl<'sess> OnDiskCache<'sess> {
         tcx: TyCtxt<'tcx>,
         dep_node_index: SerializedDepNodeIndex,
         index: &FxHashMap<SerializedDepNodeIndex, AbsoluteBytePos>,
-        debug_tag: &'static str,
-    ) -> Option<T>
+        _debug_tag: &'static str,
+    ) -> Result<T, DecodingError>
     where
         T: Decodable,
     {
-        let pos = index.get(&dep_node_index).cloned()?;
+        let pos = match index.get(&dep_node_index).cloned() {
+            Some(pos) => pos,
+            None => {
+                return Err(DecodingError::Hard)
+            }
+        };
 
         // Initialize `cnum_map` using the value from the thread that finishes the closure first.
         self.cnum_map.init_nonlocking_same(|| {
@@ -388,10 +413,11 @@ impl<'sess> OnDiskCache<'sess> {
             alloc_decoding_session: self.alloc_decoding_state.new_decoding_session(),
         };
 
-        match decode_tagged(&mut decoder, dep_node_index) {
-            Ok(v) => Some(v),
-            Err(e) => bug!("could not decode cached {}: {}", debug_tag, e),
-        }
+        decode_tagged(&mut decoder, dep_node_index)
+        // match decode_tagged(&mut decoder, dep_node_index) {
+        //     Ok(v) => Some(v),
+        //     Err(e) => bug!("could not decode cached {}: {}", debug_tag, e),
+        // }
     }
 
     // This function builds mapping from previous-session-`CrateNum` to
@@ -441,6 +467,17 @@ struct CacheDecoder<'a, 'tcx> {
     file_index_to_file: &'a Lock<FxHashMap<SourceFileIndex, Lrc<SourceFile>>>,
     file_index_to_stable_id: &'a FxHashMap<SourceFileIndex, StableSourceFileId>,
     alloc_decoding_session: AllocDecodingSession<'a>,
+}
+
+pub enum DecodingError {
+    Hard,
+    Soft,
+}
+
+impl std::convert::From<String> for DecodingError {
+    fn from(_: String) -> DecodingError {
+        DecodingError::Hard
+    }
 }
 
 impl<'a, 'tcx> CacheDecoder<'a, 'tcx> {
@@ -555,7 +592,7 @@ impl<'a, 'tcx> TyDecoder<'tcx> for CacheDecoder<'a, 'tcx> {
     }
 }
 
-implement_ty_decoder!(CacheDecoder<'a, 'tcx>);
+implement_ty_decoder!(CacheDecoder<'a, 'tcx>, Error=crate::ty::query::on_disk_cache::DecodingError);
 
 impl<'a, 'tcx> SpecializedDecoder<interpret::AllocId> for CacheDecoder<'a, 'tcx> {
     fn specialized_decode(&mut self) -> Result<interpret::AllocId, Self::Error> {
@@ -651,7 +688,13 @@ impl<'a, 'tcx> SpecializedDecoder<DefId> for CacheDecoder<'a, 'tcx> {
         let def_path_hash = DefPathHash::decode(self)?;
 
         // Using the `DefPathHash`, we can lookup the new `DefId`.
-        Ok(self.tcx().def_path_hash_to_def_id.as_ref().unwrap()[&def_path_hash])
+        match self.tcx().def_path_hash_to_def_id.as_ref().unwrap().get(&def_path_hash) {
+            Some(def_id) => Ok(*def_id),
+            None => {
+                Err(DecodingError::Soft)
+            }
+        }
+        // Ok(self.tcx().def_path_hash_to_def_id.as_ref().unwrap()[&def_path_hash])
     }
 }
 
@@ -668,10 +711,16 @@ impl<'a, 'tcx> SpecializedDecoder<hir::HirId> for CacheDecoder<'a, 'tcx> {
         let def_path_hash = DefPathHash::decode(self)?;
 
         // Use the `DefPathHash` to map to the current `DefId`.
-        let def_id = self.tcx()
-                         .def_path_hash_to_def_id
-                         .as_ref()
-                         .unwrap()[&def_path_hash];
+        // let def_id = self.tcx()
+        //                  .def_path_hash_to_def_id
+        //                  .as_ref()
+        //                  .unwrap()[&def_path_hash];
+        let def_id = match self.tcx().def_path_hash_to_def_id.as_ref().unwrap().get(&def_path_hash) {
+            Some(def_id) => *def_id,
+            None => {
+                return Err(DecodingError::Soft)
+            }
+        };
 
         debug_assert!(def_id.is_local());
 
@@ -699,7 +748,7 @@ impl<'a, 'tcx> SpecializedDecoder<NodeId> for CacheDecoder<'a, 'tcx> {
 
 impl<'a, 'tcx> SpecializedDecoder<Fingerprint> for CacheDecoder<'a, 'tcx> {
     fn specialized_decode(&mut self) -> Result<Fingerprint, Self::Error> {
-        Fingerprint::decode_opaque(&mut self.opaque)
+        Fingerprint::decode_opaque(&mut self.opaque).map_err(std::convert::From::from)
     }
 }
 

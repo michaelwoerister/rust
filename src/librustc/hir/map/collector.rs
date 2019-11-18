@@ -589,14 +589,15 @@ impl<'a, 'hir> Visitor<'hir> for NodeCollector<'a, 'hir> {
 
 // This is a wrapper structure that allows determining if span values within
 // the wrapped item should be hashed or not.
-struct HirItemLike<T> {
+#[derive(Clone)]
+struct HirItemLike<T: Clone> {
     item_like: T,
     hash_bodies: bool,
 }
 
 impl<'hir, T> HashStable<StableHashingContext<'hir>> for HirItemLike<T>
 where
-    T: HashStable<StableHashingContext<'hir>>,
+    T: HashStable<StableHashingContext<'hir>> + Clone,
 {
     fn hash_stable(&self, hcx: &mut StableHashingContext<'hir>, hasher: &mut StableHasher) {
         hcx.while_hashing_hir_bodies(self.hash_bodies, |hcx| {

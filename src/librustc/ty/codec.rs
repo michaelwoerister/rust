@@ -305,6 +305,7 @@ macro_rules! __impl_decoder_methods {
         $(
             fn $name(&mut self) -> Result<$ty, Self::Error> {
                 self.opaque.$name()
+                    .map_err(|e| std::convert::From::from(e))
             }
         )*
     }
@@ -345,7 +346,7 @@ macro_rules! impl_arena_allocatable_decoders {
 
 #[macro_export]
 macro_rules! implement_ty_decoder {
-    ($DecoderName:ident <$($typaram:tt),*>) => {
+    ($DecoderName:ident <$($typaram:tt),*>, Error=$error_ty:ty) => {
         mod __ty_decoder_impl {
             use std::borrow::Cow;
 
@@ -362,7 +363,7 @@ macro_rules! implement_ty_decoder {
             use super::$DecoderName;
 
             impl<$($typaram ),*> Decoder for $DecoderName<$($typaram),*> {
-                type Error = String;
+                type Error = $error_ty;
 
                 __impl_decoder_methods! {
                     read_nil -> ();
@@ -388,8 +389,8 @@ macro_rules! implement_ty_decoder {
                     read_str -> Cow<'_, str>;
                 }
 
-                fn error(&mut self, err: &str) -> Self::Error {
-                    self.opaque.error(err)
+                fn error(&mut self, _err: &str) -> Self::Error {
+                    std::convert::From::from(String::new())
                 }
             }
 

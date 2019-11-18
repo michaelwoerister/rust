@@ -50,6 +50,8 @@ enum QueryModifier {
     /// Don't hash the result, instead just mark a query red if it runs
     NoHash,
 
+    CompareResultsByValue,
+
     /// Don't force the query
     NoForce,
 
@@ -114,6 +116,8 @@ impl Parse for QueryModifier {
             Ok(QueryModifier::CycleDelayBug)
         } else if modifier == "no_hash" {
             Ok(QueryModifier::NoHash)
+        } else if modifier == "compare_results_by_value" {
+            Ok(QueryModifier::CompareResultsByValue)
         } else if modifier == "no_force" {
             Ok(QueryModifier::NoForce)
         } else if modifier == "anon" {
@@ -227,6 +231,8 @@ struct QueryModifiers {
     /// Don't force the query
     no_force: bool,
 
+    compare_results_by_value: bool,
+
     /// Generate a dep node based on the dependencies of the query
     anon: bool,
 
@@ -242,6 +248,7 @@ fn process_modifiers(query: &mut Query) -> QueryModifiers {
     let mut fatal_cycle = false;
     let mut cycle_delay_bug = false;
     let mut no_hash = false;
+    let mut compare_results_by_value = false;
     let mut no_force = false;
     let mut anon = false;
     let mut eval_always = false;
@@ -283,6 +290,12 @@ fn process_modifiers(query: &mut Query) -> QueryModifiers {
                 }
                 no_hash = true;
             }
+            QueryModifier::CompareResultsByValue => {
+                if compare_results_by_value {
+                    panic!("duplicate modifier `compare_results_by_value` for query `{}`", query.name);
+                }
+                compare_results_by_value = true;
+            }
             QueryModifier::NoForce => {
                 if no_force {
                     panic!("duplicate modifier `no_force` for query `{}`", query.name);
@@ -310,6 +323,7 @@ fn process_modifiers(query: &mut Query) -> QueryModifiers {
         fatal_cycle,
         cycle_delay_bug,
         no_hash,
+        compare_results_by_value,
         no_force,
         anon,
         eval_always,
@@ -464,6 +478,11 @@ pub fn rustc_queries(input: TokenStream) -> TokenStream {
             if modifiers.no_hash {
                 attributes.push(quote! { no_hash });
             };
+
+            if modifiers.compare_results_by_value {
+                attributes.push(quote! { compare_results_by_value });
+            };
+
             // Pass on the anon modifier
             if modifiers.anon {
                 attributes.push(quote! { anon });

@@ -477,7 +477,7 @@ impl DirtyCleanVisitor<'tcx> {
         let current_fingerprint = self.get_fingerprint(&dep_node);
         let prev_fingerprint = self.tcx.dep_graph.prev_fingerprint_of(&dep_node);
 
-        if current_fingerprint == prev_fingerprint {
+        if current_fingerprint == prev_fingerprint && current_fingerprint != Some(Fingerprint::ZERO) && current_fingerprint != None {
             let dep_node_str = self.dep_node_str(&dep_node);
             self.tcx.sess.span_err(
                 item_span,

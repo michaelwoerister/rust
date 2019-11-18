@@ -391,7 +391,7 @@ for DecodeContext<'a, 'tcx> {
     }
 }
 
-implement_ty_decoder!( DecodeContext<'a, 'tcx> );
+implement_ty_decoder!( DecodeContext<'a, 'tcx>, Error=String );
 
 impl<'tcx> MetadataBlob {
     crate fn is_compatible(&self) -> bool {

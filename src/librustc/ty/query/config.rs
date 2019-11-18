@@ -40,13 +40,22 @@ pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
 
     fn dep_kind() -> DepKind;
 
+    #[allow(rustc::ty_pass_by_reference)]
     // Don't use this method to compute query results, instead use the methods on TyCtxt
-    fn compute(tcx: TyCtxt<'tcx>, key: Self::Key) -> Self::Value;
+    fn compute(tcx: &TyCtxt<'tcx>, key: Self::Key) -> Self::Value;
 
     fn hash_result(
         hcx: &mut StableHashingContext<'_>,
         result: &Self::Value
     ) -> Option<Fingerprint>;
+
+    #[allow(rustc::ty_pass_by_reference)]
+    fn compare_results(
+        tcx: &TyCtxt<'tcx>,
+        dep_node: &DepNode,
+        key: Self::Key,
+        result: &Self::Value,
+    ) -> (bool, Option<Fingerprint>);
 
     fn handle_cycle_error(tcx: TyCtxt<'tcx>, error: CycleError<'tcx>) -> Self::Value;
 }
@@ -91,3 +100,24 @@ impl<'tcx> QueryDescription<'tcx> for queries::analysis<'tcx> {
         "running analysis passes on this crate".into()
     }
 }
+
+
+// This trait and its impls make `QueryDescription::cache_on_disk` available
+// in `QueryConfig`. Doing it this way was easier than trying to modify the
+// query proc-macro.
+pub(crate) trait CacheOnDisk<'tcx> : QueryConfig<'tcx> {
+    fn should_be_cached_on_disk(_: TyCtxt<'tcx>, _: Self::Key, _: Option<&Self::Value>) -> bool;
+}
+
+impl<'tcx, T: QueryConfig<'tcx>> CacheOnDisk<'tcx> for T {
+    default fn should_be_cached_on_disk(_: TyCtxt<'tcx>, _: Self::Key, _: Option<&Self::Value>) -> bool {
+        false
+    }
+}
+
+impl<'tcx, T: QueryDescription<'tcx>> CacheOnDisk<'tcx> for T {
+    fn should_be_cached_on_disk(tcx: TyCtxt<'tcx>, key: Self::Key, value: Option<&Self::Value>) -> bool {
+        T::cache_on_disk(tcx, key, value)
+    }
+}
+

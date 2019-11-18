@@ -88,6 +88,33 @@ where
     Some(stable_hasher.finish())
 }
 
+pub fn compare_results_via_fingerprint<'a, C, A, R>(
+    cx: &C,
+    dep_graph: &DepGraph,
+    dep_node: &DepNode,
+    _arg: A,
+    result: &R) -> (bool, Option<Fingerprint>)
+where
+    C: StableHashingContextProvider<'a>,
+    R: for<'b> HashStable<StableHashingContext<'b>>,
+{
+    let mut hcx = cx.get_stable_hashing_context();
+    let mut stable_hasher = StableHasher::new();
+    result.hash_stable(&mut hcx, &mut stable_hasher);
+    let current_fingerprint = stable_hasher.finish();
+
+    let prev_graph = &dep_graph.data.as_ref().unwrap().previous;
+
+    if let Some(prev_index) = prev_graph.node_to_index_opt(dep_node) {
+        let prev_fingerprint = prev_graph.fingerprint_by_index(prev_index);
+
+        (prev_fingerprint == current_fingerprint, Some(current_fingerprint))
+    } else {
+        (false, Some(current_fingerprint))
+    }
+}
+
+
 impl DepGraph {
     pub fn new(prev_graph: PreviousDepGraph,
                prev_work_products: FxHashMap<WorkProductId, WorkProduct>) -> DepGraph {
@@ -189,11 +216,13 @@ impl DepGraph {
         key: DepNode,
         cx: C,
         arg: A,
-        task: fn(C, A) -> R,
+        task: fn(&C, A) -> R,
         hash_result: impl FnOnce(&mut StableHashingContext<'_>, &R) -> Option<Fingerprint>,
+        compare_results: impl FnOnce(&C, &DepNode, A, &R) -> (bool, Option<Fingerprint>),
     ) -> (R, DepNodeIndex)
     where
         C: DepGraphSafe + StableHashingContextProvider<'a>,
+        A: Clone,
     {
         self.with_task_impl(key, cx, arg, false, task,
             |_key| Some(TaskDeps {
@@ -205,7 +234,9 @@ impl DepGraph {
             |data, key, fingerprint, task| {
                 data.complete_task(key, task.unwrap(), fingerprint)
             },
-            hash_result)
+            hash_result,
+            compare_results,
+        )
     }
 
     /// Creates a new dep-graph input with value `input`
@@ -215,9 +246,9 @@ impl DepGraph {
                                    input: R)
                                    -> (R, DepNodeIndex)
         where C: DepGraphSafe + StableHashingContextProvider<'a>,
-              R: for<'b> HashStable<StableHashingContext<'b>>,
+              R: for<'b> HashStable<StableHashingContext<'b>> + Clone,
     {
-        fn identity_fn<C, A>(_: C, arg: A) -> A {
+        fn identity_fn<C, A>(_: &C, arg: A) -> A {
             arg
         }
 
@@ -226,7 +257,9 @@ impl DepGraph {
             |data, key, fingerprint, _| {
                 data.alloc_node(key, SmallVec::new(), fingerprint)
             },
-            hash_result::<R>)
+            hash_result::<R>,
+            |cx, key, arg, result| compare_results_via_fingerprint(cx, self, key, arg, result),
+        )
     }
 
     fn with_task_impl<'a, C, A, R>(
@@ -235,30 +268,28 @@ impl DepGraph {
         cx: C,
         arg: A,
         no_tcx: bool,
-        task: fn(C, A) -> R,
+        task: fn(&C, A) -> R,
         create_task: fn(DepNode) -> Option<TaskDeps>,
         finish_task_and_alloc_depnode: fn(&CurrentDepGraph,
                                           DepNode,
                                           Fingerprint,
                                           Option<TaskDeps>) -> DepNodeIndex,
-        hash_result: impl FnOnce(&mut StableHashingContext<'_>, &R) -> Option<Fingerprint>,
+        // This is not used anymore. I didn't bother with actually removing it
+        // just for this correctness proof of concept.
+        _hash_result: impl FnOnce(&mut StableHashingContext<'_>, &R) -> Option<Fingerprint>,
+        compare_results: impl FnOnce(&C, &DepNode, A, &R) -> (bool, Option<Fingerprint>),
     ) -> (R, DepNodeIndex)
     where
         C: DepGraphSafe + StableHashingContextProvider<'a>,
+        A: Clone, // In an actual implementation we'd certainly want to avoid cloning `arg`
     {
         if let Some(ref data) = self.data {
             let task_deps = create_task(key).map(|deps| Lock::new(deps));
 
-            // In incremental mode, hash the result of the task. We don't
-            // do anything with the hash yet, but we are computing it
-            // anyway so that
-            //  - we make sure that the infrastructure works and
-            //  - we can get an idea of the runtime cost.
-            let mut hcx = cx.get_stable_hashing_context();
-
             let result = if no_tcx {
-                task(cx, arg)
+                task(&cx, arg.clone())
             } else {
+                let arg = arg.clone();
                 ty::tls::with_context(|icx| {
                     let icx = ty::tls::ImplicitCtxt {
                         task_deps: task_deps.as_ref(),
@@ -266,12 +297,12 @@ impl DepGraph {
                     };
 
                     ty::tls::enter_context(&icx, |_| {
-                        task(cx, arg)
+                        task(&cx, arg)
                     })
                 })
             };
 
-            let current_fingerprint = hash_result(&mut hcx, &result);
+            let (result_equal_to_prev, current_fingerprint) = compare_results(&cx, &key, arg, &result);
 
             let dep_node_index = finish_task_and_alloc_depnode(
                 &data.current,
@@ -280,29 +311,11 @@ impl DepGraph {
                 task_deps.map(|lock| lock.into_inner()),
             );
 
-            let print_status = cfg!(debug_assertions) && hcx.sess().opts.debugging_opts.dep_tasks;
-
             // Determine the color of the new DepNode.
             if let Some(prev_index) = data.previous.node_to_index_opt(&key) {
-                let prev_fingerprint = data.previous.fingerprint_by_index(prev_index);
-
-                let color = if let Some(current_fingerprint) = current_fingerprint {
-                    if current_fingerprint == prev_fingerprint {
-                        if print_status {
-                            eprintln!("[task::green] {:?}", key);
-                        }
-                        DepNodeColor::Green(dep_node_index)
-                    } else {
-                        if print_status {
-                            eprintln!("[task::red] {:?}", key);
-                        }
-                        DepNodeColor::Red
-                    }
+                let color = if result_equal_to_prev {
+                    DepNodeColor::Green(dep_node_index)
                 } else {
-                    if print_status {
-                        eprintln!("[task::unknown] {:?}", key);
-                    }
-                    // Mark the node as Red if we can't hash the result
                     DepNodeColor::Red
                 };
 
@@ -311,15 +324,11 @@ impl DepGraph {
                             insertion for {:?}", key);
 
                 data.colors.insert(prev_index, color);
-            } else {
-                if print_status {
-                    eprintln!("[task::new] {:?}", key);
-                }
             }
 
             (result, dep_node_index)
         } else {
-            (task(cx, arg), DepNodeIndex::INVALID)
+            (task(&cx, arg), DepNodeIndex::INVALID)
         }
     }
 
@@ -365,18 +374,22 @@ impl DepGraph {
         key: DepNode,
         cx: C,
         arg: A,
-        task: fn(C, A) -> R,
+        task: fn(&C, A) -> R,
         hash_result: impl FnOnce(&mut StableHashingContext<'_>, &R) -> Option<Fingerprint>,
+        compare_results: impl FnOnce(&C, &DepNode, A, &R) -> (bool, Option<Fingerprint>),
     ) -> (R, DepNodeIndex)
     where
         C: DepGraphSafe + StableHashingContextProvider<'a>,
+        A: Clone,
     {
         self.with_task_impl(key, cx, arg, false, task,
             |_| None,
             |data, key, fingerprint, _| {
                 data.alloc_node(key, smallvec![], fingerprint)
             },
-            hash_result)
+            hash_result,
+            compare_results,
+        )
     }
 
     #[inline]
@@ -439,6 +452,11 @@ impl DepGraph {
     #[inline]
     pub fn prev_dep_node_index_of(&self, dep_node: &DepNode) -> SerializedDepNodeIndex {
         self.data.as_ref().unwrap().previous.node_to_index(dep_node)
+    }
+
+    #[inline]
+    pub fn prev_dep_node_index_opt(&self, dep_node: &DepNode) -> Option<SerializedDepNodeIndex> {
+        self.data.as_ref().unwrap().previous.node_to_index_opt(dep_node)
     }
 
     /// Checks whether a previous work product exists for `v` and, if

@@ -22,7 +22,6 @@ use crate::metadata;
 use crate::builder::Builder;
 use crate::common;
 use crate::context::CodegenCx;
-use rustc::dep_graph;
 use rustc::mir::mono::{Linkage, Visibility};
 use rustc::middle::cstore::{EncodedMetadata};
 use rustc::ty::TyCtxt;
@@ -117,7 +116,8 @@ pub fn compile_codegen_unit(
         tcx,
         cgu_name,
         module_codegen,
-        dep_graph::hash_result,
+        |_hcx, _result| None,
+        |_cx, _dep_node, _arg, _result| (false, None),
     );
     let time_to_codegen = start_time.elapsed();
     drop(prof_timer);
@@ -129,10 +129,12 @@ pub fn compile_codegen_unit(
 
     submit_codegened_module_to_llvm(&LlvmCodegenBackend(()), tx_to_llvm_workers, module, cost);
 
+    #[allow(rustc::ty_pass_by_reference)]
     fn module_codegen(
-        tcx: TyCtxt<'_>,
+        tcx: &TyCtxt<'_>,
         cgu_name: Symbol,
     ) -> ModuleCodegen<ModuleLlvm> {
+        let tcx = *tcx;
         let cgu = tcx.codegen_unit(cgu_name);
         // Instantiate monomorphizations without filling out definitions yet...
         let llvm_module = ModuleLlvm::new(tcx, &cgu_name.as_str());

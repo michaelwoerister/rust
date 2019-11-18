@@ -1435,6 +1435,10 @@ impl<'tcx> TyCtxt<'tcx> {
                                      crate_hash,
                                      |_, x| x, // No transformation needed
                                      dep_graph::hash_result,
+                                     |cx, dep_node, a, result| {
+                                        let dep_graph = &cx.dep_graph;
+                                        dep_graph::compare_results_via_fingerprint(cx, dep_graph, dep_node, a, result)
+                                     },
             );
         }
     }

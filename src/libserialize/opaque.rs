@@ -215,7 +215,8 @@ macro_rules! read_sleb128 {
 }
 
 
-impl<'a> serialize::Decoder for Decoder<'a> {
+impl<'a> serialize::Decoder for Decoder<'a>
+{
     type Error = String;
 
     #[inline]
@@ -321,6 +322,6 @@ impl<'a> serialize::Decoder for Decoder<'a> {
 
     #[inline]
     fn error(&mut self, err: &str) -> Self::Error {
-        err.to_string()
+        err.to_owned()
     }
 }
