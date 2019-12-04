@@ -508,7 +508,7 @@ pub fn codegen_crate<B: ExtraBackendMethods>(
 
         ongoing_codegen.codegen_finished(tcx);
 
-        assert_and_save_dep_graph(tcx);
+        finalize_tcx(tcx);
 
         ongoing_codegen.check_for_errors(tcx.sess);
 
@@ -653,7 +653,8 @@ pub fn codegen_crate<B: ExtraBackendMethods>(
 
     ongoing_codegen.check_for_errors(tcx.sess);
 
-    assert_and_save_dep_graph(tcx);
+    finalize_tcx(tcx);
+
     ongoing_codegen.into_inner()
 }
 
@@ -704,7 +705,7 @@ impl<B: ExtraBackendMethods> Drop for AbortCodegenOnDrop<B> {
     }
 }
 
-fn assert_and_save_dep_graph(tcx: TyCtxt<'_>) {
+fn finalize_tcx(tcx: TyCtxt<'_>) {
     time(tcx.sess,
          "assert dep graph",
          || ::rustc_incremental::assert_dep_graph(tcx));
@@ -712,6 +713,14 @@ fn assert_and_save_dep_graph(tcx: TyCtxt<'_>) {
     time(tcx.sess,
          "serialize dep graph",
          || ::rustc_incremental::save_dep_graph(tcx));
+
+    // We assume that no queries are run past here. If there are new queries
+    // after this point, they'll show up as "<unknown>" in self-profiling data.
+    tcx.prof.with_profiler(|profiler| {
+        let _prof_timer =
+            tcx.prof.generic_activity("self_profile_alloc_query_strings");
+        tcx.queries.allocate_self_profile_query_strings(profiler);
+    });
 }
 
 impl CrateInfo {

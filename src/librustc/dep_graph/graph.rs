@@ -3,9 +3,10 @@ use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_index::vec::{Idx, IndexVec};
 use smallvec::SmallVec;
+use rustc_data_structures::profiling::QueryInvocationId;
 use rustc_data_structures::sync::{Lrc, Lock, AtomicU32, AtomicU64, Ordering};
 use rustc_data_structures::sharded::{self, Sharded};
-use std::sync::atomic::Ordering::SeqCst;
+use std::sync::atomic::Ordering::Relaxed;
 use std::env;
 use std::hash::Hash;
 use std::collections::hash_map::Entry;
@@ -25,6 +26,12 @@ use super::prev::PreviousDepGraph;
 #[derive(Clone)]
 pub struct DepGraph {
     data: Option<Lrc<DepGraphData>>,
+
+    /// This field is used for assigning DepNodeIndices when running in
+    /// non-incremental mode. Even in non-incremental mode we make sure that
+    /// each task as a `DepNodeIndex` that uniquely identifies it. This unique
+    /// ID is used for self-profiling.
+    virtual_dep_node_index: Lrc<AtomicU32>,
 }
 
 rustc_index::newtype_index! {
@@ -33,6 +40,13 @@ rustc_index::newtype_index! {
 
 impl DepNodeIndex {
     pub const INVALID: DepNodeIndex = DepNodeIndex::MAX;
+}
+
+impl std::convert::From<DepNodeIndex> for QueryInvocationId {
+    #[inline]
+    fn from(dep_node_index: DepNodeIndex) -> Self {
+         QueryInvocationId(dep_node_index.as_u32())
+    }
 }
 
 #[derive(PartialEq)]
@@ -103,12 +117,14 @@ impl DepGraph {
                 previous: prev_graph,
                 colors: DepNodeColorMap::new(prev_graph_node_count),
             })),
+            virtual_dep_node_index: Lrc::new(AtomicU32::new(0)),
         }
     }
 
     pub fn new_disabled() -> DepGraph {
         DepGraph {
             data: None,
+            virtual_dep_node_index: Lrc::new(AtomicU32::new(0)),
         }
     }
 
@@ -319,7 +335,7 @@ impl DepGraph {
 
             (result, dep_node_index)
         } else {
-            (task(cx, arg), DepNodeIndex::INVALID)
+            (task(cx, arg), self.next_virtual_depnode_index())
         }
     }
 
@@ -354,7 +370,7 @@ impl DepGraph {
                                      .complete_anon_task(dep_kind, task_deps);
             (result, dep_node_index)
         } else {
-            (op(), DepNodeIndex::INVALID)
+            (op(), self.next_virtual_depnode_index())
         }
     }
 
@@ -485,8 +501,8 @@ impl DepGraph {
         if cfg!(debug_assertions) {
             let current_dep_graph = &self.data.as_ref().unwrap().current;
 
-            Some((current_dep_graph.total_read_count.load(SeqCst),
-                  current_dep_graph.total_duplicate_read_count.load(SeqCst)))
+            Some((current_dep_graph.total_read_count.load(Relaxed),
+                  current_dep_graph.total_duplicate_read_count.load(Relaxed)))
         } else {
             None
         }
@@ -866,6 +882,11 @@ impl DepGraph {
             }
         }
     }
+
+    fn next_virtual_depnode_index(&self) -> DepNodeIndex {
+        let index = self.virtual_dep_node_index.fetch_add(1, Relaxed);
+        DepNodeIndex::from_u32(index)
+    }
 }
 
 /// A "work product" is an intermediate result that we save into the
@@ -1082,7 +1103,7 @@ impl DepGraphData {
             if let Some(task_deps) = icx.task_deps {
                 let mut task_deps = task_deps.lock();
                 if cfg!(debug_assertions) {
-                    self.current.total_read_count.fetch_add(1, SeqCst);
+                    self.current.total_read_count.fetch_add(1, Relaxed);
                 }
                 if task_deps.read_set.insert(source) {
                     task_deps.reads.push(source);
@@ -1102,7 +1123,7 @@ impl DepGraphData {
                         }
                     }
                 } else if cfg!(debug_assertions) {
-                    self.current.total_duplicate_read_count.fetch_add(1, SeqCst);
+                    self.current.total_duplicate_read_count.fetch_add(1, Relaxed);
                 }
             }
         })
