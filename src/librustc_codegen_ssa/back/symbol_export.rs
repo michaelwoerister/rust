@@ -245,14 +245,13 @@ fn exported_symbols_provider_local(
                         symbols.push((symbol, SymbolExportLevel::Rust));
                     }
                 }
-                MonoItem::Fn(Instance { def: InstanceDef::DropGlue(def_id, Some(ty)), substs }) => {
+                MonoItem::Fn(Instance { def: InstanceDef::DropGlue(_, Some(ty)), substs }) => {
                     // A little sanity-check
                     debug_assert_eq!(
                         substs.non_erasable_generics().next(),
                         Some(GenericArgKind::Type(ty))
                     );
-                    let symbol = ExportedSymbol::Generic(def_id, substs);
-                    symbols.push((symbol, SymbolExportLevel::Rust));
+                    symbols.push((ExportedSymbol::DropGlue(ty), SymbolExportLevel::Rust));
                 }
                 _ => {
                     // Any other symbols don't qualify for sharing
@@ -321,6 +320,19 @@ fn upstream_monomorphizations_for_provider(
     tcx.upstream_monomorphizations(LOCAL_CRATE).get(&def_id)
 }
 
+fn upstream_drop_glue_for_provider<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    substs: SubstsRef<'tcx>,
+) -> Option<CrateNum> {
+    if let Some(def_id) = tcx.lang_items().drop_in_place_fn() {
+        tcx.upstream_monomorphizations(LOCAL_CRATE)
+            .get(&def_id)
+            .and_then(|monos| monos.get(&substs).cloned())
+    } else {
+        None
+    }
+}
+
 fn is_unreachable_local_definition_provider(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     if let Some(hir_id) = tcx.hir().as_local_hir_id(def_id) {
         !tcx.reachable_set(LOCAL_CRATE).contains(&hir_id)
@@ -335,6 +347,7 @@ pub fn provide(providers: &mut Providers<'_>) {
     providers.exported_symbols = exported_symbols_provider_local;
     providers.upstream_monomorphizations = upstream_monomorphizations_provider;
     providers.is_unreachable_local_definition = is_unreachable_local_definition_provider;
+    providers.upstream_drop_glue_for = upstream_drop_glue_for_provider;
 }
 
 pub fn provide_extern(providers: &mut Providers<'_>) {
@@ -393,6 +406,11 @@ pub fn symbol_name_for_instance_in_crate<'tcx>(
         ExportedSymbol::Generic(def_id, substs) => symbol_names::symbol_name_for_instance_in_crate(
             tcx,
             Instance::new(def_id, substs),
+            instantiating_crate,
+        ),
+        ExportedSymbol::DropGlue(ty) => symbol_names::symbol_name_for_instance_in_crate(
+            tcx,
+            Instance::resolve_drop_in_place(tcx, ty),
             instantiating_crate,
         ),
         ExportedSymbol::NoDefId(symbol_name) => symbol_name.to_string(),

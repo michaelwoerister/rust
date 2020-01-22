@@ -4,7 +4,7 @@ use crate::traits;
 use crate::ty::print::{FmtPrinter, Printer};
 use crate::ty::{self, SubstsRef, Ty, TyCtxt, TypeFoldable};
 use rustc_hir::def::Namespace;
-use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{CrateNum, DefId};
 use rustc_macros::HashStable;
 use rustc_target::spec::abi::Abi;
 
@@ -90,6 +90,34 @@ impl<'tcx> Instance<'tcx> {
     pub fn ty_env(&self, tcx: TyCtxt<'tcx>, param_env: ty::ParamEnv<'tcx>) -> Ty<'tcx> {
         let ty = tcx.type_of(self.def.def_id());
         tcx.subst_and_normalize_erasing_regions(self.substs, param_env, &ty)
+    }
+
+    pub fn upstream_monomorphization(&self, tcx: TyCtxt<'tcx>) -> Option<CrateNum> {
+        // If we are not in share generics mode, we don't link to upstream
+        // monomorphizations but always instantiate our own internal versions
+        // instead.
+        if !tcx.sess.opts.share_generics() {
+            return None;
+        }
+
+        // If this instance has non-erasable parameters, it cannot be a shared
+        // monomorphization. Non-generic instances are already handled above
+        // by `is_reachable_non_generic()`.
+        if self.substs.non_erasable_generics().next().is_none() {
+            return None;
+        }
+
+        if self.def_id().is_local() {
+            return None;
+        }
+
+        match self.def {
+            InstanceDef::Item(def_id) => tcx
+                .upstream_monomorphizations_for(def_id)
+                .and_then(|monos| monos.get(&self.substs).cloned()),
+            InstanceDef::DropGlue(_, Some(_)) => tcx.upstream_drop_glue_for(self.substs),
+            _ => None,
+        }
     }
 }
 

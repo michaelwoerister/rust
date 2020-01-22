@@ -783,6 +783,11 @@ rustc_queries! {
         }
         query upstream_monomorphizations_for(_: DefId)
             -> Option<&'tcx FxHashMap<SubstsRef<'tcx>, CrateNum>> {}
+
+        query upstream_drop_glue_for(substs: SubstsRef<'tcx>) -> Option<CrateNum> {
+            desc { "available upstream drop-glue for `{:?}`", substs }
+            no_force
+        }
     }
 
     Other {
