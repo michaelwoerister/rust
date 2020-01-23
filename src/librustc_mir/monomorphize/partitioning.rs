@@ -102,7 +102,7 @@ use rustc::mir::mono::{CodegenUnit, CodegenUnitNameBuilder, Linkage, Visibility}
 use rustc::mir::mono::{InstantiationMode, MonoItem};
 use rustc::ty::print::characteristic_def_id_of_type;
 use rustc::ty::query::Providers;
-use rustc::ty::{self, DefIdTree, InstanceDef, TyCtxt};
+use rustc::ty::{self, DefIdTree, InstanceDef, Ty, TyCtxt, TypeFoldable, TypeVisitor};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_data_structures::sync;
 use rustc_hir::def::DefKind;
@@ -371,7 +371,9 @@ fn mono_item_visibility(
 
     if is_generic {
         if export_generics {
-            if tcx.is_unreachable_local_definition(def_id) {
+            if tcx.is_unreachable_local_definition(def_id)
+                || has_export_blockers(tcx, instance.substs)
+            {
                 // This instance cannot be used from another crate.
                 Visibility::Hidden
             } else {
@@ -968,4 +970,61 @@ pub fn provide(providers: &mut Providers<'_>) {
             .cloned()
             .unwrap_or_else(|| panic!("failed to find cgu with name {:?}", name))
     };
+}
+
+fn has_export_blockers<'tcx, T: TypeFoldable<'tcx>>(tcx: TyCtxt<'tcx>, x: T) -> bool {
+    x.visit_with(&mut HasExportBlockers { tcx })
+}
+
+struct HasExportBlockers<'tcx> {
+    tcx: TyCtxt<'tcx>,
+}
+
+impl<'tcx> TypeVisitor<'tcx> for HasExportBlockers<'tcx> {
+    fn visit_ty(&mut self, t: Ty<'tcx>) -> bool {
+        match t.kind {
+            ty::Str
+            | ty::Array(..)
+            | ty::Slice(..)
+            | ty::RawPtr(..)
+            | ty::Ref(..)
+            | ty::Bool
+            | ty::Char
+            | ty::Int(_)
+            | ty::Uint(_)
+            | ty::FnPtr(..)
+            | ty::Never
+            | ty::Tuple(_)
+            | ty::Float(_) => {
+                // continue
+            }
+            ty::Adt(adt_def, _) => {
+                if self.tcx.is_unreachable_local_definition(adt_def.did) {
+                    return true;
+                }
+            }
+            ty::Closure(def_id, _)
+            | ty::Generator(def_id, _, _)
+            | ty::FnDef(def_id, _)
+            | ty::Opaque(def_id, _)
+            | ty::Foreign(def_id) => {
+                if self.tcx.is_unreachable_local_definition(def_id) {
+                    return true;
+                }
+            }
+            ty::Dynamic(..)
+            | ty::GeneratorWitness(..)
+            | ty::Param(_)
+            | ty::Placeholder(..)
+            | ty::Infer(..)
+            | ty::Error
+            | ty::Projection(_)
+            | ty::Bound(..)
+            | ty::UnnormalizedProjection(_) => {
+                return true;
+            }
+        };
+
+        t.super_visit_with(self)
+    }
 }
