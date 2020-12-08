@@ -89,6 +89,8 @@ pub struct Config {
     pub llvm_assertions: bool,
     pub llvm_optimize: bool,
     pub llvm_thin_lto: bool,
+    pub llvm_profile_generate: Option<String>,
+    pub llvm_profile_use: Option<String>,
     pub llvm_release_debuginfo: bool,
     pub llvm_version_check: bool,
     pub llvm_static_stdcpp: bool,
@@ -405,6 +407,8 @@ struct Llvm {
     skip_rebuild: Option<bool>,
     optimize: Option<bool>,
     thin_lto: Option<bool>,
+    profile_generate: Option<String>,
+    profile_use: Option<String>,
     release_debuginfo: Option<bool>,
     assertions: Option<bool>,
     ccache: Option<StringOrBool>,
@@ -756,6 +760,8 @@ impl Config {
             llvm_skip_rebuild = llvm_skip_rebuild.or(llvm.skip_rebuild);
             set(&mut config.llvm_optimize, llvm.optimize);
             set(&mut config.llvm_thin_lto, llvm.thin_lto);
+            config.llvm_profile_generate = llvm.profile_generate.clone();
+            config.llvm_profile_use = llvm.profile_use.clone();
             set(&mut config.llvm_release_debuginfo, llvm.release_debuginfo);
             set(&mut config.llvm_version_check, llvm.version_check);
             set(&mut config.llvm_static_stdcpp, llvm.static_libstdcpp);
@@ -791,6 +797,7 @@ impl Config {
                 // arbitrary) CI configuration locally seems bad/hard.
                 check_ci_llvm!(llvm.optimize);
                 check_ci_llvm!(llvm.thin_lto);
+                check_ci_llvm!(llvm.profile_generate);
                 check_ci_llvm!(llvm.release_debuginfo);
                 check_ci_llvm!(llvm.link_shared);
                 check_ci_llvm!(llvm.static_libstdcpp);

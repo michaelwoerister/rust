@@ -631,6 +631,10 @@ impl Build {
         self.out.join(&*target.triple).join("lld")
     }
 
+    fn profdata_out(&self, target: TargetSelection) -> PathBuf {
+        self.out.join(&*target.triple).join("profdata")
+    }
+
     /// Output directory for all documentation for a target
     fn doc_out(&self, target: TargetSelection) -> PathBuf {
         self.out.join(&*target.triple).join("doc")

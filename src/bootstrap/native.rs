@@ -206,6 +206,8 @@ impl Step for Llvm {
             }
         }
 
+        let pgo_compiler_flags = make_pgo_compiler_flags(&builder, target);
+
         // This setting makes the LLVM tools link to the dynamic LLVM library,
         // which saves both memory during parallel links and overall disk space
         // for the tools. We don't do this on every platform as it doesn't work
@@ -316,7 +318,7 @@ impl Step for Llvm {
             cfg.define("LLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN", "YES");
         }
 
-        configure_cmake(builder, target, &mut cfg, true);
+        configure_cmake(builder, target, &mut cfg, pgo_compiler_flags, true);
 
         // FIXME: we don't actually need to build all LLVM tools and all LLVM
         //        libraries here, e.g., we just want a few components and a few
@@ -359,6 +361,7 @@ fn configure_cmake(
     builder: &Builder<'_>,
     target: TargetSelection,
     cfg: &mut cmake::Config,
+    pgo_compiler_flags: Option<String>,
     use_compiler_launcher: bool,
 ) {
     // Do not print installation messages for up-to-date files.
@@ -470,6 +473,10 @@ fn configure_cmake(
     if let Some(ref s) = builder.config.llvm_cflags {
         cflags.push_str(&format!(" {}", s));
     }
+    if let &Some(ref pgo_compiler_flags) = &pgo_compiler_flags {
+        cflags.push_str(&format!(" {}", pgo_compiler_flags));
+    }
+
     // Some compiler features used by LLVM (such as thread locals) will not work on a min version below iOS 10.
     if target.contains("apple-ios") {
         if target.contains("86-") {
@@ -488,6 +495,9 @@ fn configure_cmake(
     }
     if let Some(ref s) = builder.config.llvm_cxxflags {
         cxxflags.push_str(&format!(" {}", s));
+    }
+    if let &Some(ref pgo_compiler_flags) = &pgo_compiler_flags {
+        cxxflags.push_str(&format!(" {}", pgo_compiler_flags));
     }
     if builder.config.llvm_clang_cl.is_some() {
         cxxflags.push_str(&format!(" --target={}", target))
@@ -557,7 +567,7 @@ impl Step for Lld {
         t!(fs::create_dir_all(&out_dir));
 
         let mut cfg = cmake::Config::new(builder.src.join("src/llvm-project/lld"));
-        configure_cmake(builder, target, &mut cfg, true);
+        configure_cmake(builder, target, &mut cfg, None, true);
 
         // This is an awful, awful hack. Discovered when we migrated to using
         // clang-cl to compile LLVM/LLD it turns out that LLD, when built out of
@@ -747,7 +757,7 @@ impl Step for Sanitizers {
         // Unfortunately sccache currently lacks support to build them successfully.
         // Disable compiler launcher on Darwin targets to avoid potential issues.
         let use_compiler_launcher = !self.target.contains("apple-darwin");
-        configure_cmake(builder, self.target, &mut cfg, use_compiler_launcher);
+        configure_cmake(builder, self.target, &mut cfg, None, use_compiler_launcher);
 
         t!(fs::create_dir_all(&out_dir));
         cfg.out_dir(out_dir);
@@ -851,5 +861,81 @@ impl HashStamp {
 
     fn write(&self) -> io::Result<()> {
         fs::write(&self.path, self.hash.as_deref().unwrap_or(b""))
+    }
+}
+
+
+fn make_pgo_compiler_flags(builder: &Builder<'_>, target: TargetSelection) -> Option<String> {
+    let profile_generate_path = profiling_path(builder, target, &builder.config.llvm_profile_generate, false);
+    let profile_use_path = profiling_path(builder, target, &builder.config.llvm_profile_use, true);
+
+    let mut pgo_compiler_flags = String::new();
+
+    match (profile_generate_path, profile_use_path) {
+        (Some(_), Some(_)) => {
+            panic!("error: only one of llvm.profile-generate and \
+                    llvm.profile-use is allowed to be set at a time");
+        }
+        (None, None) => {
+            return None;
+        }
+        (Some(profile_generate_path), None) => {
+            if !builder.config.llvm_link_shared {
+                panic!("error: llvm.link_shared is false but \
+                        llvm.profile-generate requires it to be true");
+            }
+
+            pgo_compiler_flags += &format!("-fprofile-generate={}", profile_generate_path.display());
+        }
+        (None, Some(profile_use_path)) => {
+            pgo_compiler_flags += &format!("-fprofile-use={}", profile_use_path.display());
+            pgo_compiler_flags += " -mllvm -pgo-warn-missing-function";
+        }
+    }
+
+    assert_cc_is_clang_for_pgo(builder, target);
+
+    pgo_compiler_flags += &format!(" -mllvm -static-func-strip-dirname-prefix={}",
+        builder.config.src.components().count());
+
+    Some(pgo_compiler_flags)
+}
+
+fn profiling_path(
+    builder: &Builder<'_>,
+    target: TargetSelection,
+    flag: &Option<String>,
+    is_use_phase: bool
+) -> Option<PathBuf> {
+
+    let out_dir = builder.profdata_out(target);
+
+    flag.as_ref().and_then(|path| {
+        if path == "default-path" {
+            assert!(out_dir.is_absolute());
+
+            if is_use_phase {
+                Some(out_dir.join("llvm").join("merged.profdata"))
+            } else {
+                Some(out_dir.join("llvm"))
+            }
+        } else {
+            let path = PathBuf::from(&path);
+            if !path.is_absolute() {
+                eprintln!("warning: Ignoring llvm.profile-generate because \
+                           it is a relative path: `{}`", path.display());
+                None
+            } else {
+                Some(path)
+            }
+        }
+    })
+}
+
+fn assert_cc_is_clang_for_pgo(builder: &Builder<'_>, target: TargetSelection) {
+    // This is a stub impl. Make more intelligent.
+    if !builder.cc(target).to_string_lossy().contains("clang") ||
+       !builder.cxx(target).map(|cxx| cxx.to_string_lossy().contains("clang")).unwrap_or(false) {
+        panic!("error: using PGO for LLVM is currently only supported with Clang");
     }
 }
