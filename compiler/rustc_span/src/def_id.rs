@@ -116,6 +116,17 @@ impl Borrow<Fingerprint> for DefPathHash {
     }
 }
 
+impl DefPathHash {
+    pub fn crate_hash(&self) -> u64 {
+        self.0.as_value().0 >> 8
+    }
+
+    pub fn local_hash(&self) -> u128 {
+        let upper_bits = (self.0.as_value().0 & 0xFF) as u128;
+        self.0.as_value().1 as u128 | (upper_bits << 64)
+    }
+}
+
 rustc_index::newtype_index! {
     /// A DefIndex is an index into the hir-map for a crate, identifying a
     /// particular definition. It should really be considered an interned

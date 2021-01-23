@@ -13,13 +13,18 @@ impl Fingerprint {
     pub const ZERO: Fingerprint = Fingerprint(0, 0);
 
     #[inline]
+    pub const fn new(_0: u64, _1: u64) -> Fingerprint {
+        Fingerprint(_0, _1)
+    }
+
+    #[inline]
     pub fn from_smaller_hash(hash: u64) -> Fingerprint {
         Fingerprint(hash, hash)
     }
 
     #[inline]
     pub fn to_smaller_hash(&self) -> u64 {
-        self.0
+        self.0 ^ self.1
     }
 
     #[inline]
@@ -93,7 +98,7 @@ impl FingerprintHasher for crate::unhash::Unhasher {
     #[inline]
     fn write_fingerprint(&mut self, fingerprint: &Fingerprint) {
         // `Unhasher` only wants a single `u64`
-        self.write_u64(fingerprint.0);
+        self.write_u64(fingerprint.0 ^ fingerprint.1);
     }
 }
 

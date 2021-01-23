@@ -11,6 +11,7 @@ use crate::hir;
 use rustc_ast::crate_disambiguator::CrateDisambiguator;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stable_hasher::StableHasher;
+use rustc_data_structures::fingerprint::Fingerprint;
 use rustc_index::vec::IndexVec;
 use rustc_span::hygiene::ExpnId;
 use rustc_span::symbol::{kw, sym, Symbol};
@@ -38,6 +39,9 @@ impl DefPathTable {
             index
         };
         self.def_path_hashes.push(def_path_hash);
+
+        assert_eq!(def_path_hash.crate_hash(), self.def_path_hashes[DefIndex::from(0u32)].crate_hash());
+
         debug_assert!(self.def_path_hashes.len() == self.index_to_key.len());
         index
     }
@@ -61,6 +65,14 @@ impl DefPathTable {
     pub fn enumerated_keys_and_path_hashes(
         &self,
     ) -> impl Iterator<Item = (DefIndex, &DefKey, &DefPathHash)> + '_ {
+
+        let mut hashes: Vec<DefPathHash> = self.def_path_hashes.iter().cloned().collect();
+
+        hashes.sort();
+        hashes.dedup();
+
+        assert!(hashes.len() == self.def_path_hashes.len());
+
         self.index_to_key
             .iter_enumerated()
             .map(move |(index, key)| (index, key, &self.def_path_hashes[index]))
@@ -127,7 +139,13 @@ impl DefKey {
 
         disambiguator.hash(&mut hasher);
 
-        DefPathHash(hasher.finish())
+        // DefPathHash(hasher.finish())
+        let fp: Fingerprint = hasher.finish();
+
+        let mut fp = fp.as_value();
+        fp.0 = (fp.0 & 0xff) | (parent_hash.crate_hash() << 8);
+
+        DefPathHash(Fingerprint::new(fp.0, fp.1))
     }
 
     fn root_parent_stable_hash(

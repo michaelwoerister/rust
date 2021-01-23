@@ -10,7 +10,7 @@ use rustc_data_structures::sync::{HashMapExt, Lock, Lrc, OnceCell};
 use rustc_data_structures::thin_vec::ThinVec;
 use rustc_data_structures::unhash::UnhashMap;
 use rustc_errors::Diagnostic;
-use rustc_hir::def_id::{CrateNum, DefId, DefIndex, LocalDefId, LOCAL_CRATE};
+use rustc_hir::def_id::{CrateNum, DefId, DefIndex, LocalDefId, LOCAL_CRATE, CRATE_DEF_INDEX};
 use rustc_hir::definitions::DefPathHash;
 use rustc_hir::definitions::Definitions;
 use rustc_index::vec::{Idx, IndexVec};
@@ -54,6 +54,7 @@ pub struct OnDiskCache<'sess> {
 
     prev_cnums: Vec<(u32, String, CrateDisambiguator)>,
     cnum_map: OnceCell<IndexVec<CrateNum, Option<CrateNum>>>,
+    cnum_map2: OnceCell<FxHashMap<u64, CrateNum>>,
 
     source_map: &'sess SourceMap,
     file_index_to_stable_id: FxHashMap<SourceFileIndex, StableSourceFileId>,
@@ -93,7 +94,7 @@ pub struct OnDiskCache<'sess> {
     // compilation session. This is used as an initial 'guess' when
     // we try to map a `DefPathHash` to its `DefId` in the current compilation
     // session.
-    foreign_def_path_hashes: UnhashMap<DefPathHash, RawDefId>,
+    _foreign_def_path_hashes: UnhashMap<DefPathHash, RawDefId>,
 
     // The *next* compilation sessison's `foreign_def_path_hashes` - at
     // the end of our current compilation session, this will get written
@@ -209,6 +210,7 @@ impl<'sess> OnDiskCache<'sess> {
             file_index_to_file: Default::default(),
             prev_cnums: footer.prev_cnums,
             cnum_map: OnceCell::new(),
+            cnum_map2: OnceCell::new(),
             source_map: sess.source_map(),
             current_diagnostics: Default::default(),
             query_result_index: footer.query_result_index.into_iter().collect(),
@@ -217,7 +219,7 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: footer.syntax_contexts,
             expn_data: footer.expn_data,
             hygiene_context: Default::default(),
-            foreign_def_path_hashes: footer.foreign_def_path_hashes,
+            _foreign_def_path_hashes: footer.foreign_def_path_hashes,
             latest_foreign_def_path_hashes: Default::default(),
             local_def_path_hash_to_def_id: make_local_def_path_hash_map(definitions),
             def_path_hash_to_def_id_cache: Default::default(),
@@ -231,6 +233,7 @@ impl<'sess> OnDiskCache<'sess> {
             file_index_to_file: Default::default(),
             prev_cnums: vec![],
             cnum_map: OnceCell::new(),
+            cnum_map2: OnceCell::new(),
             source_map,
             current_diagnostics: Default::default(),
             query_result_index: Default::default(),
@@ -239,7 +242,7 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: FxHashMap::default(),
             expn_data: FxHashMap::default(),
             hygiene_context: Default::default(),
-            foreign_def_path_hashes: Default::default(),
+            _foreign_def_path_hashes: Default::default(),
             latest_foreign_def_path_hashes: Default::default(),
             local_def_path_hash_to_def_id: Default::default(),
             def_path_hash_to_def_id_cache: Default::default(),
@@ -463,11 +466,11 @@ impl<'sess> OnDiskCache<'sess> {
         debug_assert!(prev.is_none());
     }
 
-    fn get_raw_def_id(&self, hash: &DefPathHash) -> Option<RawDefId> {
-        self.foreign_def_path_hashes.get(hash).copied()
+    fn _get_raw_def_id(&self, hash: &DefPathHash) -> Option<RawDefId> {
+        self._foreign_def_path_hashes.get(hash).copied()
     }
 
-    fn try_remap_cnum(&self, tcx: TyCtxt<'_>, cnum: u32) -> Option<CrateNum> {
+    fn _try_remap_cnum(&self, tcx: TyCtxt<'_>, cnum: u32) -> Option<CrateNum> {
         let cnum_map =
             self.cnum_map.get_or_init(|| Self::compute_cnum_map(tcx, &self.prev_cnums[..]));
         debug!("try_remap_cnum({}): cnum_map={:?}", cnum, cnum_map);
@@ -621,6 +624,30 @@ impl<'sess> OnDiskCache<'sess> {
         })
     }
 
+    // This function builds mapping from previous-session-`CrateNum` to
+    // current-session-`CrateNum`. There might be `CrateNum`s from the previous
+    // `Session` that don't occur in the current one. For these, the mapping
+    // maps to None.
+    fn get_compute_cnum_map2(
+        &self,
+        tcx: TyCtxt<'_>
+    ) -> &FxHashMap<u64, CrateNum> {
+        self.cnum_map2.get_or_init(|| tcx.dep_graph.with_ignore(|| {
+            let current_cnums = tcx
+                .all_crate_nums(LOCAL_CRATE);
+
+            let mut map = FxHashMap::default();
+
+            for current_cnum in current_cnums {
+                let root_def_id = DefId { krate: *current_cnum, index: CRATE_DEF_INDEX };
+                let stable_crate_id = tcx.cstore.def_path_hash(root_def_id).crate_hash();
+                map.insert(stable_crate_id, *current_cnum);
+            }
+
+            map
+        }))
+    }
+
     /// Converts a `DefPathHash` to its corresponding `DefId` in the current compilation
     /// session, if it still exists. This is used during incremental compilation to
     /// turn a deserialized `DefPathHash` into its current `DefId`.
@@ -641,33 +668,41 @@ impl<'sess> OnDiskCache<'sess> {
                     e.insert(Some(def_id));
                     return Some(def_id);
                 }
-                // This `raw_def_id` represents the `DefId` of this `DefPathHash` in
-                // the *previous* compliation session. The `DefPathHash` includes the
-                // owning crate, so if the corresponding definition still exists in the
-                // current compilation session, the crate is guaranteed to be the same
-                // (otherwise, we would compute a different `DefPathHash`).
-                let raw_def_id = self.get_raw_def_id(&hash)?;
-                debug!("def_path_hash_to_def_id({:?}): raw_def_id = {:?}", hash, raw_def_id);
-                // If the owning crate no longer exists, the corresponding definition definitely
-                // no longer exists.
-                let krate = self.try_remap_cnum(tcx, raw_def_id.krate)?;
-                debug!("def_path_hash_to_def_id({:?}): krate = {:?}", hash, krate);
-                // If our `DefPathHash` corresponded to a definition in the local crate,
-                // we should have either found it in `local_def_path_hash_to_def_id`, or
-                // never attempted to load it in the first place. Any query result or `DepNode`
-                // that references a local `DefId` should depend on some HIR-related `DepNode`.
-                // If a local definition is removed/modified such that its old `DefPathHash`
-                // no longer has a corresponding definition, that HIR-related `DepNode` should
-                // end up red. This should prevent us from ever calling
-                // `tcx.def_path_hash_to_def_id`, since we'll end up recomputing any
-                // queries involved.
-                debug_assert_ne!(krate, LOCAL_CRATE);
-                // Try to find a definition in the current session, using the previous `DefIndex`
-                // as an initial guess.
-                let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, raw_def_id.index, hash);
-                debug!("def_path_to_def_id({:?}): opt_def_id = {:?}", hash, opt_def_id);
+
+                let krate = self.get_compute_cnum_map2(tcx)[&hash.crate_hash()];
+
+                let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, 0xFFFF_FF00 - 1, hash);
+                // debug!("def_path_to_def_id({:?}): opt_def_id = {:?}", hash, opt_def_id);
                 e.insert(opt_def_id);
                 opt_def_id
+
+                // // This `raw_def_id` represents the `DefId` of this `DefPathHash` in
+                // // the *previous* compliation session. The `DefPathHash` includes the
+                // // owning crate, so if the corresponding definition still exists in the
+                // // current compilation session, the crate is guaranteed to be the same
+                // // (otherwise, we would compute a different `DefPathHash`).
+                // let raw_def_id = self.get_raw_def_id(&hash)?;
+                // debug!("def_path_hash_to_def_id({:?}): raw_def_id = {:?}", hash, raw_def_id);
+                // // If the owning crate no longer exists, the corresponding definition definitely
+                // // no longer exists.
+                // let krate = self.try_remap_cnum(tcx, raw_def_id.krate)?;
+                // debug!("def_path_hash_to_def_id({:?}): krate = {:?}", hash, krate);
+                // // If our `DefPathHash` corresponded to a definition in the local crate,
+                // // we should have either found it in `local_def_path_hash_to_def_id`, or
+                // // never attempted to load it in the first place. Any query result or `DepNode`
+                // // that references a local `DefId` should depend on some HIR-related `DepNode`.
+                // // If a local definition is removed/modified such that its old `DefPathHash`
+                // // no longer has a corresponding definition, that HIR-related `DepNode` should
+                // // end up red. This should prevent us from ever calling
+                // // `tcx.def_path_hash_to_def_id`, since we'll end up recomputing any
+                // // queries involved.
+                // debug_assert_ne!(krate, LOCAL_CRATE);
+                // // Try to find a definition in the current session, using the previous `DefIndex`
+                // // as an initial guess.
+                // let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, raw_def_id.index, hash);
+                // debug!("def_path_to_def_id({:?}): opt_def_id = {:?}", hash, opt_def_id);
+                // e.insert(opt_def_id);
+                // opt_def_id
             }
         }
     }
