@@ -7,10 +7,16 @@ use std::hash::{Hash, Hasher};
 use std::mem::{self, MaybeUninit};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
+#[repr(C)]
 pub struct Fingerprint(u64, u64);
 
 impl Fingerprint {
     pub const ZERO: Fingerprint = Fingerprint(0, 0);
+
+    #[inline]
+    pub fn new(_0: u64, _1: u64) -> Fingerprint {
+        Fingerprint(_0, _1)
+    }
 
     #[inline]
     pub fn from_smaller_hash(hash: u64) -> Fingerprint {

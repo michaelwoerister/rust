@@ -116,6 +116,45 @@ impl Borrow<Fingerprint> for DefPathHash {
     }
 }
 
+impl DefPathHash {
+    #[inline]
+    pub fn stable_crate_id(&self) -> StableCrateId {
+        let shift = 64 - StableCrateId::NUM_BITS;
+        StableCrateId(self.0.as_value().0 >> shift)
+    }
+
+    /// Builds a new DefPathHash with the same `StableCrateId` as `parent`.
+    pub fn new(parent: DefPathHash, base: Fingerprint) -> DefPathHash {
+        let (base0, base1) = base.as_value();
+        let (parent0, _) = parent.0.as_value();
+
+        // Create a mask with the upper `StableCrateId::NUM_BITS` being set
+        const MASK: u64 = u64::MAX << (64 - StableCrateId::NUM_BITS);
+        assert!(MASK.leading_ones() == StableCrateId::NUM_BITS);
+        assert!(MASK.trailing_zeros() == 64 - StableCrateId::NUM_BITS);
+
+        // Overwrite the upper 57 bits of the base with the upper 57 bits of
+        // the parent. These correspond to the StableCrateId.
+        let new_base0 = (parent0 & MASK) | (base0 & !MASK);
+
+        let result = DefPathHash(Fingerprint::new(new_base0, base1));
+
+        debug_assert!(result.stable_crate_id() == parent.stable_crate_id());
+
+        result
+    }
+}
+
+/// A `StableCrateId` is a 57 bit hash of (crate-name, crate-disambiguator). It
+/// is to `CrateNum` what `DefPathHash` is to `DefId`. It is stable across
+/// compilation sessions.
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct StableCrateId(u64);
+
+impl StableCrateId {
+    const NUM_BITS: u32 = 57;
+}
+
 rustc_index::newtype_index! {
     /// A DefIndex is an index into the hir-map for a crate, identifying a
     /// particular definition. It should really be considered an interned

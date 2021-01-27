@@ -9,7 +9,7 @@ use crate::def_id::{CrateNum, DefId, DefIndex, LocalDefId, CRATE_DEF_INDEX, LOCA
 use crate::hir;
 
 use rustc_ast::crate_disambiguator::CrateDisambiguator;
-use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_data_structures::stable_hasher::StableHasher;
 use rustc_index::vec::IndexVec;
 use rustc_span::hygiene::ExpnId;
@@ -61,6 +61,10 @@ impl DefPathTable {
     pub fn enumerated_keys_and_path_hashes(
         &self,
     ) -> impl Iterator<Item = (DefIndex, &DefKey, &DefPathHash)> + '_ {
+        if cfg!(debug_assertions) {
+            self.assert_no_duplicates_and_correct_stable_crate_id();
+        }
+
         self.index_to_key
             .iter_enumerated()
             .map(move |(index, key)| (index, key, &self.def_path_hashes[index]))
@@ -70,9 +74,29 @@ impl DefPathTable {
         &self,
         krate: CrateNum,
     ) -> impl Iterator<Item = (DefPathHash, DefId)> + '_ {
+        if cfg!(debug_assertions) {
+            self.assert_no_duplicates_and_correct_stable_crate_id();
+        }
+
         self.def_path_hashes
             .iter_enumerated()
             .map(move |(index, hash)| (*hash, DefId { krate, index }))
+    }
+
+    fn assert_no_duplicates_and_correct_stable_crate_id(&self) {
+        // Note: These checks could also be incrementally during `allocate()`
+        //       above, but that would require keeping the deduplication table
+        //       around indefinitely.
+        //       In the future we might want to always do the hash collision
+        //       check, not just when debug_assertions are enabled.
+
+        // Check that we don't have any hash collisions
+        let deduplicated: FxHashSet<_> = self.def_path_hashes.iter().collect();
+        assert!(deduplicated.len() == self.def_path_hashes.len());
+
+        // Check that all DefPathHashes have the same StableCrateId
+        let expected_crate_id = self.def_path_hashes[CRATE_DEF_INDEX].stable_crate_id();
+        assert!(self.def_path_hashes.iter().all(|h| h.stable_crate_id() == expected_crate_id));
     }
 }
 
@@ -127,7 +151,13 @@ impl DefKey {
 
         disambiguator.hash(&mut hasher);
 
-        DefPathHash(hasher.finish())
+        let fingerprint = hasher.finish();
+
+        // Construct the new DefPathHash, making sure that the `crate_id`
+        // portion of the hash is properly copied from the parent. This way the
+        // `crate_id` part will be recursively propagated from the root to all
+        // DefPathHashes in this DefPathTable.
+        DefPathHash::new(parent_hash, fingerprint)
     }
 
     fn root_parent_stable_hash(
