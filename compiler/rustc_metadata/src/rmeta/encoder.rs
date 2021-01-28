@@ -1,5 +1,6 @@
 use crate::rmeta::table::{FixedSizeEncoding, TableBuilder};
 use crate::rmeta::*;
+use super::def_path_hash_map::DefPathHashMap;
 
 use rustc_data_structures::fingerprint::{Fingerprint, FingerprintEncoder};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
@@ -119,6 +120,13 @@ impl<'a, 'tcx> Encoder for EncodeContext<'a, 'tcx> {
         emit_f32(f32);
         emit_char(char);
         emit_str(&str);
+    }
+}
+
+
+impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
+    pub fn emit_raw_bytes(&mut self, bytes: &[u8]) {
+        self.opaque.emit_raw_bytes(bytes);
     }
 }
 
@@ -471,6 +479,16 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         }
     }
 
+    fn encode_def_path_hash_map(&mut self) -> Lazy<DefPathHashMap> {
+        let def_path_table = self.tcx.hir().definitions().def_path_table();
+        let def_path_hashes = def_path_table.enumerated_keys_and_path_hashes().map(|(def_index, _, &def_path_hash)| {
+            (def_path_hash, def_index)
+        });
+
+        let def_path_hash_map = DefPathHashMap::build(def_path_hashes);
+        self.lazy(def_path_hash_map)
+    }
+
     fn encode_source_map(&mut self) -> Lazy<[rustc_span::SourceFile]> {
         let source_map = self.tcx.sess.source_map();
         let all_source_files = source_map.files();
@@ -635,6 +653,8 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         let (syntax_contexts, expn_data) = self.encode_hygiene();
         let hygiene_bytes = self.position() - i;
 
+        let def_path_hash_map = self.encode_def_path_hash_map();
+
         // Encode source_map. This needs to be done last,
         // since encoding `Span`s tells us which `SourceFiles` we actually
         // need to encode.
@@ -681,6 +701,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
             tables,
             syntax_contexts,
             expn_data,
+            def_path_hash_map,
         });
 
         let total_bytes = self.position();

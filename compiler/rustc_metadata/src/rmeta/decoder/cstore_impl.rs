@@ -514,10 +514,14 @@ impl CrateStore for CStore {
     fn def_path_hash_to_def_id(
         &self,
         cnum: CrateNum,
-        index_guess: u32,
         hash: DefPathHash,
     ) -> Option<DefId> {
-        self.get_crate_data(cnum).def_path_hash_to_def_id(cnum, index_guess, hash)
+        self.get_crate_data(cnum).def_path_hash_map.def_path_hash_to_def_index(&hash).map(|index| {
+            DefId {
+                krate: cnum,
+                index,
+            }
+        })
     }
 
     fn crates_untracked(&self) -> Vec<CrateNum> {

@@ -1,5 +1,6 @@
 use decoder::Metadata;
 use table::{Table, TableBuilder};
+use def_path_hash_map::DefPathHashMap;
 
 use rustc_ast::{self as ast, MacroDef};
 use rustc_attr as attr;
@@ -37,6 +38,7 @@ use rustc_span::hygiene::SyntaxContextData;
 mod decoder;
 mod encoder;
 mod table;
+mod def_path_hash_map;
 
 crate fn rustc_version() -> String {
     format!("rustc {}", option_env!("CFG_VERSION").unwrap_or("unknown version"))
@@ -229,7 +231,10 @@ crate struct CrateRoot<'tcx> {
     syntax_contexts: SyntaxContextTable,
     expn_data: ExpnDataTable,
 
+    def_path_hash_map: Lazy<DefPathHashMap>,
+
     source_map: Lazy<[rustc_span::SourceFile]>,
+
 
     compiler_builtins: bool,
     needs_allocator: bool,

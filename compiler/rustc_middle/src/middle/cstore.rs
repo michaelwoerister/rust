@@ -192,7 +192,6 @@ pub trait CrateStore {
     fn def_path_hash_to_def_id(
         &self,
         cnum: CrateNum,
-        index_guess: u32,
         hash: DefPathHash,
     ) -> Option<DefId>;
 
