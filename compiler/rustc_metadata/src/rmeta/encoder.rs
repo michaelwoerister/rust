@@ -119,6 +119,13 @@ impl<'a, 'tcx> Encoder for EncodeContext<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
+    #[inline]
+    pub fn emit_raw_bytes(&mut self, bytes: &[u8]) {
+        self.opaque.emit_raw_bytes(bytes);
+    }
+}
+
 impl<'a, 'tcx, T: Encodable<EncodeContext<'a, 'tcx>>> Encodable<EncodeContext<'a, 'tcx>>
     for Lazy<T>
 {

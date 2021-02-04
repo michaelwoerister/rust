@@ -271,6 +271,11 @@ impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
         self.lazy_state = LazyState::Previous(NonZeroUsize::new(position + min_size).unwrap());
         Ok(Lazy::from_position_and_meta(NonZeroUsize::new(position).unwrap(), meta))
     }
+
+    #[inline]
+    crate fn read_raw_bytes(&mut self, len: usize) -> &'a [u8] {
+        self.opaque.read_raw_bytes(len)
+    }
 }
 
 impl<'a, 'tcx> TyDecoder<'tcx> for DecodeContext<'a, 'tcx> {
@@ -556,6 +561,7 @@ impl<'a, 'tcx> Decodable<DecodeContext<'a, 'tcx>> for &'tcx [(ty::Predicate<'tcx
 impl<'a, 'tcx, T: Decodable<DecodeContext<'a, 'tcx>>> Decodable<DecodeContext<'a, 'tcx>>
     for Lazy<T>
 {
+    #[inline]
     fn decode(decoder: &mut DecodeContext<'a, 'tcx>) -> Result<Self, String> {
         decoder.read_lazy_with_meta(())
     }
@@ -564,6 +570,7 @@ impl<'a, 'tcx, T: Decodable<DecodeContext<'a, 'tcx>>> Decodable<DecodeContext<'a
 impl<'a, 'tcx, T: Decodable<DecodeContext<'a, 'tcx>>> Decodable<DecodeContext<'a, 'tcx>>
     for Lazy<[T]>
 {
+    #[inline]
     fn decode(decoder: &mut DecodeContext<'a, 'tcx>) -> Result<Self, String> {
         let len = decoder.read_usize()?;
         if len == 0 { Ok(Lazy::empty()) } else { decoder.read_lazy_with_meta(len) }
