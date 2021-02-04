@@ -38,7 +38,7 @@ use rustc_data_structures::sync::{self, Lock, Lrc, WorkerLocal};
 use rustc_errors::ErrorReported;
 use rustc_hir as hir;
 use rustc_hir::def::{DefKind, Res};
-use rustc_hir::def_id::{CrateNum, DefId, DefIdMap, LocalDefId, LOCAL_CRATE};
+use rustc_hir::def_id::{CrateNum, DefId, DefIdMap, LocalDefId, StableCrateId, LOCAL_CRATE};
 use rustc_hir::definitions::Definitions;
 use rustc_hir::intravisit::Visitor;
 use rustc_hir::lang_items::LangItem;
@@ -1004,6 +1004,9 @@ pub struct GlobalCtxt<'tcx> {
     /// attributes, commandline parameters, etc.
     pub crate_name: Symbol,
 
+    /// The [StableCrateId] of the local crate.
+    pub stable_crate_id: StableCrateId,
+
     /// Data layout specification for the current target.
     pub data_layout: TargetDataLayout,
 
@@ -1170,6 +1173,7 @@ impl<'tcx> TyCtxt<'tcx> {
             selection_cache: Default::default(),
             evaluation_cache: Default::default(),
             crate_name: Symbol::intern(crate_name),
+            stable_crate_id: StableCrateId::new(crate_name, s.local_crate_disambiguator()),
             data_layout,
             layout_interner: Default::default(),
             stability_interner: Default::default(),
@@ -1272,6 +1276,17 @@ impl<'tcx> TyCtxt<'tcx> {
             self.definitions.def_path_hash(def_id)
         } else {
             self.cstore.def_path_hash(def_id)
+        }
+    }
+
+    /// Maps a StableCrateId to the corresponding CrateNum. This method assumes
+    /// that the crate in question has already been loaded by the CrateStore.
+    #[inline]
+    pub fn stable_crate_id_to_crate_num(self, stable_crate_id: StableCrateId) -> CrateNum {
+        if stable_crate_id == self.stable_crate_id {
+            LOCAL_CRATE
+        } else {
+            self.cstore.stable_crate_id_to_crate_num(stable_crate_id)
         }
     }
 

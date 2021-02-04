@@ -12,7 +12,6 @@ use rustc_data_structures::unhash::UnhashMap;
 use rustc_errors::Diagnostic;
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex, LocalDefId, LOCAL_CRATE};
 use rustc_hir::definitions::DefPathHash;
-use rustc_hir::definitions::Definitions;
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_query_system::dep_graph::DepContext;
 use rustc_query_system::query::QueryContext;
@@ -29,7 +28,6 @@ use rustc_span::source_map::{SourceMap, StableSourceFileId};
 use rustc_span::CachingSourceMapView;
 use rustc_span::{BytePos, ExpnData, SourceFile, Span, DUMMY_SP};
 use std::collections::hash_map::Entry;
-use std::iter::FromIterator;
 use std::mem;
 
 const TAG_FILE_FOOTER: u128 = 0xC0FFEE_C0FFEE_C0FFEE_C0FFEE_C0FFEE;
@@ -105,12 +103,6 @@ pub struct OnDiskCache<'sess> {
     // during the next compilation session.
     latest_foreign_def_path_hashes: Lock<UnhashMap<DefPathHash, RawDefId>>,
 
-    // Maps `DefPathHashes` to their corresponding `LocalDefId`s for all
-    // local items in the current compilation session. This is only populated
-    // when we are in incremental mode and have loaded a pre-existing cache
-    // from disk, since this map is only used when deserializing a `DefPathHash`
-    // from the incremental cache.
-    local_def_path_hash_to_def_id: UnhashMap<DefPathHash, LocalDefId>,
     // Caches all lookups of `DefPathHashes`, both for local and foreign
     // definitions. A definition from the previous compilation session
     // may no longer exist in the current compilation session, so
@@ -168,23 +160,9 @@ crate struct RawDefId {
     pub index: u32,
 }
 
-fn make_local_def_path_hash_map(definitions: &Definitions) -> UnhashMap<DefPathHash, LocalDefId> {
-    UnhashMap::from_iter(
-        definitions
-            .def_path_table()
-            .all_def_path_hashes_and_def_ids(LOCAL_CRATE)
-            .map(|(hash, def_id)| (hash, def_id.as_local().unwrap())),
-    )
-}
-
 impl<'sess> OnDiskCache<'sess> {
     /// Creates a new `OnDiskCache` instance from the serialized data in `data`.
-    pub fn new(
-        sess: &'sess Session,
-        data: Vec<u8>,
-        start_pos: usize,
-        definitions: &Definitions,
-    ) -> Self {
+    pub fn new(sess: &'sess Session, data: Vec<u8>, start_pos: usize) -> Self {
         debug_assert!(sess.opts.incremental.is_some());
 
         // Wrap in a scope so we can borrow `data`.
@@ -221,7 +199,6 @@ impl<'sess> OnDiskCache<'sess> {
             hygiene_context: Default::default(),
             foreign_def_path_hashes: footer.foreign_def_path_hashes,
             latest_foreign_def_path_hashes: Default::default(),
-            local_def_path_hash_to_def_id: make_local_def_path_hash_map(definitions),
             def_path_hash_to_def_id_cache: Default::default(),
         }
     }
@@ -243,7 +220,6 @@ impl<'sess> OnDiskCache<'sess> {
             hygiene_context: Default::default(),
             foreign_def_path_hashes: Default::default(),
             latest_foreign_def_path_hashes: Default::default(),
-            local_def_path_hash_to_def_id: Default::default(),
             def_path_hash_to_def_id_cache: Default::default(),
         }
     }
@@ -621,13 +597,15 @@ impl<'sess> OnDiskCache<'sess> {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
                 debug!("def_path_hash_to_def_id({:?})", hash);
-                // Check if the `DefPathHash` corresponds to a definition in the current
-                // crate
-                if let Some(def_id) = self.local_def_path_hash_to_def_id.get(&hash).cloned() {
-                    let def_id = def_id.to_def_id();
+
+                let stable_crate_id = hash.stable_crate_id();
+
+                if stable_crate_id == tcx.stable_crate_id {
+                    let def_id = tcx.hir().definitions().def_path_hash_to_def_id(hash).to_def_id();
                     e.insert(Some(def_id));
                     return Some(def_id);
                 }
+
                 // This `raw_def_id` represents the `DefId` of this `DefPathHash` in
                 // the *previous* compliation session. The `DefPathHash` includes the
                 // owning crate, so if the corresponding definition still exists in the

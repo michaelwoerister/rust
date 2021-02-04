@@ -126,6 +126,9 @@ pub struct Definitions {
     parent_modules_of_macro_defs: FxHashMap<ExpnId, DefId>,
     /// Item with a given `LocalDefId` was defined during macro expansion with ID `ExpnId`.
     expansions_that_defined: FxHashMap<LocalDefId, ExpnId>,
+
+    /// The [StableCrateId] of the local crate.
+    stable_crate_id: StableCrateId,
 }
 
 /// A unique identifier that we can use to lookup a definition
@@ -321,6 +324,7 @@ impl Definitions {
 
     #[inline]
     pub fn def_path_hash_to_def_id(&self, def_path_hash: DefPathHash) -> LocalDefId {
+        debug_assert!(def_path_hash.stable_crate_id() == self.stable_crate_id);
         let local_def_index = self.table.def_path_hash_to_index[&def_path_hash];
         LocalDefId { local_def_index }
     }
@@ -377,6 +381,7 @@ impl Definitions {
             hir_id_to_def_id: Default::default(),
             expansions_that_defined: Default::default(),
             parent_modules_of_macro_defs: Default::default(),
+            stable_crate_id,
         }
     }
 
