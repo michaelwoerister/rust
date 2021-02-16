@@ -189,12 +189,7 @@ pub trait CrateStore {
     fn def_kind(&self, def: DefId) -> DefKind;
     fn def_path(&self, def: DefId) -> DefPath;
     fn def_path_hash(&self, def: DefId) -> DefPathHash;
-    fn def_path_hash_to_def_id(
-        &self,
-        cnum: CrateNum,
-        index_guess: u32,
-        hash: DefPathHash,
-    ) -> Option<DefId>;
+    fn def_path_hash_to_def_id(&self, cnum: CrateNum, hash: DefPathHash) -> Option<DefId>;
     fn stable_crate_id_to_crate_num(&self, stable_crate_id: StableCrateId) -> CrateNum;
 
     // "queries" used in resolve that aren't tracked for incremental compilation

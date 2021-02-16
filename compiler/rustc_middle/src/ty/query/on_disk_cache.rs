@@ -89,11 +89,6 @@ pub struct OnDiskCache<'sess> {
     expn_data: FxHashMap<u32, AbsoluteBytePos>,
     // Additional information used when decoding hygiene data.
     hygiene_context: HygieneDecodeContext,
-    // Maps `DefPathHash`es to their `RawDefId`s from the *previous*
-    // compilation session. This is used as an initial 'guess' when
-    // we try to map a `DefPathHash` to its `DefId` in the current compilation
-    // session.
-    foreign_def_path_hashes: UnhashMap<DefPathHash, RawDefId>,
 
     // The *next* compilation sessison's `foreign_def_path_hashes` - at
     // the end of our current compilation session, this will get written
@@ -123,7 +118,6 @@ struct Footer {
     syntax_contexts: FxHashMap<u32, AbsoluteBytePos>,
     // See `OnDiskCache.expn_data`
     expn_data: FxHashMap<u32, AbsoluteBytePos>,
-    foreign_def_path_hashes: UnhashMap<DefPathHash, RawDefId>,
 }
 
 pub type EncodedQueryResultIndex = Vec<(SerializedDepNodeIndex, AbsoluteBytePos)>;
@@ -197,7 +191,6 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: footer.syntax_contexts,
             expn_data: footer.expn_data,
             hygiene_context: Default::default(),
-            foreign_def_path_hashes: footer.foreign_def_path_hashes,
             latest_foreign_def_path_hashes: Default::default(),
             def_path_hash_to_def_id_cache: Default::default(),
         }
@@ -218,7 +211,6 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: FxHashMap::default(),
             expn_data: FxHashMap::default(),
             hygiene_context: Default::default(),
-            foreign_def_path_hashes: Default::default(),
             latest_foreign_def_path_hashes: Default::default(),
             def_path_hash_to_def_id_cache: Default::default(),
         }
@@ -360,9 +352,6 @@ impl<'sess> OnDiskCache<'sess> {
                 },
             )?;
 
-            let foreign_def_path_hashes =
-                std::mem::take(&mut encoder.latest_foreign_def_path_hashes);
-
             // `Encode the file footer.
             let footer_pos = encoder.position() as u64;
             encoder.encode_tagged(
@@ -375,7 +364,6 @@ impl<'sess> OnDiskCache<'sess> {
                     interpret_alloc_index,
                     syntax_contexts,
                     expn_data: expn_ids,
-                    foreign_def_path_hashes,
                 },
             )?;
 
@@ -424,18 +412,6 @@ impl<'sess> OnDiskCache<'sess> {
         let mut current_diagnostics = self.current_diagnostics.borrow_mut();
         let prev = current_diagnostics.insert(dep_node_index, diagnostics.into());
         debug_assert!(prev.is_none());
-    }
-
-    fn get_raw_def_id(&self, hash: &DefPathHash) -> Option<RawDefId> {
-        self.foreign_def_path_hashes.get(hash).copied()
-    }
-
-    fn try_remap_cnum(&self, tcx: TyCtxt<'_>, cnum: u32) -> Option<CrateNum> {
-        let cnum_map =
-            self.cnum_map.get_or_init(|| Self::compute_cnum_map(tcx, &self.prev_cnums[..]));
-        debug!("try_remap_cnum({}): cnum_map={:?}", cnum, cnum_map);
-
-        cnum_map[CrateNum::from_u32(cnum)]
     }
 
     pub(crate) fn store_foreign_def_id_hash(&self, def_id: DefId, hash: DefPathHash) {
@@ -600,36 +576,19 @@ impl<'sess> OnDiskCache<'sess> {
 
                 let stable_crate_id = hash.stable_crate_id();
 
+                // If this is a DefPathHash from the local crate, we can look up the
+                // DefId in the tcx's `Definitions`.
                 if stable_crate_id == tcx.stable_crate_id {
                     let def_id = tcx.hir().definitions().def_path_hash_to_def_id(hash).to_def_id();
                     e.insert(Some(def_id));
                     return Some(def_id);
                 }
 
-                // This `raw_def_id` represents the `DefId` of this `DefPathHash` in
-                // the *previous* compliation session. The `DefPathHash` includes the
-                // owning crate, so if the corresponding definition still exists in the
-                // current compilation session, the crate is guaranteed to be the same
-                // (otherwise, we would compute a different `DefPathHash`).
-                let raw_def_id = self.get_raw_def_id(&hash)?;
-                debug!("def_path_hash_to_def_id({:?}): raw_def_id = {:?}", hash, raw_def_id);
-                // If the owning crate no longer exists, the corresponding definition definitely
-                // no longer exists.
-                let krate = self.try_remap_cnum(tcx, raw_def_id.krate)?;
-                debug!("def_path_hash_to_def_id({:?}): krate = {:?}", hash, krate);
-                // If our `DefPathHash` corresponded to a definition in the local crate,
-                // we should have either found it in `local_def_path_hash_to_def_id`, or
-                // never attempted to load it in the first place. Any query result or `DepNode`
-                // that references a local `DefId` should depend on some HIR-related `DepNode`.
-                // If a local definition is removed/modified such that its old `DefPathHash`
-                // no longer has a corresponding definition, that HIR-related `DepNode` should
-                // end up red. This should prevent us from ever calling
-                // `tcx.def_path_hash_to_def_id`, since we'll end up recomputing any
-                // queries involved.
-                debug_assert_ne!(krate, LOCAL_CRATE);
-                // Try to find a definition in the current session, using the previous `DefIndex`
-                // as an initial guess.
-                let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, raw_def_id.index, hash);
+                // If this is a DefPathHash from an upstream crate, let the CrateStore map
+                // it to a DefId.
+                let krate = tcx.cstore.stable_crate_id_to_crate_num(stable_crate_id);
+
+                let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, hash);
                 debug!("def_path_to_def_id({:?}): opt_def_id = {:?}", hash, opt_def_id);
                 e.insert(opt_def_id);
                 opt_def_id
