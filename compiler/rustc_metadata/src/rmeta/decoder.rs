@@ -11,7 +11,6 @@ use rustc_data_structures::fingerprint::{Fingerprint, FingerprintDecoder};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::svh::Svh;
 use rustc_data_structures::sync::{Lock, LockGuard, Lrc, OnceCell};
-use rustc_data_structures::unhash::UnhashMap;
 use rustc_errors::ErrorReported;
 use rustc_expand::base::{SyntaxExtension, SyntaxExtensionKind};
 use rustc_expand::proc_macro::{AttrProcMacro, BangProcMacro, ProcMacroDerive};
@@ -78,9 +77,8 @@ crate struct CrateMetadata {
     /// Source maps for code from the crate.
     source_map_import_info: OnceCell<Vec<ImportedSourceFile>>,
     /// For every definition in this crate, maps its `DefPathHash` to its
-    /// `DefIndex`. See `raw_def_id_to_def_id` for more details about how
-    /// this is used.
-    def_path_hash_map: OnceCell<UnhashMap<DefPathHash, DefIndex>>,
+    /// `DefIndex`.
+    def_path_hash_map: DefPathHashMap,
     /// Used for decoding interpret::AllocIds in a cached & thread-safe manner.
     alloc_decoding_state: AllocDecodingState,
     /// Caches decoded `DefKey`s.
@@ -1512,58 +1510,6 @@ impl<'a, 'tcx> CrateMetadataRef<'a> {
             .or_insert_with(|| self.root.tables.def_keys.get(self, index).unwrap().decode(self))
     }
 
-    /// Finds the corresponding `DefId` for the provided `DefPathHash`, if it exists.
-    /// This is used by incremental compilation to map a serialized `DefPathHash` to
-    /// its `DefId` in the current session.
-    /// Normally, only one 'main' crate will change between incremental compilation sessions:
-    /// all dependencies will be completely unchanged. In this case, we can avoid
-    /// decoding every `DefPathHash` in the crate, since the `DefIndex` from the previous
-    /// session will still be valid. If our 'guess' is wrong (the `DefIndex` no longer exists,
-    /// or has a different `DefPathHash`, then we need to decode all `DefPathHashes` to determine
-    /// the correct mapping).
-    fn def_path_hash_to_def_id(
-        &self,
-        krate: CrateNum,
-        index_guess: u32,
-        hash: DefPathHash,
-    ) -> Option<DefId> {
-        let def_index_guess = DefIndex::from_u32(index_guess);
-        let old_hash = self
-            .root
-            .tables
-            .def_path_hashes
-            .get(self, def_index_guess)
-            .map(|lazy| lazy.decode(self));
-
-        // Fast path: the definition and its index is unchanged from the
-        // previous compilation session. There is no need to decode anything
-        // else
-        if old_hash == Some(hash) {
-            return Some(DefId { krate, index: def_index_guess });
-        }
-
-        let is_proc_macro = self.is_proc_macro_crate();
-
-        // Slow path: We need to find out the new `DefIndex` of the provided
-        // `DefPathHash`, if its still exists. This requires decoding every `DefPathHash`
-        // stored in this crate.
-        let map = self.cdata.def_path_hash_map.get_or_init(|| {
-            let end_id = self.root.tables.def_path_hashes.size() as u32;
-            let mut map = UnhashMap::with_capacity_and_hasher(end_id as usize, Default::default());
-            for i in 0..end_id {
-                let def_index = DefIndex::from_u32(i);
-                // There may be gaps in the encoded table if we're decoding a proc-macro crate
-                if let Some(hash) = self.root.tables.def_path_hashes.get(self, def_index) {
-                    map.insert(hash.decode(self), def_index);
-                } else if !is_proc_macro {
-                    panic!("Missing def_path_hashes entry for {:?}", def_index);
-                }
-            }
-            map
-        });
-        map.get(&hash).map(|index| DefId { krate, index: *index })
-    }
-
     // Returns the path leading to the thing with this `id`.
     fn def_path(&self, id: DefIndex) -> DefPath {
         debug!("def_path(cnum={:?}, id={:?})", self.cnum, id);
@@ -1794,13 +1740,15 @@ impl CrateMetadata {
         let alloc_decoding_state =
             AllocDecodingState::new(root.interpret_alloc_index.decode(&blob).collect());
         let dependencies = Lock::new(cnum_map.iter().cloned().collect());
+        let def_path_hash_map = root.def_path_hash_map.decode(&blob);
+
         CrateMetadata {
             blob,
             root,
             trait_impls,
             raw_proc_macros,
             source_map_import_info: OnceCell::new(),
-            def_path_hash_map: Default::default(),
+            def_path_hash_map,
             alloc_decoding_state,
             cnum,
             cnum_map,

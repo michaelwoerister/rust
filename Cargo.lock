@@ -2374,6 +2374,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "odht"
+version = "0.1.0"
+source = "git+https://github.com/michaelwoerister/odht?branch=incoming#69ba4993d0962f1554707772a1dedc8e25ca479b"
+
+[[package]]
 name = "once_cell"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4132,6 +4137,7 @@ version = "0.0.0"
 dependencies = [
  "libc",
  "memmap",
+ "odht",
  "rustc_ast",
  "rustc_attr",
  "rustc_data_structures",

@@ -3,8 +3,8 @@ use rustc_serialize::{
     opaque::{self, EncodeResult, FileEncodeResult},
     Decodable, Encodable,
 };
-use std::hash::{Hash, Hasher};
 use std::convert::TryInto;
+use std::hash::{Hash, Hasher};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
 #[repr(C)]
@@ -71,10 +71,10 @@ impl Fingerprint {
 
         let mut result = [0u8; 16];
 
-        let first_half: &mut [u8; 8] = (&mut result[0 .. 8]).try_into().unwrap();
+        let first_half: &mut [u8; 8] = (&mut result[0..8]).try_into().unwrap();
         *first_half = self.0.to_le_bytes();
 
-        let second_half: &mut [u8; 8] = (&mut result[8 .. 16]).try_into().unwrap();
+        let second_half: &mut [u8; 8] = (&mut result[8..16]).try_into().unwrap();
         *second_half = self.1.to_le_bytes();
 
         result
@@ -83,8 +83,8 @@ impl Fingerprint {
     #[inline]
     pub fn from_le_bytes(bytes: [u8; 16]) -> Fingerprint {
         Fingerprint(
-            u64::from_le_bytes(bytes[0 .. 8].try_into().unwrap()),
-            u64::from_le_bytes(bytes[8 .. 16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
         )
     }
 
