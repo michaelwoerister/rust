@@ -13,7 +13,7 @@ snap = "1"
 tracing = "0.1"
 memmap = "0.7"
 smallvec = { version = "1.6.1", features = ["union", "may_dangle"] }
-odht = { git = "https://github.com/michaelwoerister/odht", branch = "incoming" }
+odht = { git = "https://github.com/michaelwoerister/odht", branch = "incoming", features = ["nightly"] }
 rustc_middle = { path = "../rustc_middle" }
 rustc_attr = { path = "../rustc_attr" }
 rustc_data_structures = { path = "../rustc_data_structures" }
