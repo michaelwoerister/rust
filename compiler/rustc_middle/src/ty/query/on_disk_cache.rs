@@ -8,7 +8,6 @@ use rustc_data_structures::fingerprint::{Fingerprint, FingerprintDecoder, Finger
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
 use rustc_data_structures::sync::{HashMapExt, Lock, Lrc, OnceCell};
 use rustc_data_structures::thin_vec::ThinVec;
-use rustc_data_structures::unhash::UnhashMap;
 use rustc_errors::Diagnostic;
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex, LocalDefId, LOCAL_CRATE};
 use rustc_hir::definitions::DefPathHash;
@@ -27,7 +26,6 @@ use rustc_span::hygiene::{
 use rustc_span::source_map::{SourceMap, StableSourceFileId};
 use rustc_span::CachingSourceMapView;
 use rustc_span::{BytePos, ExpnData, SourceFile, Span, DUMMY_SP};
-use std::collections::hash_map::Entry;
 use std::mem;
 
 const TAG_FILE_FOOTER: u128 = 0xC0FFEE_C0FFEE_C0FFEE_C0FFEE_C0FFEE;
@@ -89,12 +87,6 @@ pub struct OnDiskCache<'sess> {
     expn_data: FxHashMap<u32, AbsoluteBytePos>,
     // Additional information used when decoding hygiene data.
     hygiene_context: HygieneDecodeContext,
-
-    // Caches all lookups of `DefPathHashes`, both for local and foreign
-    // definitions. A definition from the previous compilation session
-    // may no longer exist in the current compilation session, so
-    // we use `Option<DefId>` so that we can cache a lookup failure.
-    def_path_hash_to_def_id_cache: Lock<UnhashMap<DefPathHash, Option<DefId>>>,
 }
 
 // This type is used only for serialization and deserialization.
@@ -170,7 +162,6 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: footer.syntax_contexts,
             expn_data: footer.expn_data,
             hygiene_context: Default::default(),
-            def_path_hash_to_def_id_cache: Default::default(),
         }
     }
 
@@ -189,7 +180,6 @@ impl<'sess> OnDiskCache<'sess> {
             syntax_contexts: FxHashMap::default(),
             expn_data: FxHashMap::default(),
             hygiene_context: Default::default(),
-            def_path_hash_to_def_id_cache: Default::default(),
         }
     }
 
@@ -495,32 +485,20 @@ impl<'sess> OnDiskCache<'sess> {
         tcx: TyCtxt<'tcx>,
         hash: DefPathHash,
     ) -> Option<DefId> {
-        let mut cache = self.def_path_hash_to_def_id_cache.lock();
-        match cache.entry(hash) {
-            Entry::Occupied(e) => *e.get(),
-            Entry::Vacant(e) => {
-                debug!("def_path_hash_to_def_id({:?})", hash);
+        let stable_crate_id = hash.stable_crate_id();
 
-                let stable_crate_id = hash.stable_crate_id();
-
-                // If this is a DefPathHash from the local crate, we can look up the
-                // DefId in the tcx's `Definitions`.
-                if stable_crate_id == tcx.stable_crate_id {
-                    let def_id = tcx.hir().definitions().def_path_hash_to_def_id(hash).to_def_id();
-                    e.insert(Some(def_id));
-                    return Some(def_id);
-                }
-
-                // If this is a DefPathHash from an upstream crate, let the CrateStore map
-                // it to a DefId.
-                let krate = tcx.cstore.stable_crate_id_to_crate_num(stable_crate_id);
-
-                let opt_def_id = tcx.cstore.def_path_hash_to_def_id(krate, hash);
-                debug!("def_path_to_def_id({:?}): opt_def_id = {:?}", hash, opt_def_id);
-                e.insert(opt_def_id);
-                opt_def_id
-            }
+        // If this is a DefPathHash from the local crate, we can look up the
+        // DefId in the tcx's `Definitions`.
+        if stable_crate_id == tcx.stable_crate_id {
+            let def_id = tcx.hir().definitions().def_path_hash_to_def_id(hash).to_def_id();
+            return Some(def_id);
         }
+
+        // If this is a DefPathHash from an upstream crate, let the CrateStore map
+        // it to a DefId.
+        let krate = tcx.cstore.stable_crate_id_to_crate_num(stable_crate_id);
+
+        tcx.cstore.def_path_hash_to_def_id(krate, hash)
     }
 }
 
