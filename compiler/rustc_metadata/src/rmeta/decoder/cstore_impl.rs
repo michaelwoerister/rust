@@ -514,11 +514,9 @@ impl CrateStore for CStore {
         self.get_crate_data(def.krate).def_path_hash(def.index)
     }
 
-    // See `CrateMetadataRef::def_path_hash_to_def_id` for more details
     fn def_path_hash_to_def_id(&self, cnum: CrateNum, hash: DefPathHash) -> Option<DefId> {
         self.get_crate_data(cnum)
-            .def_path_hash_map
-            .def_path_hash_to_def_index(&hash)
+            .def_path_hash_to_def_index(hash)
             .map(|index| DefId { krate: cnum, index })
     }
 

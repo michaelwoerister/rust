@@ -78,7 +78,7 @@ crate struct CrateMetadata {
     source_map_import_info: OnceCell<Vec<ImportedSourceFile>>,
     /// For every definition in this crate, maps its `DefPathHash` to its
     /// `DefIndex`.
-    def_path_hash_map: DefPathHashMap,
+    def_path_hash_map: OnceCell<DefPathHashMap>,
     /// Used for decoding interpret::AllocIds in a cached & thread-safe manner.
     alloc_decoding_state: AllocDecodingState,
     /// Caches decoded `DefKey`s.
@@ -1532,6 +1532,13 @@ impl<'a, 'tcx> CrateMetadataRef<'a> {
         self.def_path_hash_unlocked(index, &mut def_path_hashes)
     }
 
+    #[inline]
+    fn def_path_hash_to_def_index(&self, hash: DefPathHash) -> Option<DefIndex> {
+        self.def_path_hash_map
+            .get_or_init(|| self.root.def_path_hash_map.decode(self))
+            .def_path_hash_to_def_index(&hash)
+    }
+
     /// Imports the source_map from an external crate into the source_map of the crate
     /// currently being compiled (the "local crate").
     ///
@@ -1740,7 +1747,6 @@ impl CrateMetadata {
         let alloc_decoding_state =
             AllocDecodingState::new(root.interpret_alloc_index.decode(&blob).collect());
         let dependencies = Lock::new(cnum_map.iter().cloned().collect());
-        let def_path_hash_map = root.def_path_hash_map.decode(&blob);
 
         CrateMetadata {
             blob,
@@ -1748,7 +1754,7 @@ impl CrateMetadata {
             trait_impls,
             raw_proc_macros,
             source_map_import_info: OnceCell::new(),
-            def_path_hash_map,
+            def_path_hash_map: Default::default(),
             alloc_decoding_state,
             cnum,
             cnum_map,
