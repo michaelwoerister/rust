@@ -48,7 +48,18 @@ use rustc_span::hygiene::HygieneDecodeContext;
 
 mod cstore_impl;
 
-crate struct MetadataBlob(MetadataRef);
+#[derive(Clone)]
+crate struct MetadataBlob(Lrc<MetadataRef>);
+
+unsafe impl rustc_data_structures::owning_ref::StableAddress for MetadataBlob {}
+
+impl std::ops::Deref for MetadataBlob {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
 
 // A map from external crate numbers (as decoded from some crate file) to
 // local crate numbers (as generated during this session). Each external
@@ -58,7 +69,7 @@ crate type CrateNumMap = IndexVec<CrateNum, CrateNum>;
 
 crate struct CrateMetadata {
     /// The primary crate data - binary metadata blob.
-    blob: MetadataBlob,
+    pub blob: MetadataBlob,
 
     // --- Some data pre-decoded from the metadata blob, usually for performance ---
     /// Properties of the whole crate.
@@ -129,7 +140,7 @@ struct ImportedSourceFile {
 }
 
 pub(super) struct DecodeContext<'a, 'tcx> {
-    opaque: opaque::Decoder<'a>,
+    pub opaque: opaque::Decoder<'a>,
     cdata: Option<CrateMetadataRef<'a>>,
     sess: Option<&'tcx Session>,
     tcx: Option<TyCtxt<'tcx>>,
@@ -247,7 +258,7 @@ impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
         self.tcx.expect("missing TyCtxt in DecodeContext")
     }
 
-    fn cdata(&self) -> CrateMetadataRef<'a> {
+    pub fn cdata(&self) -> CrateMetadataRef<'a> {
         self.cdata.expect("missing CrateMetadata in DecodeContext")
     }
 
@@ -268,11 +279,6 @@ impl<'a, 'tcx> DecodeContext<'a, 'tcx> {
         };
         self.lazy_state = LazyState::Previous(NonZeroUsize::new(position + min_size).unwrap());
         Ok(Lazy::from_position_and_meta(NonZeroUsize::new(position).unwrap(), meta))
-    }
-
-    #[inline]
-    crate fn read_raw_bytes(&mut self, len: usize) -> &'a [u8] {
-        self.opaque.read_raw_bytes(len)
     }
 }
 
@@ -590,7 +596,7 @@ implement_ty_decoder!(DecodeContext<'a, 'tcx>);
 
 impl MetadataBlob {
     crate fn new(metadata_ref: MetadataRef) -> MetadataBlob {
-        MetadataBlob(metadata_ref)
+        MetadataBlob(Lrc::new(metadata_ref))
     }
 
     crate fn is_compatible(&self) -> bool {
