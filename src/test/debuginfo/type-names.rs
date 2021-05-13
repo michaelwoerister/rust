@@ -169,10 +169,10 @@
 // cdb-command: g
 
 // STRUCTS
-// 0-sized structs appear to be optimized away in some cases, so only check the structs that do actually appear.
+// 0-sized structs appear to be optimized away in some cases, so only check the structs that do
+// actually appear.
 // cdb-command:dv /t *_struct
-// struct type_names::Struct1 simple_struct = [...]
-// struct type_names::GenericStruct<type_names::mod1::Enum2, f64> mut_generic_struct = [...]
+// cdb-check:struct type_names::GenericStruct<type_names::mod1::Enum2, f64> mut_generic_struct = [...]
 
 // ENUMS
 // cdb-command:dv /t *_enum_*

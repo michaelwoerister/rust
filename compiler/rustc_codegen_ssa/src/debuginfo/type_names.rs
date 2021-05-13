@@ -18,6 +18,7 @@ use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt};
 use rustc_target::abi::{TagEncoding, Variants};
 use rustc_hir::definitions::{DefPathData, DefPathDataName, DisambiguatedDefPathData};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
+use rustc_middle::ty::{self, Ty, TyCtxt};
 
 use std::fmt::Write;
 
@@ -130,14 +131,16 @@ pub fn push_debuginfo_type_name<'tcx>(
                 push_debuginfo_type_name(tcx, inner_type, true, output, visited);
                 match len.val {
                     ty::ConstKind::Param(param) => write!(output, ",{}>", param.name).unwrap(),
-                    _ => write!(output, ",{}>", len.eval_usize(tcx, ty::ParamEnv::reveal_all())).unwrap(),
+                    _ => write!(output, ",{}>", len.eval_usize(tcx, ty::ParamEnv::reveal_all()))
+                        .unwrap(),
                 }
             } else {
                 output.push('[');
                 push_debuginfo_type_name(tcx, inner_type, true, output, visited);
                 match len.val {
                     ty::ConstKind::Param(param) => write!(output, "; {}]", param.name).unwrap(),
-                    _ => write!(output, "; {}]", len.eval_usize(tcx, ty::ParamEnv::reveal_all())).unwrap(),
+                    _ => write!(output, "; {}]", len.eval_usize(tcx, ty::ParamEnv::reveal_all()))
+                        .unwrap(),
                 }
             }
         }
@@ -170,15 +173,26 @@ pub fn push_debuginfo_type_name<'tcx>(
                 push_generic_params_internal(tcx, principal.substs, false, output, visited);
             } else {
                 for single_trait in trait_data.iter() {
-                    match tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), single_trait) {
+                    match tcx.normalize_erasing_late_bound_regions(
+                        ty::ParamEnv::reveal_all(),
+                        single_trait,
+                    ) {
                         ty::ExistentialPredicate::Trait(trait_ref) => {
                             push_item_name(tcx, trait_ref.def_id, true, output);
-                            push_generic_params_internal(tcx, trait_ref.substs, false, output, visited);
-                        },
-                        ty::ExistentialPredicate::AutoTrait(def_id) => push_item_name(tcx, def_id, true, output),
+                            push_generic_params_internal(
+                                tcx,
+                                trait_ref.substs,
+                                false,
+                                output,
+                                visited,
+                            );
+                        }
+                        ty::ExistentialPredicate::AutoTrait(def_id) => {
+                            push_item_name(tcx, def_id, true, output)
+                        }
                         ty::ExistentialPredicate::Projection(projection) => {
                             push_debuginfo_type_name(tcx, projection.ty, true, output, visited);
-                        },
+                        }
                     }
 
                     if cpp_like_names {
@@ -214,7 +228,11 @@ pub fn push_debuginfo_type_name<'tcx>(
             // use a dummy string that should make it clear
             // that something unusual is going on
             if !visited.insert(t) {
-                output.push_str(if cpp_like_names { "__recursive_type" } else { "<recursive_type>" });
+                output.push_str(if cpp_like_names {
+                    "__recursive_type"
+                } else {
+                    "<recursive_type>"
+                });
                 return;
             }
 
@@ -224,9 +242,13 @@ pub fn push_debuginfo_type_name<'tcx>(
             let abi = sig.abi();
             if abi != rustc_target::spec::abi::Abi::Rust {
                 output.push_str("extern ");
-                if !cpp_like_names { output.push('\"') };
+                if !cpp_like_names {
+                    output.push('\"')
+                };
                 output.push_str(abi.name());
-                if !cpp_like_names { output.push('\"') };
+                if !cpp_like_names {
+                    output.push('\"')
+                };
                 output.push(' ');
             }
 
@@ -278,8 +300,7 @@ pub fn push_debuginfo_type_name<'tcx>(
             // processing
             visited.remove(t);
         }
-        ty::Closure(def_id, ..)
-        | ty::Generator(def_id, ..) => {
+        ty::Closure(def_id, ..) | ty::Generator(def_id, ..) => {
             let key = tcx.def_key(def_id);
             if qualified {
                 let parent_def_id = DefId { index: key.parent.unwrap(), ..def_id };
@@ -360,7 +381,7 @@ pub fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output:
     let def_key = tcx.def_key(def_id);
     if qualified {
         if let Some(parent) = def_key.parent {
-            push_item_name(tcx, DefId{ krate: def_id.krate, index: parent }, true, output);
+            push_item_name(tcx, DefId { krate: def_id.krate, index: parent }, true, output);
             output.push_str("::");
         }
     }
@@ -368,7 +389,12 @@ pub fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output:
     push_unqualified_item_name(tcx, def_id, def_key.disambiguated_data, output);
 }
 
-fn push_unqualified_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, disambiguated_data: DisambiguatedDefPathData, output: &mut String) {
+fn push_unqualified_item_name(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    disambiguated_data: DisambiguatedDefPathData,
+    output: &mut String,
+) {
     let cpp_like_names = tcx.sess.target.is_like_msvc;
 
     match disambiguated_data.data {
@@ -395,21 +421,20 @@ fn push_unqualified_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, disambiguated_da
             } else {
                 write!(output, "{{generator#{}}}", disambiguated_data.disambiguator).unwrap();
             }
-        },
-        _ => {
-            match disambiguated_data.data.name() {
-                DefPathDataName::Named(name) => {
-                    output.push_str(&name.as_str());
-                }
-                DefPathDataName::Anon { namespace } => {
-                    if cpp_like_names {
-                        write!(output, "__{}${}", namespace, disambiguated_data.disambiguator).unwrap();
-                    } else {
-                        write!(output, "{{{}#{}}}", namespace, disambiguated_data.disambiguator).unwrap();
-                    }
+        }
+        _ => match disambiguated_data.data.name() {
+            DefPathDataName::Named(name) => {
+                output.push_str(&name.as_str());
+            }
+            DefPathDataName::Anon { namespace } => {
+                if cpp_like_names {
+                    write!(output, "__{}${}", namespace, disambiguated_data.disambiguator).unwrap();
+                } else {
+                    write!(output, "{{{}#{}}}", namespace, disambiguated_data.disambiguator)
+                        .unwrap();
                 }
             }
-        }
+        },
     };
 }
 
@@ -441,12 +466,15 @@ fn push_generic_params_internal<'tcx>(
                 };
                 push_debuginfo_type_name(tcx, type_parameter, true, output, visited);
                 output.push_str(", ");
-            },
-            GenericArgKind::Const(const_parameter) => {
-                match const_parameter.val {
-                    ty::ConstKind::Param(param) => write!(output, "{}, ", param.name).unwrap(),
-                    _ => write!(output, "0x{:x}, ", const_parameter.eval_bits(tcx, ty::ParamEnv::reveal_all(), const_parameter.ty)).unwrap(),
-                }
+            }
+            GenericArgKind::Const(const_parameter) => match const_parameter.val {
+                ty::ConstKind::Param(param) => write!(output, "{}, ", param.name).unwrap(),
+                _ => write!(
+                    output,
+                    "0x{:x}, ",
+                    const_parameter.eval_bits(tcx, ty::ParamEnv::reveal_all(), const_parameter.ty)
+                )
+                .unwrap(),
             },
             _ => bug!("Unexpected non-erasable generic"),
         }
@@ -468,10 +496,7 @@ pub fn push_generic_params<'tcx>(
     push_generic_params_internal(tcx, substs, normalize_type, output, &mut visited);
 }
 
-fn push_close_angle_bracket<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    output: &mut String,
-) {
+fn push_close_angle_bracket<'tcx>(tcx: TyCtxt<'tcx>, output: &mut String) {
     // MSVC debugger always treats `>>` as a shift, even when parsing templates,
     // so add a space to avoid confusion.
     if tcx.sess.target.is_like_msvc && output.ends_with('>') {
