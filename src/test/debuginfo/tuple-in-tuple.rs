@@ -83,7 +83,7 @@
 // cdb-check:[...][0]              : 5 [Type: [...]]
 // cdb-check:[...][1]              : 6 [Type: [...]]
 // cdb-command:dx no_padding3,d
-// cdb-check:no_padding3,d [...]: (8, 9, (10, 11)) [Type: tuple<u32, u32, tuple<u32, u32>>]
+// cdb-check:no_padding3,d [...]: (8, 9, (10, 11)) [Type: tuple<u32, u32, tuple<u32, u32> >]
 // cdb-check:[...][0]              : 8 [Type: [...]]
 // cdb-check:[...][1]              : 9 [Type: [...]]
 // cdb-check:[...][2]              : (10, 11) [Type: tuple<u32, u32>]
@@ -93,7 +93,7 @@
 // cdb-check:[...][1]              : 11 [Type: [...]]
 
 // cdb-command:dx internal_padding1,d
-// cdb-check:internal_padding1,d [...]: (12, (13, 14)) [Type: tuple<i16, tuple<i32, i32>>]
+// cdb-check:internal_padding1,d [...]: (12, (13, 14)) [Type: tuple<i16, tuple<i32, i32> >]
 // cdb-check:[...][0]              : 12 [Type: [...]]
 // cdb-check:[...][1]              : (13, 14) [Type: tuple<i32, i32>]
 // cdb-command:dx internal_padding1.__1,d
@@ -101,7 +101,7 @@
 // cdb-check:[...][0]              : 13 [Type: [...]]
 // cdb-check:[...][1]              : 14 [Type: [...]]
 // cdb-command:dx internal_padding2,d
-// cdb-check:internal_padding2,d [...]: (15, (16, 17)) [Type: tuple<i16, tuple<i16, i32>>]
+// cdb-check:internal_padding2,d [...]: (15, (16, 17)) [Type: tuple<i16, tuple<i16, i32> >]
 // cdb-check:[...][0]              : 15 [Type: [...]]
 // cdb-check:[...][1]              : (16, 17) [Type: tuple<i16, i32>]
 // cdb-command:dx internal_padding2.__1,d
@@ -110,7 +110,7 @@
 // cdb-check:[...][1]              : 17 [Type: [...]]
 
 // cdb-command:dx padding_at_end1,d
-// cdb-check:padding_at_end1,d [...]: (18, (19, 20)) [Type: tuple<i32, tuple<i32, i16>>]
+// cdb-check:padding_at_end1,d [...]: (18, (19, 20)) [Type: tuple<i32, tuple<i32, i16> >]
 // cdb-check:[...][0]              : 18 [Type: [...]]
 // cdb-check:[...][1]              : (19, 20) [Type: tuple<i32, i16>]
 // cdb-command:dx padding_at_end1.__1,d

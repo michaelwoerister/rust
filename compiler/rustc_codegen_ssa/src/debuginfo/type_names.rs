@@ -1,10 +1,23 @@
 // Type Names for Debug Info.
 
+// Notes on targetting MSVC:
+// In general, MSVC's debugger attempts to parse all arguments as C++ expressions,
+// even if the argument is explicitly a symbol name.
+// As such, there are many things that cause parsing issues:
+// * `#` is treated as a special character for macros.
+// * `{` or `<` at the beginning of a name is treated as an operator.
+// * `>>` is always treated as a right-shift.
+// * `[` in a name is treated like a regex bracket expression (match any char
+//   within the brackets).
+// * `"` is treated as the start of a string.
+
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::{self, subst::SubstsRef, AdtDef, Ty, TyCtxt};
+use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt};
 use rustc_target::abi::{TagEncoding, Variants};
+use rustc_hir::definitions::{DefPathData, DefPathDataName, DisambiguatedDefPathData};
+use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 
 use std::fmt::Write;
 
@@ -50,7 +63,7 @@ pub fn push_debuginfo_type_name<'tcx>(
                 msvc_enum_fallback(tcx, t, def, substs, output, visited);
             } else {
                 push_item_name(tcx, def.did, qualified, output);
-                push_type_params(tcx, substs, output, visited);
+                push_generic_params_internal(tcx, substs, false, output, visited);
             }
         }
         ty::Tuple(component_types) => {
@@ -70,7 +83,7 @@ pub fn push_debuginfo_type_name<'tcx>(
             }
 
             if cpp_like_names {
-                output.push('>');
+                push_close_angle_bracket(tcx, output);
             } else {
                 output.push(')');
             }
@@ -84,19 +97,21 @@ pub fn push_debuginfo_type_name<'tcx>(
                 hir::Mutability::Mut => output.push_str("mut "),
             }
 
-            push_debuginfo_type_name(tcx, inner_type, true, output, visited);
+            push_debuginfo_type_name(tcx, inner_type, qualified, output, visited);
 
             if cpp_like_names {
                 output.push('*');
             }
         }
         ty::Ref(_, inner_type, mutbl) => {
-            if !cpp_like_names {
+            if cpp_like_names {
+                output.push_str("ref ");
+            } else {
                 output.push('&');
             }
             output.push_str(mutbl.prefix_str());
 
-            push_debuginfo_type_name(tcx, inner_type, true, output, visited);
+            push_debuginfo_type_name(tcx, inner_type, qualified, output, visited);
 
             if cpp_like_names {
                 // Slices and `&str` are treated like C++ pointers when computing debug
@@ -110,10 +125,21 @@ pub fn push_debuginfo_type_name<'tcx>(
             }
         }
         ty::Array(inner_type, len) => {
-            output.push('[');
-            push_debuginfo_type_name(tcx, inner_type, true, output, visited);
-            output.push_str(&format!("; {}", len.eval_usize(tcx, ty::ParamEnv::reveal_all())));
-            output.push(']');
+            if cpp_like_names {
+                output.push_str("array<");
+                push_debuginfo_type_name(tcx, inner_type, true, output, visited);
+                match len.val {
+                    ty::ConstKind::Param(param) => write!(output, ",{}>", param.name).unwrap(),
+                    _ => write!(output, ",{}>", len.eval_usize(tcx, ty::ParamEnv::reveal_all())).unwrap(),
+                }
+            } else {
+                output.push('[');
+                push_debuginfo_type_name(tcx, inner_type, true, output, visited);
+                match len.val {
+                    ty::ConstKind::Param(param) => write!(output, "; {}]", param.name).unwrap(),
+                    _ => write!(output, "; {}]", len.eval_usize(tcx, ty::ParamEnv::reveal_all())).unwrap(),
+                }
+            }
         }
         ty::Slice(inner_type) => {
             if cpp_like_names {
@@ -125,19 +151,52 @@ pub fn push_debuginfo_type_name<'tcx>(
             push_debuginfo_type_name(tcx, inner_type, true, output, visited);
 
             if cpp_like_names {
-                output.push('>');
+                push_close_angle_bracket(tcx, output);
             } else {
                 output.push(']');
             }
         }
         ty::Dynamic(ref trait_data, ..) => {
+            if cpp_like_names {
+                output.push_str("__dyn<");
+            } else {
+                output.push_str("dyn ");
+            }
+
             if let Some(principal) = trait_data.principal() {
                 let principal =
                     tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), principal);
-                push_item_name(tcx, principal.def_id, false, output);
-                push_type_params(tcx, principal.substs, output, visited);
+                push_item_name(tcx, principal.def_id, qualified, output);
+                push_generic_params_internal(tcx, principal.substs, false, output, visited);
             } else {
-                output.push_str("dyn '_");
+                for single_trait in trait_data.iter() {
+                    match tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), single_trait) {
+                        ty::ExistentialPredicate::Trait(trait_ref) => {
+                            push_item_name(tcx, trait_ref.def_id, true, output);
+                            push_generic_params_internal(tcx, trait_ref.substs, false, output, visited);
+                        },
+                        ty::ExistentialPredicate::AutoTrait(def_id) => push_item_name(tcx, def_id, true, output),
+                        ty::ExistentialPredicate::Projection(projection) => {
+                            push_debuginfo_type_name(tcx, projection.ty, true, output, visited);
+                        },
+                    }
+
+                    if cpp_like_names {
+                        output.push_str(", ");
+                    } else {
+                        output.push_str(" + ");
+                    }
+                }
+
+                output.pop();
+                output.pop();
+                if !cpp_like_names {
+                    output.pop();
+                }
+            }
+
+            if cpp_like_names {
+                push_close_angle_bracket(tcx, output);
             }
         }
         ty::FnDef(..) | ty::FnPtr(_) => {
@@ -155,7 +214,7 @@ pub fn push_debuginfo_type_name<'tcx>(
             // use a dummy string that should make it clear
             // that something unusual is going on
             if !visited.insert(t) {
-                output.push_str("<recursive_type>");
+                output.push_str(if cpp_like_names { "__recursive_type" } else { "<recursive_type>" });
                 return;
             }
 
@@ -164,14 +223,26 @@ pub fn push_debuginfo_type_name<'tcx>(
 
             let abi = sig.abi();
             if abi != rustc_target::spec::abi::Abi::Rust {
-                output.push_str("extern \"");
+                output.push_str("extern ");
+                if !cpp_like_names { output.push('\"') };
                 output.push_str(abi.name());
-                output.push_str("\" ");
+                if !cpp_like_names { output.push('\"') };
+                output.push(' ');
             }
 
-            output.push_str("fn(");
-
             let sig = tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), sig);
+            if cpp_like_names {
+                // C++ has a leading return type and doesn't need the 'fn' keyword.
+                if sig.output().is_unit() {
+                    output.push_str("void");
+                } else {
+                    push_debuginfo_type_name(tcx, sig.output(), true, output, visited);
+                }
+                output.push_str(" (");
+            } else {
+                output.push_str("fn(");
+            }
+
             if !sig.inputs().is_empty() {
                 for &parameter_type in sig.inputs() {
                     push_debuginfo_type_name(tcx, parameter_type, true, output, visited);
@@ -191,7 +262,7 @@ pub fn push_debuginfo_type_name<'tcx>(
 
             output.push(')');
 
-            if !sig.output().is_unit() {
+            if !cpp_like_names && !sig.output().is_unit() {
                 output.push_str(" -> ");
                 push_debuginfo_type_name(tcx, sig.output(), true, output, visited);
             }
@@ -207,17 +278,15 @@ pub fn push_debuginfo_type_name<'tcx>(
             // processing
             visited.remove(t);
         }
-        ty::Closure(def_id, ..) => {
-            output.push_str(&format!(
-                "closure-{}",
-                tcx.def_key(def_id).disambiguated_data.disambiguator
-            ));
-        }
-        ty::Generator(def_id, ..) => {
-            output.push_str(&format!(
-                "generator-{}",
-                tcx.def_key(def_id).disambiguated_data.disambiguator
-            ));
+        ty::Closure(def_id, ..)
+        | ty::Generator(def_id, ..) => {
+            let key = tcx.def_key(def_id);
+            if qualified {
+                let parent_def_id = DefId { index: key.parent.unwrap(), ..def_id };
+                push_item_name(tcx, parent_def_id, true, output);
+                output.push_str("::");
+            }
+            push_unqualified_item_name(tcx, def_id, key.disambiguated_data, output);
         }
         // Type parameters from polymorphized functions.
         ty::Param(_) => {
@@ -285,43 +354,129 @@ pub fn push_debuginfo_type_name<'tcx>(
             output.push('>');
         }
     }
+}
 
-    fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output: &mut String) {
-        if qualified {
+pub fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output: &mut String) {
+    let def_key = tcx.def_key(def_id);
+    if qualified {
+        if let Some(parent) = def_key.parent {
+            push_item_name(tcx, DefId{ krate: def_id.krate, index: parent }, true, output);
+            output.push_str("::");
+        }
+    }
+
+    push_unqualified_item_name(tcx, def_id, def_key.disambiguated_data, output);
+}
+
+fn push_unqualified_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, disambiguated_data: DisambiguatedDefPathData, output: &mut String) {
+    let cpp_like_names = tcx.sess.target.is_like_msvc;
+
+    match disambiguated_data.data {
+        DefPathData::CrateRoot => {
             output.push_str(&tcx.crate_name(def_id.krate).as_str());
-            for path_element in tcx.def_path(def_id).data {
-                write!(output, "::{}", path_element.data).unwrap();
+        }
+        DefPathData::Impl => {
+            let self_ty = tcx.type_of(def_id);
+            if let Some(impl_trait_ref) = tcx.impl_trait_ref(def_id) {
+                output.push_str(if cpp_like_names { "__impl<" } else { "<impl " });
+                push_item_name(tcx, impl_trait_ref.def_id, true, output);
+                output.push_str(" for ");
+                push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
+                push_close_angle_bracket(tcx, output);
+            } else {
+                push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
             }
-        } else {
-            output.push_str(&tcx.item_name(def_id).as_str());
+        }
+        DefPathData::ClosureExpr if tcx.generator_kind(def_id).is_some() => {
+            // Generators look like closures, but we want to treat them differently
+            // in the debug info.
+            if cpp_like_names {
+                write!(output, "__generator${}", disambiguated_data.disambiguator).unwrap();
+            } else {
+                write!(output, "{{generator#{}}}", disambiguated_data.disambiguator).unwrap();
+            }
+        },
+        _ => {
+            match disambiguated_data.data.name() {
+                DefPathDataName::Named(name) => {
+                    output.push_str(&name.as_str());
+                }
+                DefPathDataName::Anon { namespace } => {
+                    if cpp_like_names {
+                        write!(output, "__{}${}", namespace, disambiguated_data.disambiguator).unwrap();
+                    } else {
+                        write!(output, "{{{}#{}}}", namespace, disambiguated_data.disambiguator).unwrap();
+                    }
+                }
+            }
+        }
+    };
+}
+
+// Pushes the generic parameters in the given `InternalSubsts` to the output string.
+// This ignores region parameters, since they can't reliably be
+// reconstructed for items from non-local crates. For local crates, this
+// would be possible but with inlining and LTO we have to use the least
+// common denominator - otherwise we would run into conflicts.
+fn push_generic_params_internal<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    substs: SubstsRef<'tcx>,
+    normalize_type: bool,
+    output: &mut String,
+    visited: &mut FxHashSet<Ty<'tcx>>,
+) {
+    if substs.non_erasable_generics().next().is_none() {
+        return;
+    }
+
+    output.push('<');
+
+    for type_parameter in substs.non_erasable_generics() {
+        match type_parameter {
+            GenericArgKind::Type(type_parameter) => {
+                let type_parameter = if normalize_type {
+                    tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), type_parameter)
+                } else {
+                    type_parameter
+                };
+                push_debuginfo_type_name(tcx, type_parameter, true, output, visited);
+                output.push_str(", ");
+            },
+            GenericArgKind::Const(const_parameter) => {
+                match const_parameter.val {
+                    ty::ConstKind::Param(param) => write!(output, "{}, ", param.name).unwrap(),
+                    _ => write!(output, "0x{:x}, ", const_parameter.eval_bits(tcx, ty::ParamEnv::reveal_all(), const_parameter.ty)).unwrap(),
+                }
+            },
+            _ => bug!("Unexpected non-erasable generic"),
         }
     }
 
-    // Pushes the type parameters in the given `InternalSubsts` to the output string.
-    // This ignores region parameters, since they can't reliably be
-    // reconstructed for items from non-local crates. For local crates, this
-    // would be possible but with inlining and LTO we have to use the least
-    // common denominator - otherwise we would run into conflicts.
-    fn push_type_params<'tcx>(
-        tcx: TyCtxt<'tcx>,
-        substs: SubstsRef<'tcx>,
-        output: &mut String,
-        visited: &mut FxHashSet<Ty<'tcx>>,
-    ) {
-        if substs.types().next().is_none() {
-            return;
-        }
+    output.pop();
+    output.pop();
 
-        output.push('<');
+    push_close_angle_bracket(tcx, output);
+}
 
-        for type_parameter in substs.types() {
-            push_debuginfo_type_name(tcx, type_parameter, true, output, visited);
-            output.push_str(", ");
-        }
+pub fn push_generic_params<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    substs: SubstsRef<'tcx>,
+    normalize_type: bool,
+    output: &mut String,
+) {
+    let mut visited = FxHashSet::default();
+    push_generic_params_internal(tcx, substs, normalize_type, output, &mut visited);
+}
 
-        output.pop();
-        output.pop();
+fn push_close_angle_bracket<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    output: &mut String,
+) {
+    // MSVC debugger always treats `>>` as a shift, even when parsing templates,
+    // so add a space to avoid confusion.
+    if tcx.sess.target.is_like_msvc && output.ends_with('>') {
+        output.push(' ')
+    };
 
-        output.push('>');
-    }
+    output.push('>');
 }
