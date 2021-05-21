@@ -310,10 +310,10 @@ impl DebugInfoMethods<'tcx> for CodegenCx<'ll, 'tcx> {
             llvm::LLVMRustDIBuilderCreateSubroutineType(DIB(self), fn_signature)
         };
 
-        // Find the enclosing function, in case this is a closure.
         let mut name = String::new();
         type_names::push_item_name(self.tcx(), def_id, false, &mut name);
 
+        // Find the enclosing function, in case this is a closure.
         let enclosing_fn_def_id = self.tcx().closure_base_def_id(def_id);
 
         // Get_template_parameters() will append a `<...>` clause to the function

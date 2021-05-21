@@ -202,6 +202,8 @@ pub fn push_debuginfo_type_name<'tcx>(
                     }
                 }
 
+                // Remove the trailing joining characters. For cpp_like_names
+                // this is `, ` otherwise ` + `.
                 output.pop();
                 output.pop();
                 if !cpp_like_names {

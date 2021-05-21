@@ -31,7 +31,7 @@ fn main() {
         <Foo as Debug>::fmt,
         "<issue_21058::Foo as core::fmt::Debug>::fmt"
     );
-    check!(val: || {}, "issue_21058::main::{{closure}}");
+    check!(val: || {}, "issue_21058::main::{{closure#0}}");
     bar::<i32>();
 }
 
