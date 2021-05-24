@@ -5,6 +5,8 @@
 // Top-level function
 // gdb-command:info functions -q function_names::main
 // gdb-check:[...]static fn function_names::main();
+// gdb-command:info functions -q function_names::generic_func<*
+// gdb-check:[...]static fn function_names::generic_func(i32) -> i32;
 
 // Implementations
 // gdb-command:info functions -q function_names::.*::impl_function.*
@@ -21,6 +23,8 @@
 
 // Closure
 // gdb-command:info functions -q function_names::.*::{{closure.*
+// gdb-check:[...]static fn function_names::GenericStruct<T1,T2>::impl_function::{{closure}}(*mut function_names::<impl GenericStruct<T1, T2>>::impl_function::{closure#0});
+// gdb-check:[...]static fn function_names::generic_func::{{closure}}(*mut function_names::generic_func::{closure#0});
 // gdb-check:[...]static fn function_names::main::{{closure}}(*mut function_names::main::{closure#0});
 
 // Generator
@@ -31,6 +35,8 @@
 // Top-level function
 // cdb-command:x a!function_names::main
 // cdb-check:[...] a!function_names::main (void)
+// cdb-command:x a!function_names::generic_func<*
+// cdb-check:[...] a!function_names::generic_func<i32> (int)
 
 // Implementations
 // cdb-command:x a!function_names::*::impl_function*
@@ -40,18 +46,20 @@
 
 // Trait implementations
 // cdb-command:x a!function_names::*::trait_function*
-// cdb-check:[...] a!function_names::__impl<function_names::TestTrait1 for GenericStruct<T, i32> >::trait_function<i32> (void)
-// cdb-check:[...] a!function_names::__impl<function_names::TestTrait1 for GenericStruct<array<T,N>, f32> >::trait_function<i32, 0x1> (void)
-// cdb-check:[...] a!function_names::Mod1::__impl<function_names::Mod1::TestTrait2 for TestStruct2>::trait_function (void)
-// cdb-check:[...] a!function_names::__impl<function_names::TestTrait1 for TestStruct1>::trait_function (void)
+// cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, GenericStruct<T, i32> >::trait_function<i32> (void)
+// cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, GenericStruct<array$<T,N>, f32> >::trait_function<i32, 0x1> (void)
+// cdb-check:[...] a!function_names::Mod1::impl$<function_names::Mod1::TestTrait2, TestStruct2>::trait_function (void)
+// cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, TestStruct1>::trait_function (void)
 
 // Closure
-// cdb-command:x a!function_names::*::__closure*
-// cdb-check:[...] a!function_names::main::__closure$0 (void)
+// cdb-command:x a!function_names::*::closure*
+// cdb-check:[...] a!function_names::main::closure$0 (void)
+// cdb-check:[...] a!function_names::impl$<GenericStruct<T1, T2> >::impl_function::closure$0<i32, i32> (void)
+// cdb-check:[...] a!function_names::generic_func::closure$0<i32> (void)
 
 // Generator
-// cdb-command:x a!function_names::*::__generator*
-// cdb-check:[...] a!function_names::main::__generator$1 (void)
+// cdb-command:x a!function_names::*::generator*
+// cdb-check:[...] a!function_names::main::generator$1 (void)
 
 #![allow(unused_variables)]
 #![feature(omit_gdb_pretty_printer_section)]
@@ -73,6 +81,9 @@ fn main() {
     Mod1::TestStruct2::trait_function();
     GenericStruct::<i32, i32>::trait_function();
     GenericStruct::<[i32; 1], f32>::trait_function();
+
+    // Generic function
+    let _ = generic_func(42);
 
     // Closure
     let closure = || { TestStruct1 };
@@ -118,7 +129,11 @@ struct GenericStruct<T1, T2>(std::marker::PhantomData<(T1, T2)>);
 
 // Generic implementation
 impl<T1, T2> GenericStruct<T1, T2> {
-    pub fn impl_function() {}
+    pub fn impl_function() {
+        // Closure in a generic implementation
+        let closure = || { TestStruct1 };
+        closure();
+    }
 }
 
 // Generic trait implementation
@@ -129,4 +144,13 @@ impl<T> TestTrait1 for GenericStruct<T, i32> {
 // Generic trait implementation with const generics
 impl<T, const N: usize> TestTrait1 for GenericStruct<[T; N], f32> {
     fn trait_function() {}
+}
+
+// Generic function
+fn generic_func<T>(value: T) -> T {
+    // Closure in a generic function
+    let closure = || { TestStruct1 };
+    closure();
+
+    value
 }

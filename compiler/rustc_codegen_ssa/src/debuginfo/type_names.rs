@@ -54,7 +54,13 @@ pub fn push_debuginfo_type_name<'tcx>(
         ty::Bool => output.push_str("bool"),
         ty::Char => output.push_str("char"),
         ty::Str => output.push_str("str"),
-        ty::Never => output.push('!'),
+        ty::Never => {
+            if cpp_like_names {
+                output.push_str("never$");
+            } else {
+                output.push('!');
+            }
+        }
         ty::Int(int_ty) => output.push_str(int_ty.name_str()),
         ty::Uint(uint_ty) => output.push_str(uint_ty.name_str()),
         ty::Float(float_ty) => output.push_str(float_ty.name_str()),
@@ -69,7 +75,7 @@ pub fn push_debuginfo_type_name<'tcx>(
         }
         ty::Tuple(component_types) => {
             if cpp_like_names {
-                output.push_str("tuple<");
+                output.push_str("tuple$<");
             } else {
                 output.push('(');
             }
@@ -90,44 +96,45 @@ pub fn push_debuginfo_type_name<'tcx>(
             }
         }
         ty::RawPtr(ty::TypeAndMut { ty: inner_type, mutbl }) => {
-            if !cpp_like_names {
+            if cpp_like_names {
+                match mutbl {
+                    hir::Mutability::Not => output.push_str("ptr_const$<"),
+                    hir::Mutability::Mut => output.push_str("ptr_mut$<"),
+                }
+            } else {
                 output.push('*');
-            }
-            match mutbl {
-                hir::Mutability::Not => output.push_str("const "),
-                hir::Mutability::Mut => output.push_str("mut "),
+                match mutbl {
+                    hir::Mutability::Not => output.push_str("const "),
+                    hir::Mutability::Mut => output.push_str("mut "),
+                }
             }
 
             push_debuginfo_type_name(tcx, inner_type, qualified, output, visited);
 
             if cpp_like_names {
-                output.push('*');
+                push_close_angle_bracket(tcx, output);
             }
         }
         ty::Ref(_, inner_type, mutbl) => {
             if cpp_like_names {
-                output.push_str("ref ");
+                match mutbl {
+                    hir::Mutability::Not => output.push_str("ref$<"),
+                    hir::Mutability::Mut => output.push_str("ref_mut$<"),
+                }
             } else {
                 output.push('&');
+                output.push_str(mutbl.prefix_str());
             }
-            output.push_str(mutbl.prefix_str());
 
             push_debuginfo_type_name(tcx, inner_type, qualified, output, visited);
 
             if cpp_like_names {
-                // Slices and `&str` are treated like C++ pointers when computing debug
-                // info for MSVC debugger. However, adding '*' at the end of these types' names
-                // causes the .natvis engine for WinDbg to fail to display their data, so we opt these
-                // types out to aid debugging in MSVC.
-                match *inner_type.kind() {
-                    ty::Slice(_) | ty::Str => {}
-                    _ => output.push('*'),
-                }
+                push_close_angle_bracket(tcx, output);
             }
         }
         ty::Array(inner_type, len) => {
             if cpp_like_names {
-                output.push_str("array<");
+                output.push_str("array$<");
                 push_debuginfo_type_name(tcx, inner_type, true, output, visited);
                 match len.val {
                     ty::ConstKind::Param(param) => write!(output, ",{}>", param.name).unwrap(),
@@ -146,7 +153,7 @@ pub fn push_debuginfo_type_name<'tcx>(
         }
         ty::Slice(inner_type) => {
             if cpp_like_names {
-                output.push_str("slice<");
+                output.push_str("slice$<");
             } else {
                 output.push('[');
             }
@@ -161,7 +168,7 @@ pub fn push_debuginfo_type_name<'tcx>(
         }
         ty::Dynamic(ref trait_data, ..) => {
             if cpp_like_names {
-                output.push_str("__dyn<");
+                output.push_str("dyn$<");
             } else {
                 output.push_str("dyn ");
             }
@@ -231,39 +238,33 @@ pub fn push_debuginfo_type_name<'tcx>(
             // that something unusual is going on
             if !visited.insert(t) {
                 output.push_str(if cpp_like_names {
-                    "__recursive_type"
+                    "recursive_type$"
                 } else {
                     "<recursive_type>"
                 });
                 return;
             }
 
-            let sig = t.fn_sig(tcx);
-            output.push_str(sig.unsafety().prefix_str());
+            let sig =
+                tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), t.fn_sig(tcx));
 
-            let abi = sig.abi();
-            if abi != rustc_target::spec::abi::Abi::Rust {
-                output.push_str("extern ");
-                if !cpp_like_names {
-                    output.push('\"')
-                };
-                output.push_str(abi.name());
-                if !cpp_like_names {
-                    output.push('\"')
-                };
-                output.push(' ');
-            }
-
-            let sig = tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), sig);
             if cpp_like_names {
-                // C++ has a leading return type and doesn't need the 'fn' keyword.
+                // Format as a C++ function pointer: return_type (*)(params...)
                 if sig.output().is_unit() {
                     output.push_str("void");
                 } else {
                     push_debuginfo_type_name(tcx, sig.output(), true, output, visited);
                 }
-                output.push_str(" (");
+                output.push_str(" (*)(");
             } else {
+                output.push_str(sig.unsafety.prefix_str());
+
+                if sig.abi != rustc_target::spec::abi::Abi::Rust {
+                    output.push_str("extern \"");
+                    output.push_str(sig.abi.name());
+                    output.push_str("\" ");
+                }
+
                 output.push_str("fn(");
             }
 
@@ -405,21 +406,19 @@ fn push_unqualified_item_name(
         }
         DefPathData::Impl => {
             let self_ty = tcx.type_of(def_id);
+            output.push_str(if cpp_like_names { "impl$<" } else { "<impl " });
             if let Some(impl_trait_ref) = tcx.impl_trait_ref(def_id) {
-                output.push_str(if cpp_like_names { "__impl<" } else { "<impl " });
                 push_item_name(tcx, impl_trait_ref.def_id, true, output);
-                output.push_str(" for ");
-                push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
-                push_close_angle_bracket(tcx, output);
-            } else {
-                push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
+                output.push_str(if cpp_like_names { ", " } else { " for " });
             }
+            push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
+            push_close_angle_bracket(tcx, output);
         }
         DefPathData::ClosureExpr if tcx.generator_kind(def_id).is_some() => {
             // Generators look like closures, but we want to treat them differently
             // in the debug info.
             if cpp_like_names {
-                write!(output, "__generator${}", disambiguated_data.disambiguator).unwrap();
+                write!(output, "generator${}", disambiguated_data.disambiguator).unwrap();
             } else {
                 write!(output, "{{generator#{}}}", disambiguated_data.disambiguator).unwrap();
             }
@@ -430,7 +429,7 @@ fn push_unqualified_item_name(
             }
             DefPathDataName::Anon { namespace } => {
                 if cpp_like_names {
-                    write!(output, "__{}${}", namespace, disambiguated_data.disambiguator).unwrap();
+                    write!(output, "{}${}", namespace, disambiguated_data.disambiguator).unwrap();
                 } else {
                     write!(output, "{{{}#{}}}", namespace, disambiguated_data.disambiguator)
                         .unwrap();
