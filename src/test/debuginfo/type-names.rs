@@ -114,7 +114,7 @@
 // gdb-check:type = &mut dyn type_names::Trait2<type_names::mod1::mod2::Struct3, type_names::GenericStruct<usize, isize>>
 
 // gdb-command:whatis no_principal_trait
-// gdb-check:type = alloc::boxed::Box<dyn core::marker::Sync + core::marker::Send, alloc::alloc::Global>
+// gdb-check:type = alloc::boxed::Box<dyn core::marker::Send + core::marker::Sync, alloc::alloc::Global>
 
 // BARE FUNCTIONS
 // gdb-command:whatis rust_fn
@@ -215,8 +215,8 @@
 // cdb-check:struct alloc::vec::Vec<usize, alloc::alloc::Global> vec1 = [...]
 // cdb-check:struct alloc::vec::Vec<type_names::mod1::Enum2, alloc::alloc::Global> vec2 = [...]
 // cdb-command:dv /t slice*
-// cdb-check:struct ref$<slice$<usize> > slice1 = [...]
-// cdb-check:struct ref$<slice$<type_names::mod1::Enum2> > slice2 = [...]
+// cdb-check:struct slice$<usize> slice1 = [...]
+// cdb-check:struct slice$<type_names::mod1::Enum2> slice2 = [...]
 
 // TRAITS
 // cdb-command:dv /t *_trait
@@ -242,6 +242,15 @@
 // cdb-check:struct tuple$<isize (*)(ptr_const$<u8>, ...), usize> variadic_function = [...]
 // cdb-check:struct tuple$<type_names::mod1::mod2::Struct3 (*)(type_names::mod1::mod2::Struct3), usize> generic_function_struct3 = [...]
 // cdb-check:struct tuple$<isize (*)(isize), usize> generic_function_int = [...]
+// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("rust_fn")
+// cdb-check:Return Type: void
+// cdb-check:Parameter Types: core::option::Option<isize>,core::option::Option<ref$<type_names::mod1::Struct2> >
+// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("rust_fn_with_return_value")
+// cdb-check:Return Type: usize
+// cdb-check:Parameter Types: f64
+// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("extern_c_fn_with_return_value")
+// cdb-check:Return Type: type_names::Struct1
+// cdb-check:Parameter Types: 
 
 // CLOSURES
 // cdb-command:dv /t closure*

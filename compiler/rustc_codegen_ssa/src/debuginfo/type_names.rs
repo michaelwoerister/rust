@@ -116,19 +116,28 @@ pub fn push_debuginfo_type_name<'tcx>(
             }
         }
         ty::Ref(_, inner_type, mutbl) => {
-            if cpp_like_names {
+            // Slices and `&str` are treated like C++ pointers when computing debug
+            // info for MSVC debugger. However, wrapping these types' names in a synthetic type
+            // causes the .natvis engine for WinDbg to fail to display their data, so we opt these
+            // types out to aid debugging in MSVC.
+            let is_slice_or_str = match *inner_type.kind() {
+                ty::Slice(_) | ty::Str => true,
+                _ => false,
+            };
+
+            if !cpp_like_names {
+                output.push('&');
+                output.push_str(mutbl.prefix_str());
+            } else if !is_slice_or_str {
                 match mutbl {
                     hir::Mutability::Not => output.push_str("ref$<"),
                     hir::Mutability::Mut => output.push_str("ref_mut$<"),
                 }
-            } else {
-                output.push('&');
-                output.push_str(mutbl.prefix_str());
             }
 
             push_debuginfo_type_name(tcx, inner_type, qualified, output, visited);
 
-            if cpp_like_names {
+            if cpp_like_names && !is_slice_or_str {
                 push_close_angle_bracket(tcx, output);
             }
         }
@@ -179,26 +188,26 @@ pub fn push_debuginfo_type_name<'tcx>(
                 push_item_name(tcx, principal.def_id, qualified, output);
                 push_generic_params_internal(tcx, principal.substs, false, output, visited);
             } else {
-                for single_trait in trait_data.iter() {
-                    match tcx.normalize_erasing_late_bound_regions(
-                        ty::ParamEnv::reveal_all(),
-                        single_trait,
-                    ) {
-                        ty::ExistentialPredicate::Trait(trait_ref) => {
-                            push_item_name(tcx, trait_ref.def_id, true, output);
-                            push_generic_params_internal(
-                                tcx,
-                                trait_ref.substs,
-                                false,
-                                output,
-                                visited,
-                            );
-                        }
+                let mut traits: Vec<_> = trait_data
+                    .iter()
+                    .map(|single_trait| {
+                        tcx.normalize_erasing_late_bound_regions(
+                            ty::ParamEnv::reveal_all(),
+                            single_trait,
+                        )
+                    })
+                    .collect();
+                traits.sort();
+                for single_trait in traits {
+                    match single_trait {
                         ty::ExistentialPredicate::AutoTrait(def_id) => {
                             push_item_name(tcx, def_id, true, output)
                         }
                         ty::ExistentialPredicate::Projection(projection) => {
                             push_debuginfo_type_name(tcx, projection.ty, true, output, visited);
+                        }
+                        ty::ExistentialPredicate::Trait(_) => {
+                            bug!("debuginfo: Unexpected trait type: {:?}", t);
                         }
                     }
 
@@ -316,10 +325,35 @@ pub fn push_debuginfo_type_name<'tcx>(
         ty::Param(_) => {
             output.push_str(&format!("{:?}", t));
         }
+        ty::Projection(projection_ty) => {
+            if cpp_like_names {
+                output.push_str("as$<");
+            } else {
+                output.push('<');
+            }
+            push_debuginfo_type_name(tcx, projection_ty.self_ty(), true, output, visited);
+            if cpp_like_names {
+                output.push_str(", ");
+            } else {
+                output.push_str(" as ");
+            }
+            let (trait_ref, own_substs) = projection_ty.trait_ref_and_own_substs(tcx);
+            push_item_name(tcx, trait_ref.def_id, true, output);
+            push_close_angle_bracket(tcx, output);
+
+            output.push_str("::");
+            push_item_name(tcx, projection_ty.item_def_id, false, output);
+            push_generic_params_internal(
+                tcx,
+                tcx.mk_substs(own_substs.iter()),
+                true,
+                output,
+                visited,
+            );
+        }
         ty::Error(_)
         | ty::Infer(_)
         | ty::Placeholder(..)
-        | ty::Projection(..)
         | ty::Bound(..)
         | ty::Opaque(..)
         | ty::GeneratorWitness(..) => {

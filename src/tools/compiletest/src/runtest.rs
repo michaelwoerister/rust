@@ -778,6 +778,14 @@ impl<'test> TestCx<'test> {
         script_str.push_str("version\n"); // List CDB (and more) version info in test output
         script_str.push_str(".nvlist\n"); // List loaded `*.natvis` files, bulk of custom MSVC debug
 
+        // If a .js file exists next to the source file being tested, then this is a JavaScript
+        // debugging extension that needs to be loaded.
+        let mut js_extension = self.testpaths.file.clone();
+        js_extension.set_extension("js");
+        if js_extension.exists() {
+            script_str.push_str(&format!(".scriptload \"{}\"\n", js_extension.to_string_lossy()));
+        }
+
         // Set breakpoints on every line that contains the string "#break"
         let source_file_name = self.testpaths.file.file_name().unwrap().to_string_lossy();
         for line in &breakpoint_lines {
