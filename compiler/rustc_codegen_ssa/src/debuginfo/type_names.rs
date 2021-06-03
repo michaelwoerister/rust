@@ -14,11 +14,10 @@
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt};
-use rustc_target::abi::{TagEncoding, Variants};
 use rustc_hir::definitions::{DefPathData, DefPathDataName, DisambiguatedDefPathData};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::{self, layout::TyAndLayout, AdtDef, Ty, TyCtxt};
+use rustc_target::abi::{Layout, TagEncoding, Variants};
 
 use std::fmt::Write;
 
@@ -377,14 +376,20 @@ pub fn push_debuginfo_type_name<'tcx>(
         output: &mut String,
         visited: &mut FxHashSet<Ty<'tcx>>,
     ) {
-        let layout = tcx.layout_of(tcx.param_env(def.did).and(ty)).expect("layout error");
-
-        if let Variants::Multiple {
-            tag_encoding: TagEncoding::Niche { dataful_variant, .. },
-            tag,
-            variants,
+        if let Ok(TyAndLayout {
+            layout:
+                Layout {
+                    variants:
+                        Variants::Multiple {
+                            tag_encoding: TagEncoding::Niche { dataful_variant, .. },
+                            tag,
+                            variants,
+                            ..
+                        },
+                    ..
+                },
             ..
-        } = &layout.variants
+        }) = &tcx.layout_of(tcx.param_env(def.did).and(ty))
         {
             let dataful_variant_layout = &variants[*dataful_variant];
 
@@ -400,7 +405,7 @@ pub fn push_debuginfo_type_name<'tcx>(
 
             output.push_str("enum$<");
             push_item_name(tcx, def.did, true, output);
-            push_type_params(tcx, substs, output, visited);
+            push_generic_params_internal(tcx, substs, false, output, visited);
 
             let dataful_variant_name = def.variants[*dataful_variant].ident.as_str();
 
@@ -408,8 +413,8 @@ pub fn push_debuginfo_type_name<'tcx>(
         } else {
             output.push_str("enum$<");
             push_item_name(tcx, def.did, true, output);
-            push_type_params(tcx, substs, output, visited);
-            output.push('>');
+            push_generic_params_internal(tcx, substs, false, output, visited);
+            push_close_angle_bracket(tcx, output);
         }
     }
 }
