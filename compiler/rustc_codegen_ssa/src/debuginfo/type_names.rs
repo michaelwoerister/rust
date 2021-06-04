@@ -69,7 +69,7 @@ pub fn push_debuginfo_type_name<'tcx>(
                 msvc_enum_fallback(tcx, t, def, substs, output, visited);
             } else {
                 push_item_name(tcx, def.did, qualified, output);
-                push_generic_params_internal(tcx, substs, false, output, visited);
+                push_generic_params_internal(tcx, substs, output, visited);
             }
         }
         ty::Tuple(component_types) => {
@@ -185,7 +185,7 @@ pub fn push_debuginfo_type_name<'tcx>(
                 let principal =
                     tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), principal);
                 push_item_name(tcx, principal.def_id, qualified, output);
-                push_generic_params_internal(tcx, principal.substs, false, output, visited);
+                push_generic_params_internal(tcx, principal.substs, output, visited);
             } else {
                 let mut traits: Vec<_> = trait_data
                     .iter()
@@ -202,10 +202,8 @@ pub fn push_debuginfo_type_name<'tcx>(
                         ty::ExistentialPredicate::AutoTrait(def_id) => {
                             push_item_name(tcx, def_id, true, output)
                         }
-                        ty::ExistentialPredicate::Projection(projection) => {
-                            push_debuginfo_type_name(tcx, projection.ty, true, output, visited);
-                        }
-                        ty::ExistentialPredicate::Trait(_) => {
+                        ty::ExistentialPredicate::Trait(_)
+                        | ty::ExistentialPredicate::Projection(_) => {
                             bug!("debuginfo: Unexpected trait type: {:?}", t);
                         }
                     }
@@ -344,8 +342,10 @@ pub fn push_debuginfo_type_name<'tcx>(
             push_item_name(tcx, projection_ty.item_def_id, false, output);
             push_generic_params_internal(
                 tcx,
-                tcx.mk_substs(own_substs.iter()),
-                true,
+                tcx.normalize_erasing_regions(
+                    ty::ParamEnv::reveal_all(),
+                    tcx.mk_substs(own_substs.iter()),
+                ),
                 output,
                 visited,
             );
@@ -405,7 +405,7 @@ pub fn push_debuginfo_type_name<'tcx>(
 
             output.push_str("enum$<");
             push_item_name(tcx, def.did, true, output);
-            push_generic_params_internal(tcx, substs, false, output, visited);
+            push_generic_params_internal(tcx, substs, output, visited);
 
             let dataful_variant_name = def.variants[*dataful_variant].ident.as_str();
 
@@ -413,7 +413,7 @@ pub fn push_debuginfo_type_name<'tcx>(
         } else {
             output.push_str("enum$<");
             push_item_name(tcx, def.did, true, output);
-            push_generic_params_internal(tcx, substs, false, output, visited);
+            push_generic_params_internal(tcx, substs, output, visited);
             push_close_angle_bracket(tcx, output);
         }
     }
@@ -486,7 +486,6 @@ fn push_unqualified_item_name(
 fn push_generic_params_internal<'tcx>(
     tcx: TyCtxt<'tcx>,
     substs: SubstsRef<'tcx>,
-    normalize_type: bool,
     output: &mut String,
     visited: &mut FxHashSet<Ty<'tcx>>,
 ) {
@@ -494,16 +493,13 @@ fn push_generic_params_internal<'tcx>(
         return;
     }
 
+    debug_assert!(substs == tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), substs));
+
     output.push('<');
 
     for type_parameter in substs.non_erasable_generics() {
         match type_parameter {
             GenericArgKind::Type(type_parameter) => {
-                let type_parameter = if normalize_type {
-                    tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), type_parameter)
-                } else {
-                    type_parameter
-                };
                 push_debuginfo_type_name(tcx, type_parameter, true, output, visited);
                 output.push_str(", ");
             }
@@ -526,14 +522,9 @@ fn push_generic_params_internal<'tcx>(
     push_close_angle_bracket(tcx, output);
 }
 
-pub fn push_generic_params<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    substs: SubstsRef<'tcx>,
-    normalize_type: bool,
-    output: &mut String,
-) {
+pub fn push_generic_params<'tcx>(tcx: TyCtxt<'tcx>, substs: SubstsRef<'tcx>, output: &mut String) {
     let mut visited = FxHashSet::default();
-    push_generic_params_internal(tcx, substs, normalize_type, output, &mut visited);
+    push_generic_params_internal(tcx, substs, output, &mut visited);
 }
 
 fn push_close_angle_bracket<'tcx>(tcx: TyCtxt<'tcx>, output: &mut String) {

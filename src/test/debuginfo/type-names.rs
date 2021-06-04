@@ -227,6 +227,7 @@
 // cdb-check:struct ref$<dyn$<type_names::Trait1> > ref_trait = [...]
 // cdb-check:struct ref_mut$<dyn$<type_names::Trait1> > mut_ref_trait = [...]
 // cdb-check:struct alloc::boxed::Box<dyn$<core::marker::Send, core::marker::Sync>, alloc::alloc::Global> no_principal_trait = [...]
+// cdb-check:struct ref$<dyn$<type_names::Trait3> > has_associated_type_trait = struct ref$<dyn$<type_names::Trait3> >
 
 // BARE FUNCTIONS
 // cdb-command:dv /t *_fn*
@@ -242,13 +243,13 @@
 // cdb-check:struct tuple$<isize (*)(ptr_const$<u8>, ...), usize> variadic_function = [...]
 // cdb-check:struct tuple$<type_names::mod1::mod2::Struct3 (*)(type_names::mod1::mod2::Struct3), usize> generic_function_struct3 = [...]
 // cdb-check:struct tuple$<isize (*)(isize), usize> generic_function_int = [...]
-// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("rust_fn")
+// cdb-command:dx Debugger.State.Scripts.@"type-names.cdb".Contents.getFunctionDetails("rust_fn")
 // cdb-check:Return Type: void
 // cdb-check:Parameter Types: enum$<core::option::Option<isize> >,enum$<core::option::Option<ref$<type_names::mod1::Struct2> >, 1, [...], Some>
-// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("rust_fn_with_return_value")
+// cdb-command:dx Debugger.State.Scripts.@"type-names.cdb".Contents.getFunctionDetails("rust_fn_with_return_value")
 // cdb-check:Return Type: usize
 // cdb-check:Parameter Types: f64
-// cdb-command:dx Debugger.State.Scripts.@"type-names".Contents.getFunctionDetails("extern_c_fn_with_return_value")
+// cdb-command:dx Debugger.State.Scripts.@"type-names.cdb".Contents.getFunctionDetails("extern_c_fn_with_return_value")
 // cdb-check:Return Type: type_names::Struct1
 // cdb-check:Parameter Types:
 
@@ -310,9 +311,16 @@ trait Trait1 {
 trait Trait2<T1, T2> {
     fn dummy(&self, _: T1, _: T2) {}
 }
+trait Trait3 {
+    type AssocType;
+    fn dummy(&self) {}
+}
 
 impl Trait1 for isize {}
 impl<T1, T2> Trait2<T1, T2> for isize {}
+impl Trait3 for isize {
+    type AssocType = isize;
+}
 
 fn rust_fn(_: Option<isize>, _: Option<&mod1::Struct2>) {}
 extern "C" fn extern_c_fn(_: isize) {}
@@ -406,6 +414,7 @@ fn main() {
     let mut mut_int1 = 0_isize;
     let mut_ref_trait = (&mut mut_int1) as &mut dyn Trait1;
     let no_principal_trait = (box 0_isize) as Box<dyn Send + Sync>;
+    let has_associated_type_trait = &0_isize as &dyn Trait3<AssocType = isize>;
 
     let generic_box_trait = (box 0_isize) as Box<dyn Trait2<i32, mod1::Struct2>>;
     let generic_ref_trait = (&0_isize) as &dyn Trait2<Struct1, Struct1>;

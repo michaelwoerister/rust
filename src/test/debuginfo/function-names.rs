@@ -49,6 +49,7 @@
 // cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, GenericStruct<T, i32> >::trait_function<i32> (void)
 // cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, GenericStruct<array$<T,N>, f32> >::trait_function<i32, 0x1> (void)
 // cdb-check:[...] a!function_names::Mod1::impl$<function_names::Mod1::TestTrait2, TestStruct2>::trait_function (void)
+// cdb-check:[...] a!function_names::impl$<function_names::TestTrait3, GenericStruct<T, as$<T, function_names::TestTrait3>::AssocType> >::trait_function3<function_names::TestStruct1> (void)
 // cdb-check:[...] a!function_names::impl$<function_names::TestTrait1, TestStruct1>::trait_function (void)
 
 // Closure
@@ -81,6 +82,7 @@ fn main() {
     Mod1::TestStruct2::trait_function();
     GenericStruct::<i32, i32>::trait_function();
     GenericStruct::<[i32; 1], f32>::trait_function();
+    GenericStruct::<TestStruct1, usize>::trait_function3();
 
     // Generic function
     let _ = generic_func(42);
@@ -139,6 +141,20 @@ impl<T1, T2> GenericStruct<T1, T2> {
 // Generic trait implementation
 impl<T> TestTrait1 for GenericStruct<T, i32> {
     fn trait_function() {}
+}
+
+// Implementation based on associated type
+trait TestTrait3 {
+    type AssocType;
+    fn trait_function3();
+}
+impl TestTrait3 for TestStruct1 {
+    type AssocType = usize;
+    fn trait_function3() {}
+}
+impl<T: TestTrait3> TestTrait3 for GenericStruct<T, T::AssocType> {
+    type AssocType = T::AssocType;
+    fn trait_function3() {}
 }
 
 // Generic trait implementation with const generics

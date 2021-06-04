@@ -1,5 +1,4 @@
 // only-cdb
-// ignore-tidy-linelength
 // compile-flags:-g
 
 // cdb-command: g

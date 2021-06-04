@@ -781,7 +781,7 @@ impl<'test> TestCx<'test> {
         // If a .js file exists next to the source file being tested, then this is a JavaScript
         // debugging extension that needs to be loaded.
         let mut js_extension = self.testpaths.file.clone();
-        js_extension.set_extension("js");
+        js_extension.set_extension("cdb.js");
         if js_extension.exists() {
             script_str.push_str(&format!(".scriptload \"{}\"\n", js_extension.to_string_lossy()));
         }

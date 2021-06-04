@@ -1,7 +1,6 @@
 // ignore-freebsd: gdb package too new
 // only-cdb // "Temporarily" ignored on GDB/LLDB due to debuginfo tests being disabled, see PR 47155
 // ignore-android: FIXME(#10381)
-// ignore-tidy-linelength
 // compile-flags:-g
 // min-gdb-version: 7.7
 // min-lldb-version: 310

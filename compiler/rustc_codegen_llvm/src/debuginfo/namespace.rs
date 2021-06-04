@@ -32,14 +32,13 @@ pub fn item_namespace(cx: &CodegenCx<'ll, '_>, def_id: DefId) -> &'ll DIScope {
         type_names::push_item_name(cx.tcx, def_id, false, &mut output);
         output
     };
-    let namespace_name = &*namespace_name_string;
 
     let scope = unsafe {
         llvm::LLVMRustDIBuilderCreateNameSpace(
             DIB(cx),
             parent_scope,
-            namespace_name.as_ptr().cast(),
-            namespace_name.len(),
+            namespace_name_string.as_ptr().cast(),
+            namespace_name_string.len(),
             false, // ExportSymbols (only relevant for C++ anonymous namespaces)
         )
     };

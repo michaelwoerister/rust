@@ -427,7 +427,11 @@ impl DebugInfoMethods<'tcx> for CodegenCx<'ll, 'tcx> {
             substs: SubstsRef<'tcx>,
             name_to_append_suffix_to: &mut String,
         ) -> &'ll DIArray {
-            type_names::push_generic_params(cx.tcx, substs, true, name_to_append_suffix_to);
+            type_names::push_generic_params(
+                cx.tcx,
+                cx.tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), substs),
+                name_to_append_suffix_to,
+            );
 
             if substs.types().next().is_none() {
                 return create_DIArray(DIB(cx), &[]);
