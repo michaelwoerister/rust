@@ -187,19 +187,18 @@ pub fn push_debuginfo_type_name<'tcx>(
                 push_item_name(tcx, principal.def_id, qualified, output);
                 push_generic_params_internal(tcx, principal.substs, output, visited);
             } else {
-                for single_trait in trait_data.iter() {
-                    match tcx.normalize_erasing_late_bound_regions(
-                        ty::ParamEnv::reveal_all(),
-                        single_trait,
-                    ) {
-                        ty::ExistentialPredicate::AutoTrait(def_id) => {
-                            push_item_name(tcx, def_id, true, output)
-                        }
-                        ty::ExistentialPredicate::Trait(_)
-                        | ty::ExistentialPredicate::Projection(_) => {
-                            bug!("debuginfo: Unexpected trait type: {:?}", t);
-                        }
-                    }
+                // The auto traits come ordered by `DefPathHash`, which guarantees stability if the
+                // environment is stable (e.g., incremental builds) but not otherwise (e.g.,
+                // updated compiler version, different target).
+                //
+                // To avoid that causing instabilities in test output, sort the auto-traits
+                // alphabetically.
+                let mut auto_traits: Vec<_> =
+                    trait_data.auto_traits().map(|did| (tcx.def_path_str(did), did)).collect();
+                auto_traits.sort();
+
+                for (_, def_id) in auto_traits {
+                    push_item_name(tcx, def_id, true, output);
 
                     if cpp_like_names {
                         output.push_str(", ");
