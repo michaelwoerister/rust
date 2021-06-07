@@ -127,14 +127,6 @@ impl<'tcx> Printer<'tcx> for AbsolutePathPrinter<'tcx> {
     ) -> Result<Self::Path, Self::Error> {
         self = print_prefix(self)?;
 
-<<<<<<< HEAD
-=======
-        // Skip `::{{constructor}}` on tuple/unit structs.
-        if disambiguated_data.data == DefPathData::Ctor {
-            return Ok(self);
-        }
-
->>>>>>> d03dcf352cc (Address PR feedback, fix tidy failures)
         write!(self.path, "::{}", disambiguated_data.data).unwrap();
 
         Ok(self)
