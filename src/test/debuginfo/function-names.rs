@@ -23,7 +23,7 @@
 
 // Closure
 // gdb-command:info functions -q function_names::.*::{{closure.*
-// gdb-check:[...]static fn function_names::GenericStruct<T1,T2>::impl_function::{{closure}}(*mut function_names::<impl GenericStruct<T1, T2>>::impl_function::{closure#0});
+// gdb-check:[...]static fn function_names::GenericStruct<T1,T2>::impl_function::{{closure}}(*mut <impl function_names::GenericStruct<T1, T2>>::impl_function::{closure#0});
 // gdb-check:[...]static fn function_names::generic_func::{{closure}}(*mut function_names::generic_func::{closure#0});
 // gdb-check:[...]static fn function_names::main::{{closure}}(*mut function_names::main::{closure#0});
 
