@@ -33,7 +33,7 @@ pub fn item_namespace(cx: &CodegenCx<'ll, '_>, def_id: DefId) -> &'ll DIScope {
             type_names::push_item_name(cx.tcx, def_id, true, &mut namespace_name_string);
 
             (None, namespace_name_string)
-        },
+        }
         _ => {
             let parent_scope = def_key
                 .parent

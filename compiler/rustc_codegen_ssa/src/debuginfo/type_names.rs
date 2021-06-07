@@ -427,7 +427,7 @@ pub fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output:
             }
             push_debuginfo_type_name(tcx, self_ty, qualified, output, &mut FxHashSet::default());
             push_close_angle_bracket(tcx, output);
-        },
+        }
         _ => {
             if qualified {
                 if let Some(parent) = def_key.parent {
