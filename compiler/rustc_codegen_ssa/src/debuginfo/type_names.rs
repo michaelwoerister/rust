@@ -187,18 +187,11 @@ pub fn push_debuginfo_type_name<'tcx>(
                 push_item_name(tcx, principal.def_id, qualified, output);
                 push_generic_params_internal(tcx, principal.substs, output, visited);
             } else {
-                let mut traits: Vec<_> = trait_data
-                    .iter()
-                    .map(|single_trait| {
-                        tcx.normalize_erasing_late_bound_regions(
-                            ty::ParamEnv::reveal_all(),
-                            single_trait,
-                        )
-                    })
-                    .collect();
-                traits.sort();
-                for single_trait in traits {
-                    match single_trait {
+                for single_trait in trait_data.iter() {
+                    match tcx.normalize_erasing_late_bound_regions(
+                        ty::ParamEnv::reveal_all(),
+                        single_trait,
+                    ) {
                         ty::ExistentialPredicate::AutoTrait(def_id) => {
                             push_item_name(tcx, def_id, true, output)
                         }
@@ -420,15 +413,32 @@ pub fn push_debuginfo_type_name<'tcx>(
 }
 
 pub fn push_item_name(tcx: TyCtxt<'tcx>, def_id: DefId, qualified: bool, output: &mut String) {
+    let cpp_like_names = tcx.sess.target.is_like_msvc;
     let def_key = tcx.def_key(def_id);
-    if qualified {
-        if let Some(parent) = def_key.parent {
-            push_item_name(tcx, DefId { krate: def_id.krate, index: parent }, true, output);
-            output.push_str("::");
+
+    match def_key.disambiguated_data.data {
+        DefPathData::Impl => {
+            // The path to the impl may be different than the Self type, so ignore the impl's path
+            // and qualify the self type (if requested) instead.
+            let self_ty = tcx.type_of(def_id);
+            output.push_str(if cpp_like_names { "impl$<" } else { "<impl " });
+            if let Some(impl_trait_ref) = tcx.impl_trait_ref(def_id) {
+                push_item_name(tcx, impl_trait_ref.def_id, true, output);
+                output.push_str(if cpp_like_names { ", " } else { " for " });
+            }
+            push_debuginfo_type_name(tcx, self_ty, qualified, output, &mut FxHashSet::default());
+            push_close_angle_bracket(tcx, output);
+        },
+        _ => {
+            if qualified {
+                if let Some(parent) = def_key.parent {
+                    push_item_name(tcx, DefId { krate: def_id.krate, index: parent }, true, output);
+                    output.push_str("::");
+                }
+            }
+            push_unqualified_item_name(tcx, def_id, def_key.disambiguated_data, output);
         }
     }
-
-    push_unqualified_item_name(tcx, def_id, def_key.disambiguated_data, output);
 }
 
 fn push_unqualified_item_name(
@@ -443,16 +453,6 @@ fn push_unqualified_item_name(
         DefPathData::CrateRoot => {
             output.push_str(&tcx.crate_name(def_id.krate).as_str());
         }
-        DefPathData::Impl => {
-            let self_ty = tcx.type_of(def_id);
-            output.push_str(if cpp_like_names { "impl$<" } else { "<impl " });
-            if let Some(impl_trait_ref) = tcx.impl_trait_ref(def_id) {
-                push_item_name(tcx, impl_trait_ref.def_id, true, output);
-                output.push_str(if cpp_like_names { ", " } else { " for " });
-            }
-            push_debuginfo_type_name(tcx, self_ty, false, output, &mut FxHashSet::default());
-            push_close_angle_bracket(tcx, output);
-        }
         DefPathData::ClosureExpr if tcx.generator_kind(def_id).is_some() => {
             // Generators look like closures, but we want to treat them differently
             // in the debug info.
@@ -462,6 +462,7 @@ fn push_unqualified_item_name(
                 write!(output, "{{generator#{}}}", disambiguated_data.disambiguator).unwrap();
             }
         }
+        DefPathData::Impl => bug!("impl should have already been handled"),
         _ => match disambiguated_data.data.name() {
             DefPathDataName::Named(name) => {
                 output.push_str(&name.as_str());

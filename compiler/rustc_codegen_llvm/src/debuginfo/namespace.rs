@@ -2,6 +2,7 @@
 
 use super::utils::{debug_context, DIB};
 use rustc_codegen_ssa::debuginfo::type_names;
+use rustc_hir::definitions::DefPathData;
 use rustc_middle::ty::{self, Instance};
 
 use crate::common::CodegenCx;
@@ -23,14 +24,26 @@ pub fn item_namespace(cx: &CodegenCx<'ll, '_>, def_id: DefId) -> &'ll DIScope {
     }
 
     let def_key = cx.tcx.def_key(def_id);
-    let parent_scope = def_key
-        .parent
-        .map(|parent| item_namespace(cx, DefId { krate: def_id.krate, index: parent }));
 
-    let namespace_name_string = {
-        let mut output = String::new();
-        type_names::push_item_name(cx.tcx, def_id, false, &mut output);
-        output
+    let (parent_scope, namespace_name_string) = match def_key.disambiguated_data.data {
+        DefPathData::Impl => {
+            // The path to the impl may be different than the Self type, so ignore the impl's
+            // parent and fully qualify the path to the Self type instead.
+            let mut namespace_name_string = String::new();
+            type_names::push_item_name(cx.tcx, def_id, true, &mut namespace_name_string);
+
+            (None, namespace_name_string)
+        },
+        _ => {
+            let parent_scope = def_key
+                .parent
+                .map(|parent| item_namespace(cx, DefId { krate: def_id.krate, index: parent }));
+
+            let mut namespace_name_string = String::new();
+            type_names::push_item_name(cx.tcx, def_id, false, &mut namespace_name_string);
+
+            (parent_scope, namespace_name_string)
+        }
     };
 
     let scope = unsafe {
