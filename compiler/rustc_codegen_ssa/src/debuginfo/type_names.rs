@@ -436,7 +436,7 @@ fn push_unqualified_item_name(
             output.push_str(&tcx.crate_name(def_id.krate).as_str());
         }
         DefPathData::Impl => {
-            let self_ty = tcx.type_of(def_id);
+            let self_ty = tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), tcx.type_of(def_id));
             output.push_str(if cpp_like_names { "impl$<" } else { "<impl " });
             if let Some(impl_trait_ref) = tcx.impl_trait_ref(def_id) {
                 push_item_name(tcx, impl_trait_ref.def_id, true, output);
